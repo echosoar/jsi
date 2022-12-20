@@ -8,7 +8,7 @@ impl Context {
     }
     // 运行一段 JS 代码
     pub fn run(&self, code: String) {
-      let ast = AST::new(code);
+      let mut ast = AST::new(code);
       let program = ast.parse();
 
       println!("{:?}", program)
