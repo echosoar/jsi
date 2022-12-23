@@ -2,7 +2,7 @@
 // mod super::token::TokenKeywords;
 use std::io;
 
-use crate::{ast_token::{get_token_keyword, Token, get_token_literal}, ast_node::{ Expression, NumberLiteral, LetVariableStatement}, ast_utils::{get_hex_number_value, chars_to_string}};
+use crate::{ast_token::{get_token_keyword, Token, get_token_literal}, ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement}, ast_utils::{get_hex_number_value, chars_to_string}};
 pub struct AST {
   // 当前字符
   char: char,
@@ -45,10 +45,12 @@ impl AST{
   fn parse_program(&mut self) -> Program {
     // 开启一个作用域
     self.open_scope();
-    self.parse_statements();
+    let body = self.parse_statements();
     // 关闭一个作用域
     self.close_scope();
-    Program {}
+    Program {
+      body
+    }
   }
   // 开启一个作用域
   fn open_scope(&mut self) {
@@ -60,37 +62,41 @@ impl AST{
 
    }
 
-  fn parse_statements(&mut self) {
-    let mut i = 0;
+  fn parse_statements(&mut self) -> Vec<Statement> {
+    let mut statements: Vec<Statement> = vec![];
     loop {
       
-      if let Token::EOF = self.token  {
+      if let Token::EOF = self.token {
         // end of file
         break;
-      } else {
-        self.parse_statement()
       }
-      i = i + 1;
-      if i > 1000 {
+      let statement = self.parse_statement();
+      if let Statement::Unknown = statement  {
+        // TODO: unknown statement
         break;
       }
+      statements.push(statement);
     }
+    return statements;
   }
 
   // 解析生成 statement
-  fn parse_statement(&mut self) {
+  fn parse_statement(&mut self) -> Statement {
     match self.token {
         Token::Let => self.parse_let_statement(),
-        _ => {},
+        _ => Statement::Unknown,
     }
   }
 
   // 解析 let 
-  fn parse_let_statement(&mut self) {
+  fn parse_let_statement(&mut self) -> Statement {
     self.check_token_and_next(Token::Let);
+    let mut let_statement = LetVariableStatement {
+      list: vec![],
+    };
     loop {
-      self.parse_variable_declaration();
-      println!("let {:?} {}", self.token, self.literal);
+      let expression = self.parse_variable_declaration();
+      let_statement.list.push(expression);
       // let a= 1, b = 2;
       if self.token != Token::Comma {
         break;
@@ -98,28 +104,28 @@ impl AST{
       self.next();
     }
     self.semicolon();
+    return Statement::Let(let_statement);
   }
 
   // 解析变量定义 a = 123,b,c = true 
-  fn parse_variable_declaration(&mut self) {
+  fn parse_variable_declaration(&mut self) -> Expression {
     if Token::Identifier != self.token {
       // TODO: throw error 需要一个identifier
-      return;
+      return Expression::Unknown;
     }
     let literal = self.literal.clone();
     self.next();
-    println!("nexg:{}", self.char);
-    let node = LetVariableStatement{
-      name: literal
+    let mut node = LetVariableDeclaration{
+      name: literal,
+      initializer: Box::new(Expression::Undefined),
     };
 
     if self.token == Token::Assign {
+      // TODO:
       self.next();
-      self.parse_assignment_expression();
+      node.initializer = Box::new(self.parse_assignment_expression());
     }
-    println!("literal:{:?}", node);
-    return
-
+    return Expression::Let(node)
   }
 
   fn check_token_and_next(&mut self, token: Token) {
@@ -140,7 +146,7 @@ impl AST{
     let scan_res = self.scan();
     self.token = scan_res.0;
     self.literal = scan_res.1;
-    println!("next:{:?}, {}", self.token, self.literal)
+    println!("next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
   // 扫描获取符号
@@ -216,7 +222,7 @@ impl AST{
     } else {
       self.next_char_index = self.length
     }
-    println!("read:{}, {},  {}", self.char, self.cur_char_index,self.next_char_index)
+    // println!("read:{}, {},  {}", self.char, self.cur_char_index,self.next_char_index)
   }
 
   // 获取标识符
@@ -244,7 +250,7 @@ impl AST{
       self.read();
       match self.char {
         'x' | 'X' => {
-          // 十六进制
+          // TODO: 十六进制
           // 自动读取下一个字符
          self.read_number(16);
          let number_len = self.cur_char_index - start_index;
@@ -255,7 +261,10 @@ impl AST{
 
         },
         'b' | 'B' => {
-          // 二进制
+          // TODO: 二进制
+        },
+        '.' => {
+          // TODO: 浮点数
         },
         _ => {
 
@@ -264,8 +273,12 @@ impl AST{
     }
     // 十进制
     self.read_number(10);
-    println!("number{}", start_index);
-    return (Token::Number, chars_to_string(&self.code, start_index, self.next_char_index))
+    // 浮点数
+    if self.char == '.' {
+      self.read();
+      self.read_number(10);
+    }
+    return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index))
   }
 
   fn read_number(&mut self, binary: i32) {
@@ -283,16 +296,13 @@ impl AST{
     let start_index = self.cur_char_index;
     let str_start = self.char.clone();
     self.read();
-    let mut i = 0;
     while self.char != str_start {
-      if i > 10 {
-        break;
-      }
-      i = i + 1;
+      // TODO: '\'aa\''
       self.read();
     }
+    let literal = chars_to_string(&self.code, start_index, self.next_char_index);
     self.read();
-    return (Token::String, chars_to_string(&self.code, start_index, self.next_char_index))
+    return (Token::String, literal);
   }
 
   // 查看是否是 标识符的首字符
@@ -348,16 +358,22 @@ impl AST{
     let literal = self.literal.clone();
     match self.token {
       Token::Number => {
-        println!("literal {}", literal);
         return Expression::Number(NumberLiteral {
-
+          literal,
+          value: 1.0, // TODO
+        })
+      },
+      Token::String => {
+        let str_len = literal.len();
+        let slice = String::from(&self.literal[1..str_len-1]);
+        return Expression::String(StringLiteral{
+          literal,
+          value: slice
         })
       },
       _ => ()
     }
-    return Expression::Number(NumberLiteral {
-
-    })
+    return Expression::Unknown
   }
 
   // 跳过空白字符
@@ -385,7 +401,9 @@ impl AST{
   }
 }
 #[derive(Debug)]
-pub struct Program {}
+pub struct Program {
+  pub body: Vec<Statement>
+}
 
 
 impl Program {}

@@ -3,18 +3,20 @@ mod ast;
 mod ast_token;
 mod ast_node;
 mod ast_utils;
+mod value;
+
 use context::Context;
 pub struct JSI {
-    context: Context,
+  context: Context,
 }
 
 impl JSI {
-    pub fn new() -> JSI {
-        JSI {
-            context: Context::new()
-        }
-    }
-    pub fn run(&self, code: String) {
-        return self.context.run(code)
-    }
+  pub fn new() -> JSI {
+      JSI {
+          context: Context::new()
+      }
+  }
+  pub fn run(&self, code: String) {
+      return self.context.run(code)
+  }
 }
