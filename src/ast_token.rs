@@ -4,59 +4,110 @@
 #[derive(Debug, PartialEq)]
 pub enum Token {
   // es6 keywords
-  BREAK,
-  CASE,
-  CATCH,
-  CLASS,
-  CONST,
-  CONTINUE,
-  DEBUGGER,
-  DEFAULT,
-  DELETE,
-  DO,
-  ELSE,
-  EXPORT,
-  EXTENDS,
-  FINALLY,
-  FOR,
-  FUNCTION,
-  IF,
-  IMPORT,
-  IN,
-  INSTANCEOF,
-  NEW,
-  RETURN,
-  SUPER,
-  SWITCH,
-  THIS,
-  THROW,
-  TRY,
-  TYPEOF,
-  VAR,
-  VOID,
-  WHILE,
-  WITH,
-  YIELD,
+  Break,
+  Case,
+  Catch,
+  Class,
+  Const,
+  Continue,
+  Debugger,
+  Default,
+  Delete,
+  Do,
+  Else,
+  Export,
+  Extends,
+  Finally,
+  For,
+  Function,
+  If,
+  Import,
+  In,
+  Instanceof,
+  New,
+  Return,
+  Super,
+  Switch,
+  This,
+  Throw,
+  Try,
+  Typeof,
+  Var,
+  Void,
+  While,
+  With,
+  Yield,
   // 仅在严格模式下作为关键字
-  IMPLEMENTS,
-  INTERFACE,
-  LET,
-  PACKAGE,
-  PRIVATE,
-  PROTECTED,
-  PUBLIC,
-  STATIC,
+  Implements,
+  Interface,
+  Let,
+  Package,
+  Private,
+  Protected,
+  Public,
+  Static,
 
   // 字面量 literal
-  NULL,
-  TRUE,
-  FALSE,
+  Null,
+  True,
+  False,
   // 类型标识符
-  NUMBER,
+  Number,
+  String,
   // 普通标识符
-  IDENTIFIER,
+  Identifier,
   // 运算符 operators
-  ASSIGN,
+  // 标点符号
+  Plus, // "+"
+	Minus, // "-"
+	Multiply, // "*"
+	Slash, // "/"
+	Remainder, // "%"
+	And, // "&"
+	Or, // "|"
+	ExclusiveOr, // "^"
+	ShiftLeft, // "<<"
+	ShiftRight, // ">>"
+	UnsignedShiftRight, // ">>>"
+	AndNot, // "&^"
+	AddAssign, // "+="
+	SubtractAssign, // "-="
+	MultiplyAssign, // "*="
+	QuotientAssign, // "/="
+	RemainderAssign, // "%="
+	AndAssign, // "&="
+	OrAssign, // "|="
+	ExclusiveOrAssign, // "^="
+	ShiftLeftAssign, // "<<="
+	ShiftRightAssign, // ">>="
+	UnsignedShiftRightAssign, // ">>>="
+	AndNotAssign, // "&^="
+	LogicalAnd, // "&&"
+	LogicalOr, // "||"
+	Increment, // "++"
+	Decrement, // "--"
+	Equal, // "=="
+	StrictEqual, // "==="
+	Less, // "<"
+	Greater, // ">"
+	Assign, // "="
+	Not, // "!"
+	BitwiseNot, // "~"
+	NotEqual, // "!="
+	StrictNotEqual, // "!=="
+	LessOrEqual, // "<="
+	GreaterOrEqual, // ">="
+	LeftParenthesis, // "("
+	LeftBracket, // "["
+	LeftBrace, // "{"
+	Comma, // ",",
+	Period, // "."
+	RightParenthesis, // ")"
+	RightBracket, // "]"
+	RightBrace, // "}"
+	Semicolon, // ";"
+	Colon, // ":"
+	QuestionMark, // "?"
   // not keyword
   ILLEGAL,
   // 结尾
@@ -66,63 +117,64 @@ pub enum Token {
 pub fn get_token_keyword(literal: &String, is_strict: bool) -> Token {
   let str = literal.as_str();
   match str {
-    "break" => Token::BREAK,
-    "case" => Token::CASE,
-    "catch" => Token::CATCH,
-    "class" => Token::CLASS,
-    "const" => Token::CONST,
-    "continue" => Token::CONTINUE,
-    "debugger" => Token::DEBUGGER,
-    "default" => Token::DEFAULT,
-    "delete" => Token::DELETE,
-    "do" => Token::DO,
-    "else" => Token::ELSE,
-    "export" => Token::EXPORT,
-    "extends" => Token::EXTENDS,
-    "finally" => Token::FINALLY,
-    "for" => Token::FOR,
-    "function" => Token::FUNCTION,
-    "if" => Token::IF,
-    "import" => Token::IMPORT,
-    "in" => Token::IN,
-    "instanceof" => Token::INSTANCEOF,
-    "new" => Token::NEW,
-    "return" => Token::RETURN,
-    "super" => Token::SUPER,
-    "switch" => Token::SWITCH,
-    "this" => Token::THIS,
-    "throw" => Token::THROW,
-    "try" => Token::TRY,
-    "typeof" => Token::TYPEOF,
-    "var" => Token::VAR,
-    "void" => Token::VOID,
-    "while" => Token::WHILE,
-    "with" => Token::WITH,
-    "yield" => Token::YIELD,
+    "break" => Token::Break,
+    "case" => Token::Case,
+    "catch" => Token::Catch,
+    "class" => Token::Class,
+    "const" => Token::Const,
+    "continue" => Token::Continue,
+    "debugger" => Token::Debugger,
+    "default" => Token::Default,
+    "delete" => Token::Delete,
+    "do" => Token::Do,
+    "else" => Token::Else,
+    "export" => Token::Export,
+    "extends" => Token::Extends,
+    "finally" => Token::Finally,
+    "for" => Token::For,
+    "function" => Token::Function,
+    "if" => Token::If,
+    "import" => Token::Import,
+    "in" => Token::In,
+    "instanceof" => Token::Instanceof,
+    "new" => Token::New,
+    "return" => Token::Return,
+    "super" => Token::Super,
+    "switch" => Token::Switch,
+    "this" => Token::This,
+    "throw" => Token::Throw,
+    "try" => Token::Try,
+    "typeof" => Token::Typeof,
+    "var" => Token::Var,
+    "void" => Token::Void,
+    "while" => Token::While,
+    "with" => Token::With,
+    "yield" => Token::Yield,
     _ => {
       if is_strict {
-        return match str {
-          "implements" => Token::IMPLEMENTS,
-          "interface" => Token::INTERFACE,
-          "let" => Token::LET,
-          "package" => Token::PACKAGE,
-          "private" => Token::PRIVATE,
-          "protected" => Token::PROTECTED,
-          "public" => Token::PUBLIC,
-          "static" => Token::STATIC,
+        match str {
+          "implements" => Token::Implements,
+          "interface" => Token::Interface,
+          "let" => Token::Let,
+          "package" => Token::Package,
+          "private" => Token::Private,
+          "protected" => Token::Protected,
+          "public" => Token::Public,
+          "static" => Token::Static,
           _ => Token::ILLEGAL,
         }
+      } else {
+        Token::ILLEGAL
       }
-      return Token::ILLEGAL
     }
   }
 }
 
 pub fn get_token_literal(literal: &String) -> Token {
   match literal.as_str() {
-    "null" => Token::NULL,
-    "true" => Token::TRUE,
-    "false" => Token::FALSE,
+    "null" => Token::Null,
+    "true" => Token::True,
+    "false" => Token::False,
     _ => Token::ILLEGAL
   }
 }

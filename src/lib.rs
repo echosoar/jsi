@@ -2,6 +2,7 @@ mod context;
 mod ast;
 mod ast_token;
 mod ast_node;
+mod ast_utils;
 use context::Context;
 pub struct JSI {
     context: Context,
