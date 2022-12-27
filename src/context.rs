@@ -1,21 +1,25 @@
-use crate::{ast::Program, ast_node::Statement, ast_node::{Expression}, value::Value};
+use crate::{ast::Program, ast_node::Statement, ast_node::{Expression}, value::Value, scope::Scope};
 
 use super::ast::AST;
 pub struct Context {
+  scope: Scope,
 }
 
 impl Context {
     pub fn new() -> Context {
-      Context{}
+      let ctx = Context {
+        scope: Scope::new(),
+      };
+      return ctx;
     }
     // 运行一段 JS 代码
-    pub fn run(&self, code: String) {
+    pub fn run(&mut self, code: String) {
       let mut ast = AST::new(code);
       let program = ast.parse();
       self.call(program);
     }
 
-    fn call(&self, program: Program) {
+    fn call(&mut self, program: Program) {
       // 创建全局作用域
       // 绑定函数声明
       // 绑定变量声明
@@ -26,7 +30,7 @@ impl Context {
             for variable in let_statement.list.iter() {
               if let Expression::Let(let_var) = variable {
                 let value = self.execute_expression(&let_var.initializer);
-                println!("initiallize:{:?}, {:?}",let_var.name, value);
+                self.scope.set_value(let_var.name.clone(), value);
               }
             }
           },

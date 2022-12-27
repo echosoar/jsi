@@ -2,7 +2,8 @@
 // mod super::token::TokenKeywords;
 use std::io;
 
-use crate::{ast_token::{get_token_keyword, Token, get_token_literal}, ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement}, ast_utils::{get_hex_number_value, chars_to_string}};
+use crate::{ast_token::{get_token_keyword, Token, get_token_literal}, ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression}, ast_utils::{get_hex_number_value, chars_to_string}};
+const AST_PRIORITY_MAX: i32 = 20;
 pub struct AST {
   // 当前字符
   char: char,
@@ -18,6 +19,8 @@ pub struct AST {
   token: Token,
   // 当前字面量
   literal: String,
+  // 当前表达式
+  cur_expr: Expression,
 }
 
 impl AST{
@@ -32,6 +35,7 @@ impl AST{
       length: len,
       token: Token::Identifier,
       literal: String::from(""),
+      cur_expr: Expression::Unknown,
     }
   }
 
@@ -71,6 +75,7 @@ impl AST{
         break;
       }
       let statement = self.parse_statement();
+      println!("statement: {:?}", statement);
       if let Statement::Unknown = statement  {
         // TODO: unknown statement
         break;
@@ -84,7 +89,20 @@ impl AST{
   fn parse_statement(&mut self) -> Statement {
     match self.token {
         Token::Let => self.parse_let_statement(),
-        _ => Statement::Unknown,
+        _ => {
+          let expression = self.parse_expression(AST_PRIORITY_MAX);
+          match  expression {
+              Expression::Unknown => {
+                Statement::Unknown
+              },
+              _ => {
+                Statement::Expression(ExpressionStatement{
+                  expression
+                })
+              }
+          }
+          
+        },
     }
   }
 
@@ -123,7 +141,7 @@ impl AST{
     if self.token == Token::Assign {
       // TODO:
       self.next();
-      node.initializer = Box::new(self.parse_assignment_expression());
+      node.initializer = Box::new(self.parse_expression(AST_PRIORITY_MAX));
     }
     return Expression::Let(node)
   }
@@ -329,6 +347,61 @@ impl AST{
     }
     return false;
   }
+  // 解析表达式
+  fn parse_expression(&mut self, priority: i32) -> Expression  {
+    // 根据优先级解析表达式
+    // ref: https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Operators/Operator_Precedence
+    let expression = match priority {
+      100 => {
+        None
+      },
+      18 => {
+        let mut expression = None;
+        loop {
+          let expr = match self.token {
+            Token::Period => { // 成员访问
+              self.parse_property_access_expression()
+            },
+            Token::LeftParenthesis => {  // 函数调用
+              self.parse_call_expression()
+            },
+            _ => {
+              None
+            }
+          };
+          if let Some(cur_expr) = expr {
+            self.cur_expr = cur_expr.clone();
+            expression = Some(cur_expr);
+          } else {
+            break;
+          }
+        }
+        expression
+      },
+      _ => {
+        let expr = self.parse_literal_expression();
+        if let Some(exprssion) = expr {
+          match self.token {
+            Token::Period | Token::LeftBracket => {
+              self.cur_expr = exprssion;
+              Some(self.parse_expression(18))
+            },
+            _ => Some(exprssion)
+          }
+        } else {
+          expr
+        }
+        
+      }
+    };
+    if let Some(expr) = expression {
+      return expr;
+    }
+    if priority > 0 {
+      return self.parse_expression(priority - 1)
+    }
+    return Expression::Unknown
+  }
 
   // 解析赋值表达式
   fn parse_assignment_expression(&mut self) -> Expression {
@@ -350,30 +423,62 @@ impl AST{
   }
 
   fn parse_conditional_expression(&mut self) -> Expression {
-    return self.parse_literal_expression();
+    return self.parse_literal_expression().unwrap();
   }
 
   // 解析字面量
-  fn parse_literal_expression(&mut self) -> Expression {
+  fn parse_literal_expression(&mut self) -> Option<Expression> {
     let literal = self.literal.clone();
     match self.token {
+      Token::Identifier => {
+        self.next();
+        return Some(Expression::Identifier(IdentifierLiteral{
+          literal
+        }));
+      },
       Token::Number => {
-        return Expression::Number(NumberLiteral {
+        let value = self.parse_number_literal_expression();
+        self.next();
+        return Some(Expression::Number(NumberLiteral {
           literal,
-          value: 1.0, // TODO
-        })
+          value,
+        }))
       },
       Token::String => {
         let str_len = literal.len();
         let slice = String::from(&self.literal[1..str_len-1]);
-        return Expression::String(StringLiteral{
+        self.next();
+        return Some(Expression::String(StringLiteral{
           literal,
           value: slice
-        })
+        }))
       },
-      _ => ()
+      _ => None,
     }
-    return Expression::Unknown
+  }
+
+  // 解析 . 成员访问语法
+  fn parse_property_access_expression(&mut self) -> Option<Expression> {
+    self.next();
+    let literal = self.literal.clone();
+    println!("ap {}", literal);
+    self.next();
+    return Some(Expression::PropertyAccess(PropertyAccessExpression{
+      expression: Box::new(self.cur_expr.clone()),
+      name: IdentifierLiteral { literal }
+    }))
+  }
+
+  // 解析方法调用
+  fn parse_call_expression(&mut self) -> Option<Expression> {
+    // 1. 解析参数
+    // CallExpression {}
+     return None;
+  }
+
+  fn parse_number_literal_expression(&mut self) -> f64 {
+    // 检测是否是 float
+    self.literal.parse::<f64>().unwrap()
   }
 
   // 跳过空白字符
@@ -393,7 +498,7 @@ impl AST{
 
   // TODO: 抛出错误，未预期的标识符
   fn error_unexpected_token(&mut self, expected: Token) {
-    println!("unexpected_token {:?}", expected)
+    println!("unexpected_token {:?} {:?}", expected, self.token)
   }
 
   fn error_common(&mut self, error_msg: &str) {

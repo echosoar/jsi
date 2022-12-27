@@ -4,6 +4,7 @@ mod ast_token;
 mod ast_node;
 mod ast_utils;
 mod value;
+mod scope;
 
 use context::Context;
 pub struct JSI {
@@ -16,7 +17,7 @@ impl JSI {
           context: Context::new()
       }
   }
-  pub fn run(&self, code: String) {
+  pub fn run(&mut self, code: String) {
       return self.context.run(code)
   }
 }

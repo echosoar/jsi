@@ -22,4 +22,4 @@ pub fn get_hex_number_value(chr: char) -> i32 {
 
 pub fn chars_to_string(chars: &Vec<char>, start: usize, end: usize) -> String {
   return chars[start..end].iter().collect()
-} 
+}
