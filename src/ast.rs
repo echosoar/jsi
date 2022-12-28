@@ -212,7 +212,10 @@ impl AST{
       
       let cur_char = self.char;
       let cur_char_string = String::from(cur_char);
+      self.read();
       let (token, literal) =  match cur_char {
+        '>' => (Token::Greater, cur_char_string),
+        '<' => (Token::Less, cur_char_string),
         '=' => (Token::Assign, cur_char_string),
         ':' => (Token::Colon, cur_char_string),
         '.' => (Token::Period, cur_char_string),
@@ -224,9 +227,10 @@ impl AST{
         ']' => (Token::RightBracket, cur_char_string),
         '{' => (Token::LeftBrace, cur_char_string),
         '}' => (Token::RightBrace, cur_char_string),
+        '?' => (Token::QuestionMark, cur_char_string),
         _ => (Token::ILLEGAL, cur_char_string),
       };
-      self.read();
+     
       return (token, literal);
     }
   }
@@ -378,6 +382,24 @@ impl AST{
         }
         expression
       },
+      10 => {
+        let mut expression = None;
+        loop {
+          let expr = match self.token {
+            Token::Less | Token::Greater | Token::LessOrEqual | Token::GreaterOrEqual => {
+              self.parse_binary_expression()
+            },
+            _ => None
+          };
+          if let Some(cur_expr) = expr {
+            self.cur_expr = cur_expr.clone();
+            expression = Some(cur_expr);
+          } else {
+            break;
+          }
+        }
+        expression
+      },
       _ => {
         let expr = self.parse_literal_expression();
         if let Some(exprssion) = expr {
@@ -472,8 +494,25 @@ impl AST{
   // 解析方法调用
   fn parse_call_expression(&mut self) -> Option<Expression> {
     // 1. 解析参数
+    self.parse_arguments();
     // CallExpression {}
      return None;
+  }
+
+  // 解析参数
+  fn parse_arguments(&mut self) {
+    self.check_token_and_next(Token::LeftParenthesis);
+    let arguments:Vec<i32> = vec![];
+    while self.token != Token::RightParenthesis && self.token != Token::EOF {
+      let expr = self.parse_expression(AST_PRIORITY_MAX);
+      println!("arguments expr:{:?}", expr);
+      self.next()
+    }
+    println!("arguments:{:?}", arguments)
+  }
+
+  fn parse_binary_expression(&mut self) -> Option<Expression> {
+    None
   }
 
   fn parse_number_literal_expression(&mut self) -> f64 {
