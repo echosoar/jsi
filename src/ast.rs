@@ -17,6 +17,8 @@ pub struct AST {
   length: usize,
   // 当前标识符
   token: Token,
+  // 当前标识符优先级
+  token_priority: i32,
   // 当前字面量
   literal: String,
   // 当前表达式
@@ -34,6 +36,7 @@ impl AST{
       code: chars,
       length: len,
       token: Token::Identifier,
+      token_priority: 0,
       literal: String::from(""),
       cur_expr: Expression::Unknown,
     }
@@ -90,7 +93,7 @@ impl AST{
     match self.token {
         Token::Let => self.parse_let_statement(),
         _ => {
-          let expression = self.parse_expression(AST_PRIORITY_MAX);
+          let expression = self.parse_expression(0);
           match  expression {
               Expression::Unknown => {
                 Statement::Unknown
@@ -139,9 +142,8 @@ impl AST{
     };
 
     if self.token == Token::Assign {
-      // TODO:
       self.next();
-      node.initializer = Box::new(self.parse_expression(AST_PRIORITY_MAX));
+      node.initializer = Box::new(self.parse_expression(0));
     }
     return Expression::Let(node)
   }
@@ -164,11 +166,12 @@ impl AST{
     let scan_res = self.scan();
     self.token = scan_res.0;
     self.literal = scan_res.1;
+    self.token_priority = scan_res.2;
     println!("next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
   // 扫描获取符号
-  pub fn scan(&mut self) -> (Token, String) {
+  pub fn scan(&mut self) -> (Token, String, i32) {
     // TODO: 严格模式
     let is_strict = true;
     loop {
@@ -183,17 +186,17 @@ impl AST{
             match token_literal {
               Token::ILLEGAL => {
                 // 其他非字面量
-                return (Token::Identifier, literal)
+                return (Token::Identifier, literal, 0)
               },
               _ => {
                 // 非字面量:null、true和false
-                return (token_literal, literal)
+                return (token_literal, literal, 0)
               },
             }
           },
           _ => {
             // 关键字
-            return (token, literal)
+            return (token, literal, 0)
           },
         };
       }
@@ -207,31 +210,33 @@ impl AST{
       }
 
       if self.next_char_index == self.length {
-        return (Token::EOF, String::from(""));
+        return (Token::EOF, String::from(""), 0);
       }
       
       let cur_char = self.char;
       let cur_char_string = String::from(cur_char);
       self.read();
-      let (token, literal) =  match cur_char {
-        '>' => (Token::Greater, cur_char_string),
-        '<' => (Token::Less, cur_char_string),
-        '=' => (Token::Assign, cur_char_string),
-        ':' => (Token::Colon, cur_char_string),
-        '.' => (Token::Period, cur_char_string),
-        ',' => (Token::Comma, cur_char_string),
-        ';' => (Token::Semicolon, cur_char_string),
-        '(' => (Token::LeftParenthesis, cur_char_string),
-        ')' => (Token::RightParenthesis, cur_char_string),
-        '[' => (Token::LeftBracket, cur_char_string),
-        ']' => (Token::RightBracket, cur_char_string),
-        '{' => (Token::LeftBrace, cur_char_string),
-        '}' => (Token::RightBrace, cur_char_string),
-        '?' => (Token::QuestionMark, cur_char_string),
-        _ => (Token::ILLEGAL, cur_char_string),
+      let (token, literal, priority) =  match cur_char {
+        '+' => (Token::Plus, cur_char_string, 12),
+        '-' => (Token::Minus, cur_char_string, 12),
+        '>' => (Token::Greater, cur_char_string, 10),
+        '<' => (Token::Less, cur_char_string, 10),
+        '=' => (Token::Assign, cur_char_string, 2),
+        ':' => (Token::Colon, cur_char_string, 0),
+        '.' => (Token::Period, cur_char_string, 18),
+        ',' => (Token::Comma, cur_char_string, 1),
+        ';' => (Token::Semicolon, cur_char_string, 0),
+        '(' => (Token::LeftParenthesis, cur_char_string, 18),
+        ')' => (Token::RightParenthesis, cur_char_string, 18),
+        '[' => (Token::LeftBracket, cur_char_string, 18),
+        ']' => (Token::RightBracket, cur_char_string, 18),
+        '{' => (Token::LeftBrace, cur_char_string, 0),
+        '}' => (Token::RightBrace, cur_char_string, 0),
+        '?' => (Token::QuestionMark, cur_char_string, 3),
+        _ => (Token::ILLEGAL, cur_char_string, 0),
       };
      
-      return (token, literal);
+      return (token, literal, priority);
     }
   }
 
@@ -262,7 +267,7 @@ impl AST{
   }
 
   // 扫描数字字面量
-  fn scan_number(&mut self) -> (Token, String) {
+  fn scan_number(&mut self) -> (Token, String, i32) {
     // 十进制
     // 八进制 0777 |0o777 | 0O777
     // 二进制 0b | 0B
@@ -300,7 +305,7 @@ impl AST{
       self.read();
       self.read_number(10);
     }
-    return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index))
+    return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index), 0)
   }
 
   fn read_number(&mut self, binary: i32) {
@@ -314,7 +319,7 @@ impl AST{
   }
 
   // 扫描字符串字面量
-  fn scan_string(&mut self) -> (Token, String) {
+  fn scan_string(&mut self) -> (Token, String, i32) {
     let start_index = self.cur_char_index;
     let str_start = self.char.clone();
     self.read();
@@ -324,7 +329,7 @@ impl AST{
     }
     let literal = chars_to_string(&self.code, start_index, self.next_char_index);
     self.read();
-    return (Token::String, literal);
+    return (Token::String, literal, 0);
   }
 
   // 查看是否是 标识符的首字符
@@ -356,22 +361,14 @@ impl AST{
     // 根据优先级解析表达式
     // ref: https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Operators/Operator_Precedence
     let expression = match priority {
-      100 => {
-        None
-      },
-      18 => {
+      12 => {
         let mut expression = None;
         loop {
           let expr = match self.token {
-            Token::Period => { // 成员访问
-              self.parse_property_access_expression()
+            Token::Plus | Token::Minus => {
+              self.parse_binary_expression()
             },
-            Token::LeftParenthesis => {  // 函数调用
-              self.parse_call_expression()
-            },
-            _ => {
-              None
-            }
+            _ => None
           };
           if let Some(cur_expr) = expr {
             self.cur_expr = cur_expr.clone();
@@ -400,32 +397,58 @@ impl AST{
         }
         expression
       },
-      _ => {
+      18 => {
+        let mut expression = None;
+        loop {
+          let expr = match self.token {
+            Token::Period => { // 成员访问
+              self.parse_property_access_expression()
+            },
+            Token::LeftParenthesis => {  // 函数调用
+              self.parse_call_expression()
+            },
+            _ => {
+              None
+            }
+          };
+          if let Some(cur_expr) = expr {
+            self.cur_expr = cur_expr.clone();
+            expression = Some(cur_expr);
+          } else {
+            break;
+          }
+        }
+        expression
+      },
+      
+      20 => {
         let expr = self.parse_literal_expression();
+        println!("exprssion:{:?} {:?}", expr, self.token_priority);
         if let Some(exprssion) = expr {
-          match self.token {
-            Token::Period | Token::LeftBracket => {
-              self.cur_expr = exprssion;
-              Some(self.parse_expression(18))
+          self.cur_expr = exprssion.clone();
+          match exprssion {
+            Expression::Number(_) | Expression::String(_) => {
+              Some(exprssion)
             },
-            Token::Less | Token::Greater | Token::LessOrEqual | Token::GreaterOrEqual  => {
-              self.cur_expr = exprssion;
-              Some(self.parse_expression(10))
-            },
-            _ => Some(exprssion)
+            _ => {
+              Some(self.parse_expression(self.token_priority))
+            }
           }
         } else {
           expr
         }
         
-      }
+      },
+      _ => {
+        None
+      },
     };
     if let Some(expr) = expression {
       return expr;
     }
 
-    if priority > 0 {
-      return self.parse_expression(priority - 1)
+    if priority < AST_PRIORITY_MAX {
+      return self.parse_expression(priority +1)
     }
     
     return Expression::Unknown
@@ -511,7 +534,7 @@ impl AST{
     let arguments:Vec<i32> = vec![];
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
       println!("arguments expr pre {:?}", self.token);
-      let expr = self.parse_expression(AST_PRIORITY_MAX);
+      let expr = self.parse_expression(0);
       println!("arguments expr:{:?}", expr);
       if self.token != Token::Comma {
 				break
@@ -524,11 +547,12 @@ impl AST{
   fn parse_binary_expression(&mut self) -> Option<Expression> {
     println!("binary {:?} {:?}", self.token, self.cur_expr);
     let operator = self.token.clone();
+    let operator_priority = self.token_priority;
     self.next();
     Some(Expression::Binary(BinaryExpression{
       left: Box::new(self.cur_expr.clone()),
       operator,
-      right: Box::new(self.parse_expression(AST_PRIORITY_MAX)),
+      right: Box::new(self.parse_expression(operator_priority + 1)),
     }))
   }
 
