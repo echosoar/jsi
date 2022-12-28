@@ -2,7 +2,7 @@
 // mod super::token::TokenKeywords;
 use std::io;
 
-use crate::{ast_token::{get_token_keyword, Token, get_token_literal}, ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression}, ast_utils::{get_hex_number_value, chars_to_string}};
+use crate::{ast_token::{get_token_keyword, Token, get_token_literal}, ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression}, ast_utils::{get_hex_number_value, chars_to_string}};
 const AST_PRIORITY_MAX: i32 = 20;
 pub struct AST {
   // 当前字符
@@ -408,6 +408,10 @@ impl AST{
               self.cur_expr = exprssion;
               Some(self.parse_expression(18))
             },
+            Token::Less | Token::Greater | Token::LessOrEqual | Token::GreaterOrEqual  => {
+              self.cur_expr = exprssion;
+              Some(self.parse_expression(10))
+            },
             _ => Some(exprssion)
           }
         } else {
@@ -419,9 +423,11 @@ impl AST{
     if let Some(expr) = expression {
       return expr;
     }
+
     if priority > 0 {
       return self.parse_expression(priority - 1)
     }
+    
     return Expression::Unknown
   }
 
@@ -504,15 +510,26 @@ impl AST{
     self.check_token_and_next(Token::LeftParenthesis);
     let arguments:Vec<i32> = vec![];
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
+      println!("arguments expr pre {:?}", self.token);
       let expr = self.parse_expression(AST_PRIORITY_MAX);
       println!("arguments expr:{:?}", expr);
-      self.next()
+      if self.token != Token::Comma {
+				break
+			}
+      // self.next()
     }
     println!("arguments:{:?}", arguments)
   }
 
   fn parse_binary_expression(&mut self) -> Option<Expression> {
-    None
+    println!("binary {:?} {:?}", self.token, self.cur_expr);
+    let operator = self.token.clone();
+    self.next();
+    Some(Expression::Binary(BinaryExpression{
+      left: Box::new(self.cur_expr.clone()),
+      operator,
+      right: Box::new(self.parse_expression(AST_PRIORITY_MAX)),
+    }))
   }
 
   fn parse_number_literal_expression(&mut self) -> f64 {

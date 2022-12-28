@@ -1,7 +1,7 @@
 
 // 关键字
 // ref: https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Lexical_grammar#%E5%85%B3%E9%94%AE%E5%AD%97
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
   // es6 keywords
   Break,
@@ -113,6 +113,7 @@ pub enum Token {
   // 结尾
   EOF,
 }
+
 
 pub fn get_token_keyword(literal: &String, is_strict: bool) -> Token {
   let str = literal.as_str();

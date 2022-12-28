@@ -11,6 +11,7 @@ pub enum Statement {
 pub enum Expression {
   Let(LetVariableDeclaration),
   // Assign(AssignExpression),
+  Binary(BinaryExpression),
   PropertyAccess(PropertyAccessExpression),
   Identifier(IdentifierLiteral),
   Number(NumberLiteral),
@@ -35,6 +36,25 @@ pub struct AssignExpression {
   pub left: Box<Expression>,
   pub operator: Token,
   pub right: Box<Expression>,
+}
+
+// . 表达式
+#[derive(Debug)]
+pub struct BinaryExpression {
+  pub left: Box<Expression>,
+  pub operator: Token,
+  pub right: Box<Expression>,
+}
+
+
+impl Clone for BinaryExpression {
+  fn clone(&self) -> Self {
+    BinaryExpression {
+      left: self.left.clone(),
+      operator: self.operator.clone(),
+      right: self.right.clone(),
+    }
+  }
 }
 
 // . 表达式
