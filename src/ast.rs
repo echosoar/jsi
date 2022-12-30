@@ -93,7 +93,7 @@ impl AST{
     match self.token {
         Token::Let => self.parse_let_statement(),
         _ => {
-          let expression = self.parse_expression(0);
+          let expression = self.parse_expression();
           match  expression {
               Expression::Unknown => {
                 Statement::Unknown
@@ -143,7 +143,7 @@ impl AST{
 
     if self.token == Token::Assign {
       self.next();
-      node.initializer = Box::new(self.parse_expression(0));
+      node.initializer = Box::new(self.parse_expression());
     }
     return Expression::Let(node)
   }
@@ -357,175 +357,88 @@ impl AST{
     return false;
   }
   // 解析表达式
-  fn parse_expression(&mut self, priority: i32) -> Expression  {
-    // 根据优先级解析表达式
-    // ref: https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Operators/Operator_Precedence
-    let expression = match priority {
-      12 => {
-        let mut expression = None;
-        loop {
-          let expr = match self.token {
-            Token::Plus | Token::Minus => {
-              self.parse_binary_expression()
-            },
-            _ => None
-          };
-          if let Some(cur_expr) = expr {
-            self.cur_expr = cur_expr.clone();
-            expression = Some(cur_expr);
-          } else {
-            break;
-          }
-        }
-        expression
-      },
-      10 => {
-        let mut expression = None;
-        loop {
-          let expr = match self.token {
-            Token::Less | Token::Greater | Token::LessOrEqual | Token::GreaterOrEqual => {
-              self.parse_binary_expression()
-            },
-            _ => None
-          };
-          if let Some(cur_expr) = expr {
-            self.cur_expr = cur_expr.clone();
-            expression = Some(cur_expr);
-          } else {
-            break;
-          }
-        }
-        expression
-      },
-      18 => {
-        let mut expression = None;
-        loop {
-          let expr = match self.token {
-            Token::Period => { // 成员访问
-              self.parse_property_access_expression()
-            },
-            Token::LeftParenthesis => {  // 函数调用
-              self.parse_call_expression()
-            },
-            _ => {
-              None
-            }
-          };
-          if let Some(cur_expr) = expr {
-            self.cur_expr = cur_expr.clone();
-            expression = Some(cur_expr);
-          } else {
-            break;
-          }
-        }
-        expression
-      },
-      
-      20 => {
-        let expr = self.parse_literal_expression();
-        println!("exprssion:{:?} {:?}", expr, self.token_priority);
-        if let Some(exprssion) = expr {
-          self.cur_expr = exprssion.clone();
-          match exprssion {
-            Expression::Number(_) | Expression::String(_) => {
-              Some(exprssion)
-            },
-            _ => {
-              Some(self.parse_expression(self.token_priority))
-            }
-          }
-        } else {
-          expr
-        }
-        
-      },
-      _ => {
-        None
-      },
-    };
-    if let Some(expr) = expression {
-      return expr;
+  fn parse_expression(&mut self) -> Expression  {
+    return self.parse_relationship_expression();
+  }
+  // 解析关系运算符 > /< 优先级 10
+  fn parse_relationship_expression(&mut self) -> Expression {
+    let left = self.parse_access_expression();
+    if self.token == Token::Less || self.token == Token::Greater {
+      return Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator: self.token.clone(),
+        right: Box::new(self.parse_access_expression())
+      })
     }
-
-    if priority < AST_PRIORITY_MAX {
-      return self.parse_expression(priority +1)
-    }
-    
-    return Expression::Unknown
+    return left;
   }
 
-  // 解析赋值表达式
-  fn parse_assignment_expression(&mut self) -> Expression {
-    // 解析三目表达式 bool ? a: b;
-    let left = self.parse_conditional_expression();
-    let operator = match self.token {
-      Token::Assign => {
-        Token::Assign
-      },
-      _ => Token::ILLEGAL,
-    };
-    // 获取右值
+
+  // 解析访问(.、[])语法 优先级 18
+  fn parse_access_expression(&mut self) -> Expression {
+    let mut left = self.parse_literal_expression();
+    loop {
+      self.cur_expr = left.clone();
+      let new_left = match self.token {
+        Token::Period => self.parse_property_access_expression(),
+        Token::LeftParenthesis => self.parse_call_expression(),
+        _ => Expression::Unknown,
+      };
+      if let  Expression::Unknown = new_left {
+        break;
+      }
+      left = new_left;
+    }
+    return left;
+  }
+  // 解析属性访问(.)语法 优先级 18
+  fn parse_property_access_expression(&mut self) -> Expression {
     self.next();
-    if operator == Token::ILLEGAL {
-      return left;
-    }
-    return left
-
+    let literal = self.literal.clone();
+    self.next();
+    return Expression::PropertyAccess(PropertyAccessExpression{
+      expression: Box::new(self.cur_expr.clone()),
+      name: IdentifierLiteral { literal }
+    });
   }
 
-  fn parse_conditional_expression(&mut self) -> Expression {
-    return self.parse_literal_expression().unwrap();
+  // 解析属方法调用语法 优先级 18
+  fn parse_call_expression(&mut self) -> Expression {
+    // 1. 解析参数
+    self.parse_arguments();
+    // CallExpression {}
+    return Expression::Unknown;
   }
 
-  // 解析字面量
-  fn parse_literal_expression(&mut self) -> Option<Expression> {
+  // 解析字面量 优先级 20 最后处理
+  fn parse_literal_expression(&mut self) -> Expression {
     let literal = self.literal.clone();
     match self.token {
       Token::Identifier => {
         self.next();
-        return Some(Expression::Identifier(IdentifierLiteral{
+        Expression::Identifier(IdentifierLiteral{
           literal
-        }));
+        })
       },
       Token::Number => {
         let value = self.parse_number_literal_expression();
         self.next();
-        return Some(Expression::Number(NumberLiteral {
+        return Expression::Number(NumberLiteral {
           literal,
           value,
-        }))
+        })
       },
       Token::String => {
         let str_len = literal.len();
         let slice = String::from(&self.literal[1..str_len-1]);
         self.next();
-        return Some(Expression::String(StringLiteral{
+        Expression::String(StringLiteral{
           literal,
           value: slice
-        }))
+        })
       },
-      _ => None,
+      _ => Expression::Unknown,
     }
-  }
-
-  // 解析 . 成员访问语法
-  fn parse_property_access_expression(&mut self) -> Option<Expression> {
-    self.next();
-    let literal = self.literal.clone();
-    println!("ap {}", literal);
-    self.next();
-    return Some(Expression::PropertyAccess(PropertyAccessExpression{
-      expression: Box::new(self.cur_expr.clone()),
-      name: IdentifierLiteral { literal }
-    }))
-  }
-
-  // 解析方法调用
-  fn parse_call_expression(&mut self) -> Option<Expression> {
-    // 1. 解析参数
-    self.parse_arguments();
-    // CallExpression {}
-     return None;
   }
 
   // 解析参数
@@ -534,7 +447,7 @@ impl AST{
     let arguments:Vec<i32> = vec![];
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
       println!("arguments expr pre {:?}", self.token);
-      let expr = self.parse_expression(0);
+      let expr = self.parse_expression();
       println!("arguments expr:{:?}", expr);
       if self.token != Token::Comma {
 				break
@@ -542,18 +455,6 @@ impl AST{
       // self.next()
     }
     println!("arguments:{:?}", arguments)
-  }
-
-  fn parse_binary_expression(&mut self) -> Option<Expression> {
-    println!("binary {:?} {:?}", self.token, self.cur_expr);
-    let operator = self.token.clone();
-    let operator_priority = self.token_priority;
-    self.next();
-    Some(Expression::Binary(BinaryExpression{
-      left: Box::new(self.cur_expr.clone()),
-      operator,
-      right: Box::new(self.parse_expression(operator_priority + 1)),
-    }))
   }
 
   fn parse_number_literal_expression(&mut self) -> f64 {
