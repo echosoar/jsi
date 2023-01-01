@@ -12,15 +12,23 @@ pub enum Expression {
   Let(LetVariableDeclaration),
   // Assign(AssignExpression),
   Binary(BinaryExpression),
+  Conditional(ConditionalExpression),
   PropertyAccess(PropertyAccessExpression),
+  Call(CallExpression),
   Identifier(IdentifierLiteral),
   Number(NumberLiteral),
   String(StringLiteral),
-  Undefined,
+  Keyword(Keywords),
   Unknown,
 }
 
-
+#[derive(Debug,Clone)]
+pub enum Keywords {
+  False,
+  True,
+  Null,
+  Undefined,
+}
 
 #[derive(Debug)]
 pub struct LetVariableStatement {
@@ -31,104 +39,62 @@ pub struct LetVariableStatement {
 pub struct ExpressionStatement {
   pub expression: Expression
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssignExpression {
   pub left: Box<Expression>,
   pub operator: Token,
   pub right: Box<Expression>,
 }
 
+// 条件表达式
+#[derive(Debug, Clone)]
+pub struct ConditionalExpression {
+  pub condition: Box<Expression>,
+  pub when_true: Box<Expression>,
+  pub when_false: Box<Expression>,
+}
+
 // . 表达式
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinaryExpression {
   pub left: Box<Expression>,
   pub operator: Token,
   pub right: Box<Expression>,
 }
-
-
-impl Clone for BinaryExpression {
-  fn clone(&self) -> Self {
-    BinaryExpression {
-      left: self.left.clone(),
-      operator: self.operator.clone(),
-      right: self.right.clone(),
-    }
-  }
+// 方法调用表达式
+#[derive(Debug, Clone)]
+pub struct CallExpression {
+  pub expression: Box<Expression>,
+  pub arguments: Vec<Expression>,
 }
 
-// . 表达式
-#[derive(Debug)]
+// . 属性访问表达式
+#[derive(Debug, Clone)]
 pub struct PropertyAccessExpression {
   pub expression: Box<Expression>,
   pub name: IdentifierLiteral,
 }
 
-impl Clone for PropertyAccessExpression {
-  fn clone(&self) -> Self {
-    PropertyAccessExpression {
-      expression: self.expression.clone(),
-      name: self.name.clone(),
-    }
-  }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct  IdentifierLiteral {
   pub literal: String,
 }
 
-impl Clone for IdentifierLiteral {
-  fn clone(&self) -> Self {
-    IdentifierLiteral {
-      literal: self.literal.clone(),
-    }
-  }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct  NumberLiteral {
   pub literal: String,
   pub value: f64,
 }
 
 
-impl Clone for NumberLiteral {
-  fn clone(&self) -> Self {
-    NumberLiteral {
-      literal: self.literal.clone(),
-      value: self.value,
-    }
-  }
-}
-
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct  StringLiteral {
   pub literal: String,
   pub value: String
 }
 
-impl Clone for StringLiteral {
-  fn clone(&self) -> Self {
-    StringLiteral {
-      literal: self.literal.clone(),
-      value: self.value.clone(),
-    }
-  }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LetVariableDeclaration {
   pub name: String,
   pub initializer: Box<Expression>
-}
-
-impl Clone for LetVariableDeclaration {
-  fn clone(&self) -> Self {
-    LetVariableDeclaration {
-      name: self.name.clone(),
-      initializer: self.initializer.clone(),
-    }
-  }
 }

@@ -2,8 +2,9 @@
 // mod super::token::TokenKeywords;
 use std::io;
 
-use crate::{ast_token::{get_token_keyword, Token, get_token_literal}, ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression}, ast_utils::{get_hex_number_value, chars_to_string}};
-const AST_PRIORITY_MAX: i32 = 20;
+use crate::ast_token::{get_token_keyword, Token, get_token_literal};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords};
+use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
   char: char,
@@ -17,8 +18,6 @@ pub struct AST {
   length: usize,
   // 当前标识符
   token: Token,
-  // 当前标识符优先级
-  token_priority: i32,
   // 当前字面量
   literal: String,
   // 当前表达式
@@ -36,7 +35,6 @@ impl AST{
       code: chars,
       length: len,
       token: Token::Identifier,
-      token_priority: 0,
       literal: String::from(""),
       cur_expr: Expression::Unknown,
     }
@@ -138,7 +136,7 @@ impl AST{
     self.next();
     let mut node = LetVariableDeclaration{
       name: literal,
-      initializer: Box::new(Expression::Undefined),
+      initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
     };
 
     if self.token == Token::Assign {
@@ -166,12 +164,11 @@ impl AST{
     let scan_res = self.scan();
     self.token = scan_res.0;
     self.literal = scan_res.1;
-    self.token_priority = scan_res.2;
     println!("next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
   // 扫描获取符号
-  pub fn scan(&mut self) -> (Token, String, i32) {
+  pub fn scan(&mut self) -> (Token, String) {
     // TODO: 严格模式
     let is_strict = true;
     loop {
@@ -186,17 +183,17 @@ impl AST{
             match token_literal {
               Token::ILLEGAL => {
                 // 其他非字面量
-                return (Token::Identifier, literal, 0)
+                return (Token::Identifier, literal)
               },
               _ => {
                 // 非字面量:null、true和false
-                return (token_literal, literal, 0)
+                return (token_literal, literal)
               },
             }
           },
           _ => {
             // 关键字
-            return (token, literal, 0)
+            return (token, literal)
           },
         };
       }
@@ -210,33 +207,33 @@ impl AST{
       }
 
       if self.next_char_index == self.length {
-        return (Token::EOF, String::from(""), 0);
+        return (Token::EOF, String::from(""));
       }
       
       let cur_char = self.char;
       let cur_char_string = String::from(cur_char);
       self.read();
-      let (token, literal, priority) =  match cur_char {
-        '+' => (Token::Plus, cur_char_string, 12),
-        '-' => (Token::Minus, cur_char_string, 12),
-        '>' => (Token::Greater, cur_char_string, 10),
-        '<' => (Token::Less, cur_char_string, 10),
-        '=' => (Token::Assign, cur_char_string, 2),
-        ':' => (Token::Colon, cur_char_string, 0),
-        '.' => (Token::Period, cur_char_string, 18),
-        ',' => (Token::Comma, cur_char_string, 1),
-        ';' => (Token::Semicolon, cur_char_string, 0),
-        '(' => (Token::LeftParenthesis, cur_char_string, 18),
-        ')' => (Token::RightParenthesis, cur_char_string, 18),
-        '[' => (Token::LeftBracket, cur_char_string, 18),
-        ']' => (Token::RightBracket, cur_char_string, 18),
-        '{' => (Token::LeftBrace, cur_char_string, 0),
-        '}' => (Token::RightBrace, cur_char_string, 0),
-        '?' => (Token::QuestionMark, cur_char_string, 3),
-        _ => (Token::ILLEGAL, cur_char_string, 0),
+      let (token, literal) =  match cur_char {
+        '+' => (Token::Plus, cur_char_string),
+        '-' => (Token::Minus, cur_char_string),
+        '>' => (Token::Greater, cur_char_string),
+        '<' => (Token::Less, cur_char_string),
+        '=' => (Token::Assign, cur_char_string),
+        ':' => (Token::Colon, cur_char_string),
+        '.' => (Token::Period, cur_char_string),
+        ',' => (Token::Comma, cur_char_string),
+        ';' => (Token::Semicolon, cur_char_string),
+        '(' => (Token::LeftParenthesis, cur_char_string),
+        ')' => (Token::RightParenthesis, cur_char_string),
+        '[' => (Token::LeftBracket, cur_char_string),
+        ']' => (Token::RightBracket, cur_char_string),
+        '{' => (Token::LeftBrace, cur_char_string),
+        '}' => (Token::RightBrace, cur_char_string),
+        '?' => (Token::QuestionMark, cur_char_string),
+        _ => (Token::ILLEGAL, cur_char_string),
       };
      
-      return (token, literal, priority);
+      return (token, literal);
     }
   }
 
@@ -267,7 +264,7 @@ impl AST{
   }
 
   // 扫描数字字面量
-  fn scan_number(&mut self) -> (Token, String, i32) {
+  fn scan_number(&mut self) -> (Token, String) {
     // 十进制
     // 八进制 0777 |0o777 | 0O777
     // 二进制 0b | 0B
@@ -305,7 +302,7 @@ impl AST{
       self.read();
       self.read_number(10);
     }
-    return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index), 0)
+    return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index))
   }
 
   fn read_number(&mut self, binary: i32) {
@@ -319,7 +316,7 @@ impl AST{
   }
 
   // 扫描字符串字面量
-  fn scan_string(&mut self) -> (Token, String, i32) {
+  fn scan_string(&mut self) -> (Token, String) {
     let start_index = self.cur_char_index;
     let str_start = self.char.clone();
     self.read();
@@ -329,7 +326,7 @@ impl AST{
     }
     let literal = chars_to_string(&self.code, start_index, self.next_char_index);
     self.read();
-    return (Token::String, literal, 0);
+    return (Token::String, literal);
   }
 
   // 查看是否是 标识符的首字符
@@ -358,24 +355,73 @@ impl AST{
   }
   // 解析表达式
   fn parse_expression(&mut self) -> Expression  {
-    return self.parse_relationship_expression();
+    return self.parse_conditional_expression();
   }
-  // 解析关系运算符 > /< 优先级 10
+
+  // 解析三目运算符，优先级 3
+  // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-conditional-operator
+  fn parse_conditional_expression(&mut self) -> Expression {
+    let left = self.parse_relationship_expression();
+    if self.token == Token::QuestionMark {
+      // 跳过 ?
+      self.next();
+
+      let when_true = self.parse_expression();
+      // 期待是 :
+      self.check_token_and_next(Token::Colon);
+      let when_false = self.parse_expression();
+      
+      return Expression::Conditional(ConditionalExpression{
+        condition: Box::new(left),
+        when_true: Box::new(when_true),
+        when_false: Box::new(when_false),
+      });
+    }
+  
+    return left
+  }
+
+  // 解析关系运算符 > 、< 优先级 10
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
   fn parse_relationship_expression(&mut self) -> Expression {
-    let left = self.parse_access_expression();
+    let left = self.parse_additive_expression();
     if self.token == Token::Less || self.token == Token::Greater {
+      let operator = self.token.clone();
+      // 跳过当前的运算符 >、<
+      self.next();
       return Expression::Binary(BinaryExpression {
         left: Box::new(left),
-        operator: self.token.clone(),
-        right: Box::new(self.parse_access_expression())
+        operator,
+        right: Box::new(self.parse_additive_expression())
       })
     }
     return left;
   }
 
+  // 解析 + - 语法 优先级 12
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
+  fn parse_additive_expression(&mut self) -> Expression {
+    let mut left = self.parse_left_hand_side_expression();
+    loop {
+      if self.token == Token::Plus || self.token == Token::Minus {
+        let operator =  self.token.clone();
+        self.next();
+        let right = self.parse_left_hand_side_expression();
+        left = Expression::Binary(BinaryExpression{
+          left: Box::new(left),
+          operator,
+          right: Box::new(right)
+        });
+      } else {
+        break;
+      }
+    };
+    return left;
+  }
 
   // 解析访问(.、[])语法 优先级 18
-  fn parse_access_expression(&mut self) -> Expression {
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
+  fn parse_left_hand_side_expression(&mut self) -> Expression {
     let mut left = self.parse_literal_expression();
     loop {
       self.cur_expr = left.clone();
@@ -403,11 +449,16 @@ impl AST{
   }
 
   // 解析属方法调用语法 优先级 18
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-function-calls
   fn parse_call_expression(&mut self) -> Expression {
     // 1. 解析参数
-    self.parse_arguments();
+    let expression = Box::new(self.cur_expr.clone());
+    let arguments = self.parse_arguments();
     // CallExpression {}
-    return Expression::Unknown;
+    return Expression::Call(CallExpression {
+      expression,
+      arguments
+    });
   }
 
   // 解析字面量 优先级 20 最后处理
@@ -437,24 +488,42 @@ impl AST{
           value: slice
         })
       },
-      _ => Expression::Unknown,
+      Token::False => {
+        self.next();
+        Expression::Keyword(Keywords::False)
+      },
+      Token::True => {
+        self.next();
+        Expression::Keyword(Keywords::True)
+      },
+      Token::Null => {
+        self.next();
+        Expression::Keyword(Keywords::Null)
+      },
+      Token::Undefined => {
+        self.next();
+        Expression::Keyword(Keywords::Undefined)
+      },
+      _ => {
+        self.next();
+        Expression::Unknown
+      },
     }
   }
 
   // 解析参数
-  fn parse_arguments(&mut self) {
+  fn parse_arguments(&mut self) -> Vec<Expression> {
     self.check_token_and_next(Token::LeftParenthesis);
-    let arguments:Vec<i32> = vec![];
+    let mut arguments:Vec<Expression> = vec![];
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
-      println!("arguments expr pre {:?}", self.token);
-      let expr = self.parse_expression();
-      println!("arguments expr:{:?}", expr);
+      println!("token {:?}", self.token);
+      arguments.push(self.parse_expression());
       if self.token != Token::Comma {
 				break
 			}
-      // self.next()
+      self.next()
     }
-    println!("arguments:{:?}", arguments)
+    arguments
   }
 
   fn parse_number_literal_expression(&mut self) -> f64 {

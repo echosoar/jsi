@@ -48,6 +48,7 @@ pub enum Token {
   Static,
 
   // 字面量 literal
+  Undefined,
   Null,
   True,
   False,
