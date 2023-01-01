@@ -216,6 +216,9 @@ impl AST{
       let (token, literal) =  match cur_char {
         '+' => (Token::Plus, cur_char_string),
         '-' => (Token::Minus, cur_char_string),
+        '*' => (Token::Multiply, cur_char_string),
+        '/' => (Token::Slash, cur_char_string),
+        '%' => (Token::Remainder, cur_char_string),
         '>' => (Token::Greater, cur_char_string),
         '<' => (Token::Less, cur_char_string),
         '=' => (Token::Assign, cur_char_string),
@@ -398,12 +401,35 @@ impl AST{
     return left;
   }
 
+
+
   // 解析 + - 语法 优先级 12
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_additive_expression(&mut self) -> Expression {
-    let mut left = self.parse_left_hand_side_expression();
+    let mut left = self.parse_multiplicative_expression();
     loop {
       if self.token == Token::Plus || self.token == Token::Minus {
+        let operator =  self.token.clone();
+        self.next();
+        let right = self.parse_multiplicative_expression();
+        left = Expression::Binary(BinaryExpression{
+          left: Box::new(left),
+          operator,
+          right: Box::new(right)
+        });
+      } else {
+        break;
+      }
+    };
+    return left;
+  }
+
+  // 解析 * / % 语法 优先级 13
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
+  fn parse_multiplicative_expression(&mut self) -> Expression {
+    let mut left = self.parse_left_hand_side_expression();
+    loop {
+      if self.token == Token::Multiply || self.token == Token::Slash || self.token == Token::Remainder {
         let operator =  self.token.clone();
         self.next();
         let right = self.parse_left_hand_side_expression();
