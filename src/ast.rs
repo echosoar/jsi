@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, FunctionDeclarationStatement, Parameter, BlockStatement, ReturnStatement};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -48,24 +48,11 @@ impl AST{
 
   // 解析生成 program
   fn parse_program(&mut self) -> Program {
-    // 开启一个作用域
-    self.open_scope();
     let body = self.parse_statements();
-    // 关闭一个作用域
-    self.close_scope();
     Program {
       body
     }
   }
-  // 开启一个作用域
-  fn open_scope(&mut self) {
-
-  }
-
-   // 关闭一个作用域
-   fn close_scope(&mut self) {
-
-   }
 
   fn parse_statements(&mut self) -> Vec<Statement> {
     let mut statements: Vec<Statement> = vec![];
@@ -73,6 +60,10 @@ impl AST{
       
       if let Token::EOF = self.token {
         // end of file
+        break;
+      }
+      if let Token::RightBrace = self.token {
+        // 结束了块级作用域
         break;
       }
       let statement = self.parse_statement();
@@ -90,6 +81,8 @@ impl AST{
   fn parse_statement(&mut self) -> Statement {
     match self.token {
         Token::Let => self.parse_let_statement(),
+        Token::Function => self.parse_function_statement(),
+        Token::Return => self.parse_return_statement(),
         _ => {
           let expression = self.parse_expression();
           match  expression {
@@ -126,6 +119,76 @@ impl AST{
     return Statement::Let(let_statement);
   }
 
+  // 解析 block statement
+  fn parse_block_statement(&mut self) -> Statement {
+    // 以左花括号开始
+    self.check_token_and_next(Token::LeftBrace);
+    let statements = self.parse_statements();
+    self.check_token_and_next(Token::RightBrace);
+    return Statement::Block(BlockStatement{
+      statements,
+    })
+  }
+
+  // 解析 function statement
+  fn parse_function_statement(&mut self) -> Statement {
+    // 如果是 function 关键字，则跳过
+    if self.token == Token::Function {
+      self.next();
+    }
+    
+    // 解析方法名
+    let mut name = String::new();
+    if self.token == Token::Identifier {
+      name = self.literal.clone();
+      self.next();
+    }
+    // 解析参数
+    // 左括号
+    let mut parameters: Vec<Parameter> = vec![];
+    self.check_token_and_next(Token::LeftParenthesis);
+    while self.token != Token::RightParenthesis && self.token != Token::EOF {
+      if self.token == Token::Identifier {
+        parameters.push(Parameter{
+          name: IdentifierLiteral { literal: self.literal.clone() },
+          initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
+        });
+        self.next()
+      } else {
+        self.check_token(Token::Identifier);
+      }
+      if self.token != Token::RightParenthesis {
+        self.check_token_and_next(Token::Comma);
+      }
+    }
+
+    self.check_token_and_next(Token::RightParenthesis);
+    // TODO: 需要开启一个新的作用域，用来记录 block 里面的 方法定义 和 变量定义，因为方法定义是要提升到作用域最开始的
+    // 解析方法体
+    let body = match self.parse_block_statement() {
+      Statement::Block(block) => block,
+      _ => BlockStatement { statements: vec![] }
+    };
+     // TODO: 结束作用域，回到上一级作用域
+    Statement::Function(FunctionDeclarationStatement{
+      name: IdentifierLiteral { literal: name },
+      parameters,
+      body
+    })
+  }
+
+  fn parse_return_statement(&mut self) -> Statement {
+    self.check_token_and_next(Token::Return);
+    let mut expression = Expression::Keyword(Keywords::Undefined);
+    if self.token != Token::Semicolon && self.token != Token::RightBrace && self.token != Token::EOF {
+      expression = self.parse_expression()
+    }
+    self.semicolon();
+    return Statement::Return(ReturnStatement{
+      expression
+    });
+  }
+
   // 解析变量定义 a = 123,b,c = true 
   fn parse_variable_declaration(&mut self) -> Expression {
     if Token::Identifier != self.token {
@@ -147,15 +210,19 @@ impl AST{
   }
 
   fn check_token_and_next(&mut self, token: Token) {
-    if token == self.token {
-      self.next()
-    } else {
+    self.check_token(token);
+    self.next();
+  }
+  fn check_token(&mut self, token: Token) {
+    // TODO: 类型不匹配，需要报错
+    if token != self.token {
       self.error_unexpected_token(token)
     }
-    // TODO: 类型不匹配，需要报错
+    
   }
 
   fn semicolon(&mut self) {
+    println!("check semicolon");
     self.check_token_and_next(Token::Semicolon)
   }
 

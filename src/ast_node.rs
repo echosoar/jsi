@@ -3,6 +3,9 @@ use crate::ast_token::Token;
 #[derive(Debug)]
 pub enum Statement {
   Let(LetVariableStatement),
+  Function(FunctionDeclarationStatement),
+  Block(BlockStatement),
+  Return(ReturnStatement),
   Expression(ExpressionStatement),
   Unknown,
 }
@@ -33,6 +36,30 @@ pub enum Keywords {
 #[derive(Debug)]
 pub struct LetVariableStatement {
   pub list: Vec<Expression>
+}
+
+#[derive(Debug)]
+pub struct FunctionDeclarationStatement {
+  pub name: IdentifierLiteral,
+  pub parameters: Vec<Parameter>,
+  pub body: BlockStatement,
+}
+
+
+#[derive(Debug)]
+pub struct BlockStatement {
+  pub statements: Vec<Statement>
+}
+
+#[derive(Debug)]
+pub struct ReturnStatement {
+  pub expression: Expression
+}
+
+#[derive(Debug, Clone)]
+pub struct Parameter {
+  pub name: IdentifierLiteral,
+  pub initializer: Box<Expression>
 }
 
 #[derive(Debug)]

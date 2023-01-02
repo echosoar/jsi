@@ -9,7 +9,7 @@ pub enum Value {
 }
 
 impl Value {
-  pub fn isString(&self) -> bool {
+  pub fn is_string(&self) -> bool {
     if let Value::String(_) = self {
       return true
     }
@@ -30,21 +30,21 @@ impl Value {
       _ => String::from(""),
     }
   }
-  pub fn isNumber(&self) -> bool {
+  pub fn is_number(&self) -> bool {
     if let Value::Number(_) = self {
       return true
     }
     return false
   }
 
-  pub fn isInfinity(&self) -> bool {
+  pub fn is_infinity(&self) -> bool {
     if let Value::Number(number) = self {
       return *number == f64::INFINITY || *number == -f64::INFINITY;
     }
     return false
   }
 
-  pub fn isNAN(&self) -> bool {
+  pub fn is_nan(&self) -> bool {
     if let Value::NAN = self {
       return true
     }
@@ -65,7 +65,7 @@ impl Value {
       _ => 0f64,
     }
   }
-  pub fn isBoolean(&self) -> bool {
+  pub fn is_boolean(&self) -> bool {
     if let Value::Boolean(_) = self {
       return true
     }
