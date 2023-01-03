@@ -3,7 +3,6 @@ mod ast;
 mod ast_token;
 mod ast_node;
 mod ast_utils;
-mod object;
 mod value;
 mod scope;
 

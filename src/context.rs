@@ -1,4 +1,4 @@
-use crate::{ast::Program, ast_node::Statement, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::Value, scope::Scope, ast_token::Token};
+use crate::{ast::Program, ast_node::{Statement, Declaration, FunctionDeclarationStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::Value, value::Object, scope::Scope, ast_token::Token};
 
 use super::ast::AST;
 pub struct Context {
@@ -21,7 +21,14 @@ impl Context {
 
     fn call(&mut self, program: Program) {
       // 创建全局作用域
-      // TODO：绑定函数声明
+      // 绑定函数声明
+      for declaration in program.declarations.iter() {
+        match  declaration {
+            Declaration::Function(function_statement) => {
+              self.scope.set_value(function_statement.name.literal.clone(), self.new_function(&function_statement))
+            }
+        };
+      }
       // 函数声明需要添加 prototype、constrctor、__proto__
       // 绑定变量声明
       // 执行 statement
@@ -128,9 +135,12 @@ impl Context {
       Value::Undefined
     }
 
-    fn new_function(&self) {
+    fn new_function(&self, function_statement: &FunctionDeclarationStatement) -> Value {
+      let mut function = Object{};
+      function.define_property(String::from("name"),  Value::String(function_statement.name.literal.clone()));
+      function.define_property(String::from("length"), Value::Number(function_statement.parameters.len() as f64));
       /*
-      let function = Object {}
+      ≈
 
       */
       // function_value.defineProperty("name", expression.name)
@@ -139,5 +149,6 @@ impl Context {
       // function_value.defineProperty("constructor")
       // function_value.defineOwnProperty("caller", )
       // function_value._prototype = global.FunctionPrototype = { constructor: ''};
+      Value::Object(function)
     }
 } 

@@ -4,6 +4,7 @@ pub enum Value {
   Number(f64),
   Boolean(bool),
   Null,
+  Object(Object),
   Undefined,
   NAN,
 }
@@ -72,4 +73,16 @@ impl Value {
     return false
   }
 
+}
+
+#[derive(Debug,Clone)]
+pub struct Object {
+
+}
+
+impl Object {
+  pub fn define_property(&mut self, name: String, value: Value) -> bool {
+    // 需要实现 descriptpor
+    return true;
+  }
 }

@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, FunctionDeclarationStatement, Parameter, BlockStatement, ReturnStatement};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, FunctionDeclarationStatement, Parameter, BlockStatement, ReturnStatement, Declaration};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -22,6 +22,8 @@ pub struct AST {
   literal: String,
   // 当前表达式
   cur_expr: Expression,
+  // 当前上下文
+  scope: ASTScope,
 }
 
 impl AST{
@@ -37,6 +39,7 @@ impl AST{
       token: Token::Identifier,
       literal: String::from(""),
       cur_expr: Expression::Unknown,
+      scope: ASTScope::new(),
     }
   }
 
@@ -48,9 +51,26 @@ impl AST{
 
   // 解析生成 program
   fn parse_program(&mut self) -> Program {
+    self.new_scope();
     let body = self.parse_statements();
+    let declarations = self.scope.declarations.clone();
+    self.close_scope();
     Program {
-      body
+      body,
+      declarations,
+    }
+  }
+
+  // 创建新的上下文环境，用于存储当前上下文环境中声明的方法和变量
+  fn new_scope(&mut self) {
+    let mut scope = ASTScope::new();
+    scope.parent = Some(Box::new(self.scope.clone()));
+    self.scope = scope;
+  }
+
+  fn close_scope(&mut self) {
+    if let Some(parent) = self.scope.parent.clone() {
+      self.scope = *parent
     }
   }
 
@@ -163,18 +183,26 @@ impl AST{
     }
 
     self.check_token_and_next(Token::RightParenthesis);
-    // TODO: 需要开启一个新的作用域，用来记录 block 里面的 方法定义 和 变量定义，因为方法定义是要提升到作用域最开始的
+    // 需要开启一个新的作用域，用来记录 block 里面的 方法定义 和 变量定义，因为方法定义是要提升到作用域最开始的
+    self.new_scope();
     // 解析方法体
     let body = match self.parse_block_statement() {
       Statement::Block(block) => block,
       _ => BlockStatement { statements: vec![] }
     };
-     // TODO: 结束作用域，回到上一级作用域
-    Statement::Function(FunctionDeclarationStatement{
+    let declarations = self.scope.declarations.clone();
+    self.close_scope();
+    let func = FunctionDeclarationStatement{
       name: IdentifierLiteral { literal: name },
       parameters,
-      body
-    })
+      body,
+      declarations,
+    };
+
+    self.scope.declare(Declaration::Function(func.clone()));
+    let statement = Statement::Function(func);
+    
+    return statement;
   }
 
   fn parse_return_statement(&mut self) -> Statement {
@@ -650,8 +678,28 @@ impl AST{
 }
 #[derive(Debug)]
 pub struct Program {
-  pub body: Vec<Statement>
+  pub body: Vec<Statement>,
+  pub declarations: Vec<Declaration>
 }
 
 
 impl Program {}
+
+#[derive(Debug, Clone)]
+pub struct ASTScope {
+  pub parent: Option<Box<ASTScope>>,
+  pub declarations: Vec<Declaration>
+}
+
+impl  ASTScope {
+    fn new() -> ASTScope {
+      ASTScope {
+        parent: None,
+        declarations: vec![],
+      }
+    }
+
+    fn declare(&mut self, declaration: Declaration) {
+      self.declarations.push(declaration);
+    }
+}
