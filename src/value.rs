@@ -1,4 +1,8 @@
-#[derive(Debug)]
+use std::collections::HashMap;
+
+use crate::ast_node::FunctionDeclarationStatement;
+
+#[derive(Debug,Clone)]
 pub enum Value {
   String(String),
   Number(f64),
@@ -7,6 +11,7 @@ pub enum Value {
   Object(Object),
   Undefined,
   NAN,
+  Function(FunctionDeclarationStatement),
 }
 
 impl Value {
@@ -77,12 +82,48 @@ impl Value {
 
 #[derive(Debug,Clone)]
 pub struct Object {
-
+  // 构造此对象的构造函数
+  // 比如函数的 constructor 就是 Function
+  // constructor
+  property: HashMap<String, Property>,
+  // 属性列表，对象的属性列表需要次序
+  property_list: Vec<String>,
+  // 原型对象，用于查找原型链
+  pub prototype: Option<Box<Object>>,
+  // 对象的值
+  pub value: Option<Box<Value>>,
 }
 
+
 impl Object {
-  pub fn define_property(&mut self, name: String, value: Value) -> bool {
-    // 需要实现 descriptpor
+
+  pub fn new() -> Object {
+    Object {
+      property: HashMap::new(),
+      property_list: vec![],
+      prototype: None,
+      value: None,
+    }
+  }
+  // TODO: descriptor
+  pub fn define_property_by_value(&mut self, name: String, value: Value) -> bool {
+    self.define_property(name, Property { value });
     return true;
   }
+
+  // TODO: descriptor
+  pub fn define_property(&mut self, name: String, property: Property) -> bool {
+    // 需要实现 descriptpor
+    if !self.property_list.contains(&name) {
+      self.property_list.push(name.clone());
+    }
+    self.property.insert(name, property);
+    return true;
+  }
+}
+
+#[derive(Debug,Clone)]
+pub struct Property {
+  pub value: Value,
+  // TODO: 属性的描述符 descriptor writable ，是否可枚举等
 }

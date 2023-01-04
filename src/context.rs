@@ -136,19 +136,16 @@ impl Context {
     }
 
     fn new_function(&self, function_statement: &FunctionDeclarationStatement) -> Value {
-      let mut function = Object{};
-      function.define_property(String::from("name"),  Value::String(function_statement.name.literal.clone()));
-      function.define_property(String::from("length"), Value::Number(function_statement.parameters.len() as f64));
-      /*
-      ≈
-
-      */
-      // function_value.defineProperty("name", expression.name)
-      // function_value.defineProperty("length", expression.arguments.length)
-      // function_value.defineProperty("prototype")
-      // function_value.defineProperty("constructor")
-      // function_value.defineOwnProperty("caller", )
-      // function_value._prototype = global.FunctionPrototype = { constructor: ''};
+      let mut function = Object::new();
+      function.value = Some(Box::new(Value::Function((*function_statement).clone())));
+      // TODO:
+      // function.prototype = global.function_prototype;
+      function.define_property_by_value(String::from("name"),  Value::String(function_statement.name.literal.clone()));
+      function.define_property_by_value(String::from("length"), Value::Number(function_statement.parameters.len() as f64));
+      let prototype = Object::new();
+      // TODO: 定义循环结构，constructor 需要指向 function
+      // prototype.define_property_by_value(String::from("constructor"), Value::Object(Box::new(function)));
+      function.define_property_by_value(String::from("prototype"), Value::Object(prototype));
       Value::Object(function)
     }
 } 
