@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+use std::rc::Weak;
 use crate::ast_node::FunctionDeclarationStatement;
 
 #[derive(Debug,Clone)]
@@ -12,6 +12,7 @@ pub enum Value {
   Undefined,
   NAN,
   Function(FunctionDeclarationStatement),
+  CycleRefObject(Weak<Object>),
 }
 
 impl Value {
@@ -91,7 +92,7 @@ pub struct Object {
   // 原型对象，用于查找原型链
   pub prototype: Option<Box<Object>>,
   // 对象的值
-  pub value: Option<Box<Value>>,
+  value: Option<Box<Value>>,
 }
 
 
@@ -105,6 +106,16 @@ impl Object {
       value: None,
     }
   }
+
+  pub fn set_value(&mut self, value: Option<Box<Value>>) -> bool {
+    self.value = value;
+    return true;
+  }
+
+  pub fn get_value(&self) -> Option<Box<Value>> {
+    self.value.clone()
+  }
+
   // TODO: descriptor
   pub fn define_property_by_value(&mut self, name: String, value: Value) -> bool {
     self.define_property(name, Property { value });

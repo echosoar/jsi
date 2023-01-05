@@ -1,4 +1,6 @@
-use crate::{ast::Program, ast_node::{Statement, Declaration, FunctionDeclarationStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::Value, value::Object, scope::Scope, ast_token::Token};
+use std::rc::{Rc};
+
+use crate::{ast::Program, ast_node::{Statement, Declaration, FunctionDeclarationStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::Value, value::{Object}, scope::{Scope, get_value_by_scope}, ast_token::Token};
 
 use super::ast::AST;
 pub struct Context {
@@ -20,19 +22,25 @@ impl Context {
     }
 
     fn call(&mut self, program: Program) {
-      // 创建全局作用域
-      // 绑定函数声明
-      for declaration in program.declarations.iter() {
+      self.call_block(&program.declarations, &program.body);
+    }
+
+    fn call_block(&mut self, declarations: &Vec<Declaration>, body: &Vec<Statement>) -> Value {
+       // 绑定函数声明
+       for declaration in declarations.iter() {
         match  declaration {
             Declaration::Function(function_statement) => {
-              self.scope.set_value(function_statement.name.literal.clone(), self.new_function(&function_statement))
+              let function = self.new_function(&function_statement);
+              println!("function:{:?}", function);
+              self.scope.set_value(function_statement.name.literal.clone(), function)
             }
         };
       }
       // 函数声明需要添加 prototype、constrctor、__proto__
       // 绑定变量声明
       // 执行 statement
-      for statement in program.body.iter() {
+      let mut result_value = Value::Undefined;
+      for statement in body.iter() {
         match statement {
           Statement::Let(let_statement) => {
             for variable in let_statement.list.iter() {
@@ -45,14 +53,17 @@ impl Context {
           Statement::Expression(expression) => {
             let value = self.execute_expression(&expression.expression);
             println!("expression result: {:?}", value);
+          },
+          Statement::Return(return_statement) => {
+            result_value = self.execute_expression(&return_statement.expression);
           }
           _ => {}
         }
       }
-      // 关闭全局作用域
+      result_value
     }
 
-    fn execute_expression(&self, expression: &Expression) -> Value {
+    fn execute_expression(&mut self, expression: &Expression) -> Value {
       println!("expression: {:?}", expression);
       match expression {
         Expression::Binary(binary) => {
@@ -60,6 +71,13 @@ impl Context {
         },
         Expression::Call(call) => {
           self.execute_call_expression(call)
+        },
+        Expression::Identifier(identifier) => {
+          if let Some(value) = get_value_by_scope(&self.scope, identifier.literal.clone()) {
+            (*value).clone()
+          } else {
+            Value::Undefined
+          }
         },
         Expression::String(string) => {
           return Value::String(string.value.clone());
@@ -80,7 +98,7 @@ impl Context {
     }
 
     // 执行基础四则运算
-    fn execute_binary_expression(&self, expression: &BinaryExpression) -> Value {
+    fn execute_binary_expression(&mut self, expression: &BinaryExpression) -> Value {
       let left = self.execute_expression(expression.left.as_ref());
       let right = self.execute_expression(expression.right.as_ref());
       println!("binary {:?} {:?} {:?}", left, expression.operator, right);
@@ -124,28 +142,72 @@ impl Context {
     }
 
     // 执行方法调用表达式
-    fn execute_call_expression(&self, expression: &CallExpression) -> Value {
+    fn execute_call_expression(&mut self, expression: &CallExpression) -> Value {
       let callee = self.execute_expression(expression.expression.as_ref());
       let mut arguments: Vec<Value> = vec![];
       for arg in expression.arguments.iter() {
         arguments.push(self.execute_expression(arg));
       }
-      println!("call {:?} args:{:?}", callee, arguments);
+      if let Value::Object(function_object) = callee {
+        return self.call_function_object(function_object, arguments);
+      }
 
       Value::Undefined
     }
 
     fn new_function(&self, function_statement: &FunctionDeclarationStatement) -> Value {
       let mut function = Object::new();
-      function.value = Some(Box::new(Value::Function((*function_statement).clone())));
+      function.set_value(Some(Box::new(Value::Function((*function_statement).clone()))));
       // TODO:
       // function.prototype = global.function_prototype;
       function.define_property_by_value(String::from("name"),  Value::String(function_statement.name.literal.clone()));
       function.define_property_by_value(String::from("length"), Value::Number(function_statement.parameters.len() as f64));
-      let prototype = Object::new();
+
+
+      let prototype =  Rc::new(Object::new()); 
       // TODO: 定义循环结构，constructor 需要指向 function
-      // prototype.define_property_by_value(String::from("constructor"), Value::Object(Box::new(function)));
-      function.define_property_by_value(String::from("prototype"), Value::Object(prototype));
+      function.define_property_by_value(String::from("prototype"), Value::CycleRefObject(Rc::downgrade(&prototype)));
+      
       Value::Object(function)
+    }
+
+    fn call_function_object(&mut self, function_define: Object, arguments: Vec<Value>) -> Value {
+      // 获取 function 定义
+      let function_define_value = *function_define.get_value().unwrap();
+      let function_statement =  match function_define_value {
+        Value::Function(function_statement) => Some(function_statement),
+        _ => None,
+      }.unwrap();
+      // 创建新的作用域
+      self.new_scope();
+      // 绑定参数
+      for parameter_index in 0..function_statement.parameters.len() {
+        if parameter_index < arguments.len() {
+          // TODO: 参数引用
+          self.scope.set_value(function_statement.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone());
+        } else {
+          self.scope.set_value(function_statement.parameters[parameter_index].name.literal.clone(), Value::Undefined);
+        }
+      }
+      println!("call function {:?}", arguments);
+      // 执行 body
+      let result = self.call_block(&function_statement.declarations, &function_statement.body.statements);
+      println!("call function result {:?}", result);
+      self.close_scope();
+      result
+    }
+
+    // 进入作用域
+    fn new_scope(&mut self) {
+      let mut scope = Scope::new();
+      scope.parent = Some(Box::new(self.scope.clone()));
+      self.scope = scope;
+    }
+
+    // 退出作用域
+    fn close_scope(&mut self) {
+      if let Some(parent) = self.scope.parent.clone() {
+        self.scope = *parent
+      }
     }
 } 
