@@ -14,15 +14,21 @@ impl Context {
       };
       return ctx;
     }
+    
     // 运行一段 JS 代码
-    pub fn run(&mut self, code: String) {
-      let mut ast = AST::new(code);
-      let program = ast.parse();
-      self.call(program);
+    pub fn run(&mut self, code: String) -> Value {
+      let program = self.parse(code);
+      self.call(program)
     }
 
-    fn call(&mut self, program: Program) {
-      self.call_block(&program.declarations, &program.body);
+    // 运行一段 JS 代码
+    pub fn parse(&mut self, code: String) -> Program {
+      let mut ast = AST::new(code);
+      ast.parse()
+    }
+
+    fn call(&mut self, program: Program) -> Value {
+      self.call_block(&program.declarations, &program.body)
     }
 
     fn call_block(&mut self, declarations: &Vec<Declaration>, body: &Vec<Statement>) -> Value {

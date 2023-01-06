@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, FunctionDeclarationStatement, Parameter, BlockStatement, ReturnStatement, Declaration};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, FunctionDeclarationStatement, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -625,10 +625,79 @@ impl AST{
         self.next();
         Expression::Keyword(Keywords::Undefined)
       },
+      Token::LeftBrace => {
+        self.parse_object_literal()
+      },
       _ => {
         self.next();
         Expression::Unknown
       },
+    }
+  }
+
+  // 解析对象字面量
+  // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#prod-ObjectLiteral
+  fn parse_object_literal(&mut self) -> Expression {
+    self.check_token_and_next(Token::LeftBrace);
+    let mut properties: Vec<PropertyAssignment>= vec![];
+    while self.token != Token::RightBrace && self.token != Token::EOF {
+      // 属性名
+      let property_name = self.parse_object_property_name();
+      if let Expression::Unknown = property_name {
+        break;
+      }
+      println!("property_name {:?} {:?}", property_name, self.token);
+      // 解析值
+      let initializer = match self.token {
+         // 如果是 :
+        Token::Colon => {
+          self.next();
+          self.parse_expression()
+        },
+        _ => Expression::Unknown,
+      };
+      properties.push(PropertyAssignment {
+        name: Box::new(property_name),
+        initializer: Box::new(initializer),
+      });
+      // 跳过逗号
+      if self.token == Token::Comma {
+        self.next();
+      }
+    }
+    Expression::Object(ObjectLiteral {
+      properties,
+    })
+  }
+
+  fn parse_object_property_name(&mut self) -> Expression {
+    let property_name_literal = self.literal.clone();
+    match self.token {
+      Token::Identifier => {
+        self.next();
+        Expression::Identifier(IdentifierLiteral { literal: property_name_literal })
+      },
+      Token::String => {
+        let str_len = property_name_literal.len();
+        let slice = String::from(&self.literal[1..str_len-1]);
+        self.next();
+        Expression::String(StringLiteral {
+          literal: property_name_literal,
+          value: slice,
+        })
+      },
+      Token::Number => {
+        let number_value = self.parse_number_literal_expression();
+        self.next();
+        Expression::Number(NumberLiteral { literal: property_name_literal, value: number_value })
+      },
+      Token::LeftBracket => {
+        self.next();
+        let key = self.parse_expression();
+        self.check_token_and_next(Token::RightBracket);
+        key
+      },
+      _ => Expression::Unknown
     }
   }
 

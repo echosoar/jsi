@@ -1,6 +1,6 @@
 use crate::ast_token::Token;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
   Let(LetVariableStatement),
   Function(FunctionDeclarationStatement),
@@ -10,7 +10,7 @@ pub enum Statement {
   Unknown,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone, PartialEq)]
 pub enum Expression {
   Let(LetVariableDeclaration),
   // Assign(AssignExpression),
@@ -22,10 +22,11 @@ pub enum Expression {
   Number(NumberLiteral),
   String(StringLiteral),
   Keyword(Keywords),
+  Object(ObjectLiteral),
   Unknown,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone, PartialEq)]
 pub enum Keywords {
   False,
   True,
@@ -33,17 +34,17 @@ pub enum Keywords {
   Undefined,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone, PartialEq)]
 pub enum Declaration {
   Function(FunctionDeclarationStatement)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LetVariableStatement {
   pub list: Vec<Expression>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDeclarationStatement {
   pub name: IdentifierLiteral,
   pub parameters: Vec<Parameter>,
@@ -51,23 +52,23 @@ pub struct FunctionDeclarationStatement {
   pub declarations: Vec<Declaration>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlockStatement {
   pub statements: Vec<Statement>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStatement {
   pub expression: Expression
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
   pub name: IdentifierLiteral,
   pub initializer: Box<Expression>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExpressionStatement {
   pub expression: Expression
 }
@@ -79,7 +80,7 @@ pub struct AssignExpression {
 }
 
 // 条件表达式
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConditionalExpression {
   pub condition: Box<Expression>,
   pub when_true: Box<Expression>,
@@ -87,45 +88,57 @@ pub struct ConditionalExpression {
 }
 
 // . 表达式
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BinaryExpression {
   pub left: Box<Expression>,
   pub operator: Token,
   pub right: Box<Expression>,
 }
 // 方法调用表达式
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CallExpression {
   pub expression: Box<Expression>,
   pub arguments: Vec<Expression>,
 }
 
 // . 属性访问表达式
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PropertyAccessExpression {
   pub expression: Box<Expression>,
   pub name: IdentifierLiteral,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct  IdentifierLiteral {
   pub literal: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct  NumberLiteral {
   pub literal: String,
   pub value: f64,
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct  StringLiteral {
   pub literal: String,
   pub value: String
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct  ObjectLiteral {
+  pub properties: Vec<PropertyAssignment>
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct  PropertyAssignment {
+  pub name: Box<Expression>,
+  pub initializer: Box<Expression>
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct LetVariableDeclaration {
   pub name: String,
   pub initializer: Box<Expression>
