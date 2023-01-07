@@ -1,4 +1,4 @@
-use std::rc::{Rc};
+use std::{rc::{Rc}, cell::RefCell};
 
 use crate::{ast::Program, ast_node::{Statement, Declaration, FunctionDeclarationStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::Value, value::{Object}, scope::{Scope, get_value_by_scope}, ast_token::Token};
 
@@ -154,7 +154,7 @@ impl Context {
       for arg in expression.arguments.iter() {
         arguments.push(self.execute_expression(arg));
       }
-      if let Value::Object(function_object) = callee {
+      if let Value::Function(function_object) = callee {
         return self.call_function_object(function_object, arguments);
       }
 
@@ -162,26 +162,27 @@ impl Context {
     }
 
     fn new_function(&self, function_statement: &FunctionDeclarationStatement) -> Value {
-      let mut function = Object::new();
-      function.set_value(Some(Box::new(Value::Function((*function_statement).clone()))));
+      let function = Rc::new(RefCell::new(Object::new()));
+      let function_clone = Rc::clone(&function);
+      let mut function_mut = (*function_clone).borrow_mut();
+      function_mut.set_value(Some(Box::new(Statement::Function((*function_statement).clone()))));
       // TODO:
       // function.prototype = global.function_prototype;
-      function.define_property_by_value(String::from("name"),  Value::String(function_statement.name.literal.clone()));
-      function.define_property_by_value(String::from("length"), Value::Number(function_statement.parameters.len() as f64));
+      function_mut.define_property_by_value(String::from("name"),  Value::String(function_statement.name.literal.clone()));
+      function_mut.define_property_by_value(String::from("length"), Value::Number(function_statement.parameters.len() as f64));
 
-
-      let prototype =  Rc::new(Object::new()); 
-      // TODO: 定义循环结构，constructor 需要指向 function
-      function.define_property_by_value(String::from("prototype"), Value::CycleRefObject(Rc::downgrade(&prototype)));
-      
-      Value::Object(function)
+      let prototype =  Rc::new(RefCell::new(Object::new()));
+      // constructor 弱引用
+      (*prototype).borrow_mut().define_property_by_value(String::from("constructor"), Value::RefObject(Rc::downgrade(&function)));
+      function_mut.define_property_by_value(String::from("prototype"), Value::Object(prototype));
+      Value::Function(function)
     }
 
-    fn call_function_object(&mut self, function_define: Object, arguments: Vec<Value>) -> Value {
+    fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, arguments: Vec<Value>) -> Value {
       // 获取 function 定义
-      let function_define_value = *function_define.get_value().unwrap();
-      let function_statement =  match function_define_value {
-        Value::Function(function_statement) => Some(function_statement),
+      let function_define_value = (*function_define).borrow_mut().get_value().unwrap();
+      let function_statement =  match *function_define_value {
+        Statement::Function(function_statement) => Some(function_statement),
         _ => None,
       }.unwrap();
       // 创建新的作用域

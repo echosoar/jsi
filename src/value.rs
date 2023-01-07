@@ -1,18 +1,34 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Weak;
-use crate::ast_node::FunctionDeclarationStatement;
+use std::rc::{Weak, Rc};
+use crate::ast_node::{Statement};
 
 #[derive(Debug,Clone)]
 pub enum Value {
+  // 5种基本数据类型
   String(String),
   Number(f64),
   Boolean(bool),
   Null,
-  Object(Object),
   Undefined,
+  // 3 种引用类型
+  Object(Rc<RefCell<Object>>),
+  Function(Rc<RefCell<Object>>),
+  Array,
+  // 其他
   NAN,
-  Function(FunctionDeclarationStatement),
-  CycleRefObject(Weak<Object>),
+  RefObject(Weak<RefCell<Object>>),
+}
+
+impl PartialEq for Value {
+  fn eq(&self, other: &Value) -> bool {
+      match (self, other) {
+          (Value::String(a), Value::String(b)) => *a == *b,
+          (Value::Number(a), Value::Number(b)) => *a == *b,
+          (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
+          _ => false,
+      }
+  }
 }
 
 impl Value {
@@ -81,7 +97,7 @@ impl Value {
 
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,PartialEq)]
 pub struct Object {
   // 构造此对象的构造函数
   // 比如函数的 constructor 就是 Function
@@ -92,12 +108,10 @@ pub struct Object {
   // 原型对象，用于查找原型链
   pub prototype: Option<Box<Object>>,
   // 对象的值
-  value: Option<Box<Value>>,
+  value: Option<Box<Statement>>,
 }
 
-
 impl Object {
-
   pub fn new() -> Object {
     Object {
       property: HashMap::new(),
@@ -107,12 +121,12 @@ impl Object {
     }
   }
 
-  pub fn set_value(&mut self, value: Option<Box<Value>>) -> bool {
+  pub fn set_value(&mut self, value: Option<Box<Statement>>) -> bool {
     self.value = value;
     return true;
   }
 
-  pub fn get_value(&self) -> Option<Box<Value>> {
+  pub fn get_value(&self) -> Option<Box<Statement>> {
     self.value.clone()
   }
 
@@ -133,7 +147,7 @@ impl Object {
   }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,PartialEq)]
 pub struct Property {
   pub value: Value,
   // TODO: 属性的描述符 descriptor writable ，是否可枚举等
