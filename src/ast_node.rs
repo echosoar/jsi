@@ -3,7 +3,7 @@ use crate::ast_token::Token;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
   Let(LetVariableStatement),
-  Function(FunctionDeclarationStatement),
+  Function(FunctionDeclaration),
   Block(BlockStatement),
   Return(ReturnStatement),
   Expression(ExpressionStatement),
@@ -17,12 +17,14 @@ pub enum Expression {
   Binary(BinaryExpression),
   Conditional(ConditionalExpression),
   PropertyAccess(PropertyAccessExpression),
+  ElementAccess(ElementAccessExpression),
   Call(CallExpression),
   Identifier(IdentifierLiteral),
   Number(NumberLiteral),
   String(StringLiteral),
   Keyword(Keywords),
   Object(ObjectLiteral),
+  Function(FunctionDeclaration),
   Unknown,
 }
 
@@ -32,11 +34,12 @@ pub enum Keywords {
   True,
   Null,
   Undefined,
+  X,
 }
 
 #[derive(Debug,Clone, PartialEq)]
 pub enum Declaration {
-  Function(FunctionDeclarationStatement)
+  Function(FunctionDeclaration)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -44,8 +47,11 @@ pub struct LetVariableStatement {
   pub list: Vec<Expression>
 }
 
+
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct FunctionDeclarationStatement {
+pub struct FunctionDeclaration {
+  pub is_anonymous: bool,
   pub name: IdentifierLiteral,
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
@@ -108,8 +114,16 @@ pub struct PropertyAccessExpression {
   pub name: IdentifierLiteral,
 }
 
+
+// [] 属性访问表达式
 #[derive(Debug, Clone, PartialEq)]
-pub struct  IdentifierLiteral {
+pub struct ElementAccessExpression {
+  pub expression: Box<Expression>,
+  pub argument: Box<Expression>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IdentifierLiteral {
   pub literal: String,
 }
 

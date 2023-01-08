@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, FunctionDeclarationStatement, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -78,18 +78,19 @@ impl AST{
     let mut statements: Vec<Statement> = vec![];
     loop {
       
-      if let Token::EOF = self.token {
+      if self.token == Token::EOF || self.token == Token::RightBrace {
         // end of file
-        break;
-      }
-      if let Token::RightBrace = self.token {
         // 结束了块级作用域
         break;
       }
+      if self.token == Token::Semicolon {
+        self.next();
+        continue;
+      }
       let statement = self.parse_statement();
-      println!("statement: {:?}", statement);
       if let Statement::Unknown = statement  {
         // TODO: unknown statement
+        println!("statement: {:?}", statement);
         break;
       }
       statements.push(statement);
@@ -101,7 +102,9 @@ impl AST{
   fn parse_statement(&mut self) -> Statement {
     match self.token {
         Token::Let => self.parse_let_statement(),
-        Token::Function => self.parse_function_statement(),
+        Token::Function => {
+          Statement::Function(self.parse_function())
+        },
         Token::Return => self.parse_return_statement(),
         _ => {
           let expression = self.parse_expression();
@@ -151,15 +154,17 @@ impl AST{
   }
 
   // 解析 function statement
-  fn parse_function_statement(&mut self) -> Statement {
+  fn parse_function(&mut self) -> FunctionDeclaration {
     // 如果是 function 关键字，则跳过
     if self.token == Token::Function {
       self.next();
     }
     
     // 解析方法名
+    let mut is_anonymous = true;
     let mut name = String::new();
     if self.token == Token::Identifier {
+      is_anonymous = false;
       name = self.literal.clone();
       self.next();
     }
@@ -192,17 +197,17 @@ impl AST{
     };
     let declarations = self.scope.declarations.clone();
     self.close_scope();
-    let func = FunctionDeclarationStatement{
+    let func = FunctionDeclaration {
+      is_anonymous,
       name: IdentifierLiteral { literal: name },
       parameters,
       body,
       declarations,
     };
-
-    self.scope.declare(Declaration::Function(func.clone()));
-    let statement = Statement::Function(func);
-    
-    return statement;
+    if !is_anonymous {
+      self.scope.declare(Declaration::Function(func.clone()));
+    }
+    return func;
   }
 
   fn parse_return_statement(&mut self) -> Statement {
@@ -250,7 +255,6 @@ impl AST{
   }
 
   fn semicolon(&mut self) {
-    println!("check semicolon");
     self.check_token_and_next(Token::Semicolon)
   }
 
@@ -259,7 +263,7 @@ impl AST{
     let scan_res = self.scan();
     self.token = scan_res.0;
     self.literal = scan_res.1;
-    println!("next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
+    // println!("next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
   // 扫描获取符号
@@ -548,6 +552,7 @@ impl AST{
       self.cur_expr = left.clone();
       let new_left = match self.token {
         Token::Period => self.parse_property_access_expression(),
+        Token::LeftBracket => self.parse_element_access_expression(),
         Token::LeftParenthesis => self.parse_call_expression(),
         _ => Expression::Unknown,
       };
@@ -569,6 +574,18 @@ impl AST{
     });
   }
 
+  // 解析属性访问([)语法 优先级 18
+  fn parse_element_access_expression(&mut self) -> Expression {
+    let expression = Box::new(self.cur_expr.clone());
+    self.check_token_and_next(Token::LeftBracket);
+    let expr = self.parse_expression();
+    self.check_token_and_next(Token::RightBracket);
+    return Expression::ElementAccess(ElementAccessExpression{
+      expression,
+      argument: Box::new(expr),
+    });
+  }
+
   // 解析属方法调用语法 优先级 18
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-function-calls
   fn parse_call_expression(&mut self) -> Expression {
@@ -576,6 +593,7 @@ impl AST{
     let expression = Box::new(self.cur_expr.clone());
     let arguments = self.parse_arguments();
     // CallExpression {}
+    self.check_token_and_next(Token::RightParenthesis);
     return Expression::Call(CallExpression {
       expression,
       arguments
@@ -628,6 +646,9 @@ impl AST{
       Token::LeftBrace => {
         self.parse_object_literal()
       },
+      Token::Function => {
+        Expression::Function(self.parse_function())
+      },
       _ => {
         self.next();
         Expression::Unknown
@@ -642,11 +663,11 @@ impl AST{
     let mut properties: Vec<PropertyAssignment>= vec![];
     while self.token != Token::RightBrace && self.token != Token::EOF {
       // 属性名
-      let property_name = self.parse_object_property_name();
+      let mut property_name = self.parse_object_property_name();
       if let Expression::Unknown = property_name {
         break;
       }
-      println!("property_name {:?} {:?}", property_name, self.token);
+      
       // 解析值
       let initializer = match self.token {
          // 如果是 :
@@ -654,8 +675,25 @@ impl AST{
           self.next();
           self.parse_expression()
         },
-        _ => Expression::Unknown,
+        // TODO: Shorthand method names (ES2015)
+        _ => {
+          // Shorthand property names (ES2015)
+          if let Expression::Identifier(property) = property_name.clone() {
+            Expression::Identifier(IdentifierLiteral { literal: property.literal } )
+          } else {
+            // TODO: throw error
+            Expression::Unknown
+          }
+        },
       };
+
+      if let Expression::Identifier(property) = property_name {
+        property_name = Expression::String(StringLiteral {
+          literal: property.literal.clone(),
+          value: property.literal,
+        });
+      }
+      
       properties.push(PropertyAssignment {
         name: Box::new(property_name),
         initializer: Box::new(initializer),
@@ -665,6 +703,7 @@ impl AST{
         self.next();
       }
     }
+    self.check_token_and_next(Token::RightBrace);
     Expression::Object(ObjectLiteral {
       properties,
     })
@@ -675,7 +714,9 @@ impl AST{
     match self.token {
       Token::Identifier => {
         self.next();
-        Expression::Identifier(IdentifierLiteral { literal: property_name_literal })
+        Expression::Identifier(IdentifierLiteral {
+          literal: property_name_literal,
+        })
       },
       Token::String => {
         let str_len = property_name_literal.len();
@@ -691,6 +732,7 @@ impl AST{
         self.next();
         Expression::Number(NumberLiteral { literal: property_name_literal, value: number_value })
       },
+      // Computed property names (ES2015)
       Token::LeftBracket => {
         self.next();
         let key = self.parse_expression();
@@ -706,7 +748,6 @@ impl AST{
     self.check_token_and_next(Token::LeftParenthesis);
     let mut arguments:Vec<Expression> = vec![];
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
-      println!("token {:?}", self.token);
       arguments.push(self.parse_expression());
       if self.token != Token::Comma {
 				break

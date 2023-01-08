@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Weak, Rc};
-use crate::ast_node::{Statement};
+use crate::ast_node::{Statement, IdentifierLiteral};
 
 #[derive(Debug,Clone)]
 pub enum Value {
@@ -85,7 +85,10 @@ impl Value {
           0f64
         }
       },
-      _ => 0f64,
+      _ => {
+        // TODO: throw error
+        0f64
+      }
     }
   }
   pub fn is_boolean(&self) -> bool {
@@ -93,6 +96,43 @@ impl Value {
       return true
     }
     return false
+  }
+
+  pub fn to_object(&self) -> Rc<RefCell<Object>> {
+    // TODO: more type
+    match self {
+      Value::Object(obj) => Rc::clone(obj),
+      Value::Function(function) => Rc::clone(function),
+      _ => {
+        // TODO: throw error
+        Rc::new(RefCell::new(Object::new()))
+      }
+    }
+  }
+
+  // 匿名方法，需要绑定name
+  pub fn bind_name(&mut self, name: String) {
+    match self {
+      Value::Function(function) => {
+        let mut function_define =function.borrow_mut();
+        let mut value = function_define.get_value().unwrap();
+        match *value {
+            Statement::Function(func) => {
+              if func.is_anonymous {
+                let mut new_func = func.clone();
+                new_func.name = IdentifierLiteral {
+                  literal: name.clone()
+                };
+                value = Box::new(Statement::Function(new_func));
+                function_define.set_value(Some(value));
+                function_define.define_property_by_value(String::from("name"), Value::String(String::from(name)));
+              }
+            },
+            _ => {}
+        };
+      },
+      _ => {}
+    }
   }
 
 }
@@ -144,6 +184,15 @@ impl Object {
     }
     self.property.insert(name, property);
     return true;
+  }
+
+  pub fn get_property(&self, name: String) -> Value {
+    let prop = self.property.get(&name);
+    if let Some(prop) = prop {
+      prop.value.clone()
+    } else {
+      Value::Undefined
+    }
   }
 }
 
