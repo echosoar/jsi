@@ -60,7 +60,7 @@ pub enum Token {
   // 运算符 operators
   // 标点符号
   Plus, // "+"
-	Minus, // "-"
+	Subtract, // "-"
 	Multiply, // "*"
 	Slash, // "/"
 	Remainder, // "%"
@@ -109,6 +109,9 @@ pub enum Token {
 	Semicolon, // ";"
 	Colon, // ":"
 	QuestionMark, // "?"
+  Exponentiation, // "**" ES2017
+	NullishCoalescing, // "??" ES2020
+	OptionalChaining, // "?." ES2020
   // not keyword
   ILLEGAL,
   // 结尾

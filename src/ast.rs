@@ -310,19 +310,166 @@ impl AST{
       }
       
       let cur_char = self.char;
-      let cur_char_string = String::from(cur_char);
+      let mut cur_char_string = String::from(cur_char);
       self.read();
       let (token, literal) =  match cur_char {
-        '+' => (Token::Plus, cur_char_string),
-        '-' => (Token::Minus, cur_char_string),
-        '*' => (Token::Multiply, cur_char_string),
-        '/' => (Token::Slash, cur_char_string),
-        '%' => (Token::Remainder, cur_char_string),
-        '>' => (Token::Greater, cur_char_string),
-        '<' => (Token::Less, cur_char_string),
-        '=' => (Token::Assign, cur_char_string),
+        '+' => {
+          if self.char == '=' {
+            // oper: +=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::AddAssign, cur_char_string)
+          } else if self.char == '+' {
+            // oper: ++
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::Increment, cur_char_string)
+          } else {
+            // oper: +
+            (Token::Plus, cur_char_string)
+          }
+        },
+        '-' => {
+          if self.char == '=' {
+            // oper: -=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::SubtractAssign, cur_char_string)
+          } else if self.char == '-' {
+            // oper: --
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::Decrement, cur_char_string)
+          } else {
+            // oper: -
+            (Token::Subtract, cur_char_string)
+          }
+        },
+        '*' => {
+          if self.char == '=' {
+            // oper: *=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::MultiplyAssign, cur_char_string)
+          } else if self.char == '*' {
+            // oper: ** 幂运算 Exponentiation Operator（ES2017）
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::Exponentiation, cur_char_string)
+          } else {
+            // oper: *
+            (Token::Multiply, cur_char_string)
+          }
+        },
+        '/' => {
+          if self.char == '/' {
+            // oper: // TODO: 跳过注释。需要循环处理
+            continue
+          } else if self.char == '*' {
+            // oper: /* */ TODO: 跳过注释。需要循环处理
+            continue
+          } else if self.char == '=' {
+            // oper: /=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::QuotientAssign, cur_char_string)
+          } else {
+            // oper: /
+            (Token::Slash, cur_char_string)
+          }
+        },
+        '%' => {
+          if self.char == '=' {
+            // oper: %=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::RemainderAssign, cur_char_string)
+          } else {
+            // oper: %
+            (Token::Remainder, cur_char_string)
+          }
+        },
+        '>' => {
+          if self.char == '>' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '>' {
+              cur_char_string.push(self.char);
+              self.read();
+              if self.char == '=' {
+                 // oper: >>>=
+                 cur_char_string.push(self.char);
+                self.read();
+                 (Token::UnsignedShiftRightAssign, cur_char_string)
+              } else {
+                 //oper:  >>>
+                (Token::UnsignedShiftRight, cur_char_string)
+              }
+            } else if self.char == '=' {
+              // oper: >>=
+              cur_char_string.push(self.char);
+              self.read();
+              (Token::ShiftRightAssign, cur_char_string)
+            } else {
+              // oper: >>
+              (Token::ShiftRight, cur_char_string)
+            }
+          } else if self.char == '=' {
+            // oper: >=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::GreaterOrEqual, cur_char_string)
+          } else {
+            // oper: >
+            (Token::Greater, cur_char_string)
+          }
+        },
+        '<' => {
+          if self.char == '<' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              // oper: <<=
+              cur_char_string.push(self.char);
+              self.read();
+              (Token::ShiftLeftAssign, cur_char_string)
+            } else {
+              // oper: <<
+              (Token::ShiftLeft, cur_char_string)
+            }
+          } else if self.char == '=' {
+            // oper: <=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::LessOrEqual, cur_char_string)
+          } else {
+            // oper: <
+            (Token::Less, cur_char_string)
+          }
+        },
+        '=' => {
+          if self.char == '=' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              cur_char_string.push(self.char);
+              self.read();
+               // oper: ===
+               (Token::StrictEqual, cur_char_string)
+            } else {
+              // oper: ==
+              (Token::Equal, cur_char_string)
+            }
+          } else {
+            // oper: =
+            (Token::Assign, cur_char_string)
+          }
+        },
         ':' => (Token::Colon, cur_char_string),
-        '.' => (Token::Period, cur_char_string),
+        '.' => {
+          // TODO: float
+          (Token::Period, cur_char_string)
+        },
         ',' => (Token::Comma, cur_char_string),
         ';' => (Token::Semicolon, cur_char_string),
         '(' => (Token::LeftParenthesis, cur_char_string),
@@ -331,7 +478,22 @@ impl AST{
         ']' => (Token::RightBracket, cur_char_string),
         '{' => (Token::LeftBrace, cur_char_string),
         '}' => (Token::RightBrace, cur_char_string),
-        '?' => (Token::QuestionMark, cur_char_string),
+        '?' => {
+          if self.char == '?' {
+            cur_char_string.push(self.char);
+            self.read();
+            // oper: ?? 空值合并运算符 Nullish Coalescing (ES2020)
+            (Token::NullishCoalescing, cur_char_string)
+          } else if self.char == '.' {
+            cur_char_string.push(self.char);
+            self.read();
+             // oper: ?. 可选链 Optional Chaining (ES2020)
+             (Token::OptionalChaining, cur_char_string)
+          } else {
+            // oper: ?
+            (Token::QuestionMark, cur_char_string)
+          }
+        },
         _ => (Token::ILLEGAL, cur_char_string),
       };
      
@@ -507,7 +669,7 @@ impl AST{
   fn parse_additive_expression(&mut self) -> Expression {
     let mut left = self.parse_multiplicative_expression();
     loop {
-      if self.token == Token::Plus || self.token == Token::Minus {
+      if self.token == Token::Plus || self.token == Token::Subtract {
         let operator =  self.token.clone();
         self.next();
         let right = self.parse_multiplicative_expression();

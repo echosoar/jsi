@@ -147,7 +147,7 @@ impl Context {
         return Value::Number(left.to_number() + right.to_number())
       }
       // 减法
-      if expression.operator == Token::Minus {
+      if expression.operator == Token::Subtract {
         return Value::Number(left.to_number() - right.to_number())
       }
 
