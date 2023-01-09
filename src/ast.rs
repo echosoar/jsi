@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -688,12 +688,12 @@ impl AST{
   // 解析 * / % 语法 优先级 13
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_multiplicative_expression(&mut self) -> Expression {
-    let mut left = self.parse_left_hand_side_expression();
+    let mut left = self.parse_postfix_unary_expression();
     loop {
       if self.token == Token::Multiply || self.token == Token::Slash || self.token == Token::Remainder {
         let operator =  self.token.clone();
         self.next();
-        let right = self.parse_left_hand_side_expression();
+        let right = self.parse_postfix_unary_expression();
         left = Expression::Binary(BinaryExpression{
           left: Box::new(left),
           operator,
@@ -704,6 +704,23 @@ impl AST{
       }
     };
     return left;
+  }
+
+  // 后置一元运算符 ++ -- 优先级 16
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-update-expressions
+  fn parse_postfix_unary_expression(&mut self) -> Expression {
+    let left = self.parse_left_hand_side_expression();
+    if self.token == Token::Increment || self.token == Token::Decrement {
+      // TODO: check left is identifier/property access
+      let expr = Expression::PostfixUnary(PostfixUnaryExpression {
+        operator: self.token.clone(),
+        operand: Box::new(left),
+      });
+      self.next();
+      expr
+    } else {
+      left
+    }
   }
 
   // 解析访问(.、[])语法 优先级 18

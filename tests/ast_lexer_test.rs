@@ -1,4 +1,4 @@
-use jsi::{JSI,ast_node::{Statement, ExpressionStatement, Expression, BinaryExpression, NumberLiteral}, ast_token::Token};
+use jsi::{JSI,ast_node::{Statement, ExpressionStatement, Expression, BinaryExpression, NumberLiteral, IdentifierLiteral, PostfixUnaryExpression}, ast_token::Token};
 
 struct TokenCheck {
   pub oper: String,
@@ -25,6 +25,28 @@ fn ast_lexer_token() {
         left: Box::new(Expression::Number(NumberLiteral{ literal: String::from("1"), value: 1f64 })),
         operator: token.token.clone(),
         right: Box::new(Expression::Number(NumberLiteral{ literal: String::from("1"), value: 1f64 })),
+      })
+    })]);
+  }
+}
+
+
+#[test]
+fn ast_lexer_postfix_unary_token() {
+  let token_list = vec![
+    TokenCheck { oper: String::from("++"), token: Token::Increment },
+    TokenCheck { oper: String::from("--"), token: Token::Decrement },
+  ];
+  let mut jsi_vm = JSI::new();
+  for token in token_list.iter() {
+    let mut code = String::from("i");
+    code.push_str(token.oper.as_str());
+    code.push_str(";");
+    let program = jsi_vm.parse(code);
+    assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
+      expression: Expression::PostfixUnary(PostfixUnaryExpression {
+        operand: Box::new(Expression::Identifier(IdentifierLiteral{ literal: String::from("i") })),
+        operator: token.token.clone(),
       })
     })]);
   }
