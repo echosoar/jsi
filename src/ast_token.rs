@@ -76,7 +76,7 @@ pub enum Token {
 	AddAssign, // "+="
 	SubtractAssign, // "-="
 	MultiplyAssign, // "*="
-	QuotientAssign, // "/="
+	SlashAssign, // "/="
 	RemainderAssign, // "%="
 	AndAssign, // "&="
 	OrAssign, // "|="
@@ -86,7 +86,9 @@ pub enum Token {
 	UnsignedShiftRightAssign, // ">>>="
 	AndNotAssign, // "&^="
 	LogicalAnd, // "&&"
+	LogicalAndAssign, // "&&="
 	LogicalOr, // "||"
+	LogicalOrAssign, // "||="
 	Increment, // "++"
 	Decrement, // "--"
 	Equal, // "=="
@@ -112,7 +114,9 @@ pub enum Token {
 	Colon, // ":"
 	QuestionMark, // "?"
   Exponentiation, // "**" ES2017
+  ExponentiationAssign, // "**=" ES2017
 	NullishCoalescing, // "??" ES2020
+	NullishCoalescingAssign, // "??=" ES2020
 	OptionalChaining, // "?." ES2020
   // not keyword
   ILLEGAL,
