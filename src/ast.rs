@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -688,12 +688,12 @@ impl AST{
   // 解析 * / % 语法 优先级 13
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_multiplicative_expression(&mut self) -> Expression {
-    let mut left = self.parse_postfix_unary_expression();
+    let mut left = self.parse_exponentiation_expression();
     loop {
       if self.token == Token::Multiply || self.token == Token::Slash || self.token == Token::Remainder {
         let operator =  self.token.clone();
         self.next();
-        let right = self.parse_postfix_unary_expression();
+        let right = self.parse_exponentiation_expression();
         left = Expression::Binary(BinaryExpression{
           left: Box::new(left),
           operator,
@@ -704,6 +704,57 @@ impl AST{
       }
     };
     return left;
+  }
+
+  // 幂运算 1**2 -- 优先级 14
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
+  fn parse_exponentiation_expression(&mut self) -> Expression {
+    let left = self.parse_prefix_unary_expression();
+    if self.token == Token::Exponentiation {
+      let operator = self.token.clone();
+      self.next();
+      let right = self.parse_prefix_unary_expression();
+      Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(right),
+      })
+    } else {
+      left
+    }
+  }
+  // 前置一元运算符  -- 优先级 15
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
+  fn parse_prefix_unary_expression(&mut self) -> Expression {
+    match self.token {
+      Token::Not | Token::BitwiseNot | Token::Plus | Token::Subtract => {
+        let operator = self.token.clone();
+        self.next();
+        Expression::PrefixUnary(PrefixUnaryExpression {
+          operator,
+          operand: Box::new(self.parse_postfix_unary_expression()),
+        })
+      },
+      Token::Typeof | Token::Void | Token::Delete | Token::Await => {
+        let operator = self.token.clone();
+        self.next();
+        Expression::PrefixUnary(PrefixUnaryExpression {
+          operator,
+          operand: Box::new(self.parse_postfix_unary_expression()),
+        })
+      },
+      Token::Increment | Token::Decrement => {
+        let operator = self.token.clone();
+        self.next();
+        let operand = self.parse_postfix_unary_expression();
+        // TODO: check operand is Identifier/Property access
+        Expression::PrefixUnary(PrefixUnaryExpression {
+          operator,
+          operand: Box::new(operand),
+        })
+      },
+      _ => self.parse_postfix_unary_expression()
+    }
   }
 
   // 后置一元运算符 ++ -- 优先级 16

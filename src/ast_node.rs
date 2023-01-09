@@ -19,6 +19,7 @@ pub enum Expression {
   PropertyAccess(PropertyAccessExpression),
   ElementAccess(ElementAccessExpression),
   Call(CallExpression),
+  PrefixUnary(PrefixUnaryExpression),
   PostfixUnary(PostfixUnaryExpression),
   Identifier(IdentifierLiteral),
   Number(NumberLiteral),
@@ -121,6 +122,14 @@ pub struct PropertyAccessExpression {
 pub struct ElementAccessExpression {
   pub expression: Box<Expression>,
   pub argument: Box<Expression>,
+}
+
+
+// 前置一元运算符表达式
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrefixUnaryExpression {
+  pub operand: Box<Expression>,
+  pub operator: Token,
 }
 
 // 后置一元运算符表达式 ++ --

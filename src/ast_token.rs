@@ -46,6 +46,8 @@ pub enum Token {
   Protected,
   Public,
   Static,
+  Async, // ES2015
+  Await, // ES2015
 
   // 字面量 literal
   Undefined,
@@ -155,6 +157,8 @@ pub fn get_token_keyword(literal: &String, is_strict: bool) -> Token {
     "while" => Token::While,
     "with" => Token::With,
     "yield" => Token::Yield,
+    "async" => Token::Async,
+    "await" => Token::Await,
     _ => {
       if is_strict {
         match str {
