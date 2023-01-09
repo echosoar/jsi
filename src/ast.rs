@@ -478,6 +478,8 @@ impl AST{
         ']' => (Token::RightBracket, cur_char_string),
         '{' => (Token::LeftBrace, cur_char_string),
         '}' => (Token::RightBrace, cur_char_string),
+        '!' => (Token::Not, cur_char_string),
+        '~' => (Token::BitwiseNot, cur_char_string),
         '?' => {
           if self.char == '?' {
             cur_char_string.push(self.char);

@@ -1,4 +1,4 @@
-use jsi::{JSI,ast_node::{Statement, ExpressionStatement, Expression, BinaryExpression, NumberLiteral, IdentifierLiteral, PostfixUnaryExpression}, ast_token::Token};
+use jsi::{JSI,ast_node::{Statement, ExpressionStatement, Expression, BinaryExpression, NumberLiteral, IdentifierLiteral, PostfixUnaryExpression, PrefixUnaryExpression}, ast_token::Token};
 
 struct TokenCheck {
   pub oper: String,
@@ -37,16 +37,23 @@ fn ast_lexer_prefix_unary_token() {
   let token_list = vec![
     TokenCheck { oper: String::from("!"), token: Token::Not },
     TokenCheck { oper: String::from("~"), token: Token::BitwiseNot },
+    TokenCheck { oper: String::from("+"), token: Token::Plus },
+    TokenCheck { oper: String::from("-"), token: Token::Subtract },
+    TokenCheck { oper: String::from("++"), token: Token::Increment },
+    TokenCheck { oper: String::from("--"), token: Token::Decrement },
+    TokenCheck { oper: String::from("typeof"), token: Token::Typeof },
+    TokenCheck { oper: String::from("void"), token: Token::Void },
+    TokenCheck { oper: String::from("delete"), token: Token::Delete },
+    TokenCheck { oper: String::from("await"), token: Token::Await },
   ];
   let mut jsi_vm = JSI::new();
   for token in token_list.iter() {
     let mut code = String::from("");
     code.push_str(token.oper.as_str());
-    code.push_str("i;");
-    println!("code: {:?}", code);
+    code.push_str(" i;");
     let program = jsi_vm.parse(code);
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
-      expression: Expression::PostfixUnary(PostfixUnaryExpression {
+      expression: Expression::PrefixUnary(PrefixUnaryExpression {
         operand: Box::new(Expression::Identifier(IdentifierLiteral{ literal: String::from("i") })),
         operator: token.token.clone(),
       })
