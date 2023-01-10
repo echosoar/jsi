@@ -239,6 +239,9 @@ fn ast_lexer_associativity_left_exponentiation() {
     TokenCheck { oper: String::from("&"), token: Token::And },
     TokenCheck { oper: String::from("^"), token: Token::ExclusiveOr },
     TokenCheck { oper: String::from("|"), token: Token::Or },
+    TokenCheck { oper: String::from("&&"), token: Token::LogicalAnd },
+    TokenCheck { oper: String::from("||"), token: Token::LogicalOr },
+    TokenCheck { oper: String::from("??"), token: Token::NullishCoalescing },
   ];
   let mut jsi_vm = JSI::new();
   for token in token_list.iter() {

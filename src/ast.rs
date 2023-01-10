@@ -714,7 +714,7 @@ impl AST{
     return self.parse_assignment_expression();
   }
 
-  // 解析赋值运算符，优先级 2
+  // 解析赋值运算符，优先级 2，从右到左
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-assignment-operators
   fn parse_assignment_expression(&mut self) -> Expression {
     let left = self.parse_conditional_expression();
@@ -736,7 +736,7 @@ impl AST{
     }
   }
 
-  // 解析三目运算符，优先级 3
+  // 解析三目运算符，优先级 3，从右到左
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-conditional-operator
   fn parse_conditional_expression(&mut self) -> Expression {
     let left = self.parse_binary_logical_expression();
@@ -759,213 +759,126 @@ impl AST{
     return left
   }
 
-  // 逻辑或 || 运算符表达式 和 空值合并表达式 ?? 优先级 4
+  // 逻辑或 || 运算符表达式 和 空值合并表达式 ?? 优先级 4，从左到右
   fn parse_binary_logical_expression(&mut self) -> Expression {
-    let left = self.parse_logical_and_expression();
-    if self.token == Token::LogicalOr || self.token == Token::NullishCoalescing {
-      let operator = self.token.clone();
-      // 跳过 || 和 ??
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_logical_and_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_logical_and_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::LogicalOr,
+      Token::NullishCoalescing,
+    ], next)
   }
 
-  // 逻辑与 && 运算符表达式 优先级 5
+  // 逻辑与 && 运算符表达式 优先级 5，从左到右
   fn parse_logical_and_expression(&mut self) -> Expression {
-    let left = self.parse_binary_or_expression();
-    if self.token == Token::LogicalAnd {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_binary_or_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_binary_or_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::LogicalAnd,
+    ], next)
   }
 
-  // 按位或 | 运算符表达式 优先级 6
+  // 按位或 | 运算符表达式 优先级 6，从左到右
   fn parse_binary_or_expression(&mut self) -> Expression {
-    let left = self.parse_binary_exclusive_or_expression();
-    if self.token == Token::Or {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_binary_exclusive_or_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_binary_exclusive_or_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::Or,
+    ], next)
   }
 
-  // 按位异或 (^) 运算符表达式 优先级 7
+  // 按位异或 (^) 运算符表达式 优先级 7，从左到右
   fn parse_binary_exclusive_or_expression(&mut self) -> Expression {
-    let left = self.parse_binary_and_expression();
-    if self.token == Token::ExclusiveOr {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_binary_and_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_binary_and_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::ExclusiveOr,
+    ], next)
   }
 
-  // 按位与 (&) 运算符表达式 优先级 8
+  // 按位与 (&) 运算符表达式 优先级 8，从左到右
   fn parse_binary_and_expression(&mut self) -> Expression {
-    let left = self.parse_equality_expression();
-    if self.token == Token::And {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_equality_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_equality_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::And,
+    ], next)
   }
 
-  // 相等表达式 优先级 9
+  // 相等表达式 优先级 9，从左到右
   fn parse_equality_expression(&mut self) -> Expression {
-    let left = self.parse_relationship_expression();
-    match self.token {
-      Token::Equal | Token::StrictEqual | Token::NotEqual | Token::StrictNotEqual => {
-        let operator = self.token.clone();
-        self.next();
-        Expression::Binary(BinaryExpression {
-          left: Box::new(left),
-          operator,
-          right: Box::new(self.parse_relationship_expression())
-        })
-      },
-      _ => left 
-    }
+    let next = |tst: &mut AST| {
+      tst.parse_relationship_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::Equal ,
+      Token::StrictEqual ,
+      Token::NotEqual ,
+      Token::StrictNotEqual ,
+    ], next)
   }
 
-  // 解析关系运算符 > 、< 、>=、<= 优先级 10
+  // 解析关系运算符 > 、< 、>=、<= 优先级 10，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
   fn parse_relationship_expression(&mut self) -> Expression {
-    let mut left = self.parse_shift_expression();
-    loop {
-      // 向左结合
-      if self.token == Token::Less || self.token == Token::Greater || self.token == Token::GreaterOrEqual || self.token == Token::LessOrEqual || self.token == Token::In || self.token == Token::Instanceof {
-        let operator = self.token.clone();
-        // 跳过当前的运算符 >、<
-        self.next();
-        let right = self.parse_shift_expression();
-        left = Expression::Binary(BinaryExpression{
-          left: Box::new(left),
-          operator,
-          right: Box::new(right)
-        });
-      } else {
-        break;
-      }
-    }
-    
-    return left;
+    let next = |tst: &mut AST| {
+      tst.parse_shift_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::Less ,
+      Token::Greater ,
+      Token::GreaterOrEqual ,
+      Token::LessOrEqual ,
+      Token::In ,
+      Token::Instanceof
+    ], next)
   }
 
-  // TODO: 解析左结合表达式
-  fn parer_left_associat_expression(&mut self, tokens: Vec<Token>) -> Expression {
-    let next = self.parse_expression;
-    let mut left = next();
-    loop {
-      // 向左结合
-      if tokens.contains(&self.token) {
-        let operator = self.token.clone();
-        // 跳过当前的运算符
-        self.next();
-        let right = next();
-        left = Expression::Binary(BinaryExpression{
-          left: Box::new(left),
-          operator,
-          right: Box::new(right)
-        });
-      } else {
-        break;
-      }
-    }
-    
-    return left;
-  }
-
-  // 解析位运算符 优先级 11
+  // 解析位运算符 优先级 11，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-bitwise-shift-operators
   fn parse_shift_expression(&mut self) -> Expression {
-    let mut left = self.parse_additive_expression();
-    loop {
-      // 向左结合
-      if self.token == Token::ShiftLeft || self.token == Token::ShiftRight || self.token == Token::UnsignedShiftRight {
-        let operator =  self.token.clone();
-        self.next();
-        let right = self.parse_additive_expression();
-        left = Expression::Binary(BinaryExpression{
-          left: Box::new(left),
-          operator,
-          right: Box::new(right)
-        });
-      } else {
-        break;
-      }
+    let next = |tst: &mut AST| {
+      tst.parse_additive_expression()
     };
-    return left;
+    self.parse_left_associate_expression(vec![
+      Token::ShiftLeft ,
+      Token::ShiftRight ,
+      Token::UnsignedShiftRight ,
+    ], next)
   }
 
 
-  // 解析 + - 语法 优先级 12
+  // 解析 + - 语法 优先级 12，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_additive_expression(&mut self) -> Expression {
-    let mut left = self.parse_multiplicative_expression();
-    loop {
-      if self.token == Token::Plus || self.token == Token::Subtract {
-        let operator =  self.token.clone();
-        self.next();
-        let right = self.parse_multiplicative_expression();
-        left = Expression::Binary(BinaryExpression{
-          left: Box::new(left),
-          operator,
-          right: Box::new(right)
-        });
-      } else {
-        break;
-      }
+    let next = |tst: &mut AST| {
+      tst.parse_multiplicative_expression()
     };
-    return left;
+    self.parse_left_associate_expression(vec![
+      Token::Plus ,
+      Token::Subtract,
+    ], next)
   }
 
-  // 解析 * / % 语法 优先级 13
+  // 解析 * / % 语法 优先级 13，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_multiplicative_expression(&mut self) -> Expression {
-    let mut left = self.parse_exponentiation_expression();
-    loop {
-      if self.token == Token::Multiply || self.token == Token::Slash || self.token == Token::Remainder {
-        let operator =  self.token.clone();
-        self.next();
-        let right = self.parse_exponentiation_expression();
-        left = Expression::Binary(BinaryExpression{
-          left: Box::new(left),
-          operator,
-          right: Box::new(right)
-        });
-      } else {
-        break;
-      }
+    let next = |tst: &mut AST| {
+      tst.parse_exponentiation_expression()
     };
-    return left;
+    self.parse_left_associate_expression(vec![
+      Token::Multiply ,
+      Token::Slash ,
+      Token::Remainder ,
+    ], next)
   }
 
-  // 幂运算 1**2 -- 优先级 14
+  // 幂运算 1**2 -- 优先级 14，从右到左
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
   fn parse_exponentiation_expression(&mut self) -> Expression {
     let left = self.parse_prefix_unary_expression();
@@ -982,7 +895,7 @@ impl AST{
       left
     }
   }
-  // 前置一元运算符  -- 优先级 15
+  // 前置一元运算符  -- 优先级 15，从右到左
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
   fn parse_prefix_unary_expression(&mut self) -> Expression {
     match self.token {
@@ -1033,7 +946,7 @@ impl AST{
     }
   }
 
-  // 解析访问(.、[])语法 优先级 18
+  // 解析访问(.、[])语法 优先级 18，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
   fn parse_left_hand_side_expression(&mut self) -> Expression {
     let mut left = self.parse_group_expression();
@@ -1043,6 +956,8 @@ impl AST{
         Token::Period => self.parse_property_access_expression(),
         Token::LeftBracket => self.parse_element_access_expression(),
         Token::LeftParenthesis => self.parse_call_expression(),
+        // TODO: new
+        // TODO: optional chaining
         _ => Expression::Unknown,
       };
       if let  Expression::Unknown = new_left {
@@ -1263,6 +1178,28 @@ impl AST{
   fn parse_number_literal_expression(&mut self) -> f64 {
     // 检测是否是 float
     self.literal.parse::<f64>().unwrap()
+  }
+
+  // 解析左结合表达式
+  fn parse_left_associate_expression<F: Fn(&mut AST)-> Expression>(&mut self, tokens: Vec<Token>, next: F) -> Expression {
+    let mut left = next(self);
+    loop {
+      // 向左结合
+      if tokens.contains(&self.token) {
+        let operator = self.token.clone();
+        // 跳过当前的运算符
+        self.next();
+        let right = next(self);
+        left = Expression::Binary(BinaryExpression{
+          left: Box::new(left),
+          operator,
+          right: Box::new(right)
+        });
+      } else {
+        break;
+      }
+    }
+    return left;
   }
 
   // 跳过空白字符
