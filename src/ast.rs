@@ -855,34 +855,70 @@ impl AST{
   // 解析关系运算符 > 、< 、>=、<= 优先级 10
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
   fn parse_relationship_expression(&mut self) -> Expression {
-    let left = self.parse_shift_expression();
-    if self.token == Token::Less || self.token == Token::Greater || self.token == Token::GreaterOrEqual || self.token == Token::LessOrEqual || self.token == Token::In || self.token == Token::Instanceof {
-      let operator = self.token.clone();
-      // 跳过当前的运算符 >、<
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_shift_expression())
-      })
+    let mut left = self.parse_shift_expression();
+    loop {
+      // 向左结合
+      if self.token == Token::Less || self.token == Token::Greater || self.token == Token::GreaterOrEqual || self.token == Token::LessOrEqual || self.token == Token::In || self.token == Token::Instanceof {
+        let operator = self.token.clone();
+        // 跳过当前的运算符 >、<
+        self.next();
+        let right = self.parse_shift_expression();
+        left = Expression::Binary(BinaryExpression{
+          left: Box::new(left),
+          operator,
+          right: Box::new(right)
+        });
+      } else {
+        break;
+      }
     }
+    
+    return left;
+  }
+
+  // TODO: 解析左结合表达式
+  fn parer_left_associat_expression(&mut self, tokens: Vec<Token>) -> Expression {
+    let next = self.parse_expression;
+    let mut left = next();
+    loop {
+      // 向左结合
+      if tokens.contains(&self.token) {
+        let operator = self.token.clone();
+        // 跳过当前的运算符
+        self.next();
+        let right = next();
+        left = Expression::Binary(BinaryExpression{
+          left: Box::new(left),
+          operator,
+          right: Box::new(right)
+        });
+      } else {
+        break;
+      }
+    }
+    
     return left;
   }
 
   // 解析位运算符 优先级 11
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-bitwise-shift-operators
   fn parse_shift_expression(&mut self) -> Expression {
-    let left = self.parse_additive_expression();
-    if self.token == Token::ShiftLeft || self.token == Token::ShiftRight || self.token == Token::UnsignedShiftRight {
-      let operator = self.token.clone();
-      // 跳过当前的运算符
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_additive_expression())
-      })
-    }
+    let mut left = self.parse_additive_expression();
+    loop {
+      // 向左结合
+      if self.token == Token::ShiftLeft || self.token == Token::ShiftRight || self.token == Token::UnsignedShiftRight {
+        let operator =  self.token.clone();
+        self.next();
+        let right = self.parse_additive_expression();
+        left = Expression::Binary(BinaryExpression{
+          left: Box::new(left),
+          operator,
+          right: Box::new(right)
+        });
+      } else {
+        break;
+      }
+    };
     return left;
   }
 

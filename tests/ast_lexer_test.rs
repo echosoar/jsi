@@ -140,7 +140,7 @@ fn ast_lexer_postfix_unary_token() {
 
 #[test]
 // 右结合性 a [op] b [op] c == a [op] (b [op] c)
-fn ast_lexer_associativity_exponentiation() {
+fn ast_lexer_associativity_right_exponentiation() {
   let token_list = vec![
     TokenCheck { oper: String::from("**"), token: Token::Exponentiation },
   ];
@@ -202,6 +202,7 @@ fn ast_lexer_associativity_exponentiation() {
       })
     })]);
   }
+  // TODO: single oper
   // 三目运算符
   let program = jsi_vm.parse(String::from("1 ? 2 ? 3: 4: 5;"));
   assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
@@ -217,6 +218,50 @@ fn ast_lexer_associativity_exponentiation() {
   })]);
 }
 
+
+
+#[test]
+// 左结合性 a [op] b [op] c == (a [op] b) [op] c
+fn ast_lexer_associativity_left_exponentiation() {
+  let token_list = vec![
+    TokenCheck { oper: String::from("+"), token: Token::Plus },
+    TokenCheck { oper: String::from("-"), token: Token::Subtract },
+    TokenCheck { oper: String::from("*"), token: Token::Multiply },
+    TokenCheck { oper: String::from("/"), token: Token::Slash },
+    TokenCheck { oper: String::from("%"), token: Token::Remainder },
+    TokenCheck { oper: String::from("<<"), token: Token::ShiftLeft },
+    TokenCheck { oper: String::from(">>"), token: Token::ShiftRight },
+    TokenCheck { oper: String::from(">>>"), token: Token::UnsignedShiftRight },
+    TokenCheck { oper: String::from("<"), token: Token::Less },
+    TokenCheck { oper: String::from(">"), token: Token::Greater },
+    TokenCheck { oper: String::from("in"), token: Token::In },
+    TokenCheck { oper: String::from("instanceof"), token: Token::Instanceof },
+    TokenCheck { oper: String::from("&"), token: Token::And },
+    TokenCheck { oper: String::from("^"), token: Token::ExclusiveOr },
+    TokenCheck { oper: String::from("|"), token: Token::Or },
+  ];
+  let mut jsi_vm = JSI::new();
+  for token in token_list.iter() {
+    let mut code = String::from("2 ");
+    code.push_str(token.oper.as_str());
+    code.push_str(" 3 ");
+    code.push_str(token.oper.as_str());
+    code.push_str(" 2;");
+    let program = jsi_vm.parse(code);
+    assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
+      expression: Expression::Binary(BinaryExpression { // 向左结合 (2 op 3) op 2
+        left: Box::new(Expression::Binary(BinaryExpression { // 2 op 3
+          left: Box::new(Expression::Number(NumberLiteral {  literal: String::from("2"), value: 2f64 })), // 2
+          operator: token.token.clone(),
+          right: Box::new(Expression::Number(NumberLiteral {  literal: String::from("3"), value: 3f64 })), // 3
+        })),
+        operator: token.token.clone(),
+        right: Box::new(Expression::Number(NumberLiteral {  literal: String::from("2"), value: 2f64 })), // 2,
+      })
+    })]);
+  }
+  // TODO: queal
+}
 
 #[test]
 fn ast_lexer_priority_between_exponentiation_shift() {
