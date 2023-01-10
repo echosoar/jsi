@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration};
+use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -310,19 +310,174 @@ impl AST{
       }
       
       let cur_char = self.char;
-      let cur_char_string = String::from(cur_char);
+      let mut cur_char_string = String::from(cur_char);
       self.read();
       let (token, literal) =  match cur_char {
-        '+' => (Token::Plus, cur_char_string),
-        '-' => (Token::Minus, cur_char_string),
-        '*' => (Token::Multiply, cur_char_string),
-        '/' => (Token::Slash, cur_char_string),
-        '%' => (Token::Remainder, cur_char_string),
-        '>' => (Token::Greater, cur_char_string),
-        '<' => (Token::Less, cur_char_string),
-        '=' => (Token::Assign, cur_char_string),
+        '+' => {
+          if self.char == '=' {
+            // oper: +=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::AddAssign, cur_char_string)
+          } else if self.char == '+' {
+            // oper: ++
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::Increment, cur_char_string)
+          } else {
+            // oper: +
+            (Token::Plus, cur_char_string)
+          }
+        },
+        '-' => {
+          if self.char == '=' {
+            // oper: -=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::SubtractAssign, cur_char_string)
+          } else if self.char == '-' {
+            // oper: --
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::Decrement, cur_char_string)
+          } else {
+            // oper: -
+            (Token::Subtract, cur_char_string)
+          }
+        },
+        '*' => {
+          if self.char == '=' {
+            // oper: *=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::MultiplyAssign, cur_char_string)
+          } else if self.char == '*' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              // oper: **=
+              cur_char_string.push(self.char);
+              self.read();
+              (Token::ExponentiationAssign, cur_char_string)
+            } else {
+              // oper ** 幂运算 Exponentiation Operator（ES2017）
+              (Token::Exponentiation, cur_char_string)
+            }
+            
+          } else {
+            // oper: *
+            (Token::Multiply, cur_char_string)
+          }
+        },
+        '/' => {
+          if self.char == '/' {
+            // oper: // TODO: 跳过注释。需要循环处理
+            continue
+          } else if self.char == '*' {
+            // oper: /* */ TODO: 跳过注释。需要循环处理
+            continue
+          } else if self.char == '=' {
+            // oper: /=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::SlashAssign, cur_char_string)
+          } else {
+            // oper: /
+            (Token::Slash, cur_char_string)
+          }
+        },
+        '%' => {
+          if self.char == '=' {
+            // oper: %=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::RemainderAssign, cur_char_string)
+          } else {
+            // oper: %
+            (Token::Remainder, cur_char_string)
+          }
+        },
+        '>' => {
+          if self.char == '>' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '>' {
+              cur_char_string.push(self.char);
+              self.read();
+              if self.char == '=' {
+                 // oper: >>>=
+                 cur_char_string.push(self.char);
+                self.read();
+                 (Token::UnsignedShiftRightAssign, cur_char_string)
+              } else {
+                 //oper:  >>>
+                (Token::UnsignedShiftRight, cur_char_string)
+              }
+            } else if self.char == '=' {
+              // oper: >>=
+              cur_char_string.push(self.char);
+              self.read();
+              (Token::ShiftRightAssign, cur_char_string)
+            } else {
+              // oper: >>
+              (Token::ShiftRight, cur_char_string)
+            }
+          } else if self.char == '=' {
+            // oper: >=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::GreaterOrEqual, cur_char_string)
+          } else {
+            // oper: >
+            (Token::Greater, cur_char_string)
+          }
+        },
+        '<' => {
+          if self.char == '<' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              // oper: <<=
+              cur_char_string.push(self.char);
+              self.read();
+              (Token::ShiftLeftAssign, cur_char_string)
+            } else {
+              // oper: <<
+              (Token::ShiftLeft, cur_char_string)
+            }
+          } else if self.char == '=' {
+            // oper: <=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::LessOrEqual, cur_char_string)
+          } else {
+            // oper: <
+            (Token::Less, cur_char_string)
+          }
+        },
+        '=' => {
+          if self.char == '=' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              cur_char_string.push(self.char);
+              self.read();
+               // oper: ===
+               (Token::StrictEqual, cur_char_string)
+            } else {
+              // oper: ==
+              (Token::Equal, cur_char_string)
+            }
+          } else {
+            // oper: =
+            (Token::Assign, cur_char_string)
+          }
+        },
         ':' => (Token::Colon, cur_char_string),
-        '.' => (Token::Period, cur_char_string),
+        '.' => {
+          // TODO: float
+          (Token::Period, cur_char_string)
+        },
         ',' => (Token::Comma, cur_char_string),
         ';' => (Token::Semicolon, cur_char_string),
         '(' => (Token::LeftParenthesis, cur_char_string),
@@ -331,7 +486,106 @@ impl AST{
         ']' => (Token::RightBracket, cur_char_string),
         '{' => (Token::LeftBrace, cur_char_string),
         '}' => (Token::RightBrace, cur_char_string),
-        '?' => (Token::QuestionMark, cur_char_string),
+        
+        '~' => (Token::BitwiseNot, cur_char_string),
+        '&' => { // 与
+          if self.char == '&' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              cur_char_string.push(self.char);
+              self.read();
+              // oper: &&=
+              (Token::LogicalAndAssign, cur_char_string)
+            } else {
+              // oper: &&
+              (Token::LogicalAnd, cur_char_string)
+            }
+          } else if self.char == '=' {
+            cur_char_string.push(self.char);
+            self.read();
+             // oper: &=
+             (Token::AndAssign, cur_char_string)
+          } else {
+            // oper: &
+            (Token::And, cur_char_string)
+          }
+        },
+        '|' => { // 或
+          if self.char == '|' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              cur_char_string.push(self.char);
+              self.read();
+              // oper: ||=
+              (Token::LogicalOrAssign, cur_char_string)
+            } else {
+              // oper: ||
+              (Token::LogicalOr, cur_char_string)
+            }
+          } else if self.char == '=' {
+            cur_char_string.push(self.char);
+            self.read();
+            // oper: !=
+            (Token::OrAssign, cur_char_string)
+          } else {
+            // oper: !
+            (Token::Or, cur_char_string)
+          }
+        },
+        '!' => { // 非
+          if self.char == '=' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              cur_char_string.push(self.char);
+              self.read();
+              // oper: !==
+              (Token::StrictNotEqual, cur_char_string)
+            } else {
+              // oper: !=
+              (Token::NotEqual, cur_char_string)
+            }
+          } else {
+            // oper: !
+            (Token::Not, cur_char_string)
+          }
+        },
+        '^' => { // 异或
+          if self.char == '=' {
+            cur_char_string.push(self.char);
+            self.read();
+            // oper: ^=
+            (Token::ExclusiveOrAssign, cur_char_string)
+          } else {
+            // oper: ^
+            (Token::ExclusiveOr, cur_char_string)
+          }
+        },
+        '?' => {
+          if self.char == '?' {
+            cur_char_string.push(self.char);
+            self.read();
+            if self.char == '=' {
+              cur_char_string.push(self.char);
+              self.read();
+              // oper: ??=
+              (Token::NullishCoalescingAssign, cur_char_string)
+            } else {
+              // oper: ?? 空值合并运算符 Nullish Coalescing (ES2020)
+              (Token::NullishCoalescing, cur_char_string)
+            }
+          } else if self.char == '.' {
+            cur_char_string.push(self.char);
+            self.read();
+             // oper: ?. 可选链 Optional Chaining (ES2020)
+             (Token::OptionalChaining, cur_char_string)
+          } else {
+            // oper: ?
+            (Token::QuestionMark, cur_char_string)
+          }
+        },
         _ => (Token::ILLEGAL, cur_char_string),
       };
      
@@ -457,13 +711,35 @@ impl AST{
   }
   // 解析表达式
   fn parse_expression(&mut self) -> Expression  {
-    return self.parse_conditional_expression();
+    return self.parse_assignment_expression();
+  }
+
+  // 解析赋值运算符，优先级 2
+  // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-assignment-operators
+  fn parse_assignment_expression(&mut self) -> Expression {
+    let left = self.parse_conditional_expression();
+    match self.token {
+      Token::Assign | Token::AddAssign | Token::SubtractAssign | Token::MultiplyAssign | Token::SlashAssign | Token::RemainderAssign | Token::ShiftLeftAssign | Token::ShiftRightAssign | Token::UnsignedShiftRightAssign | Token::OrAssign | Token::AndAssign | Token::ExclusiveOrAssign | Token::LogicalAndAssign | Token::LogicalOrAssign | Token::ExponentiationAssign | Token::NullishCoalescingAssign =>  {
+        // 跳过各种赋值运算符
+        let oper = self.token.clone();
+        self.next();
+        // from right to left
+        let right = self.parse_expression();
+        return Expression::Assign(AssignExpression {
+          left: Box::new(left),
+          operator: oper,
+          right: Box::new(right),
+        });
+      },
+      _ => left
+      
+    }
   }
 
   // 解析三目运算符，优先级 3
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-conditional-operator
   fn parse_conditional_expression(&mut self) -> Expression {
-    let left = self.parse_relationship_expression();
+    let left = self.parse_binary_logical_expression();
     if self.token == Token::QuestionMark {
       // 跳过 ?
       self.next();
@@ -483,13 +759,123 @@ impl AST{
     return left
   }
 
-  // 解析关系运算符 > 、< 优先级 10
+  // 逻辑或 || 运算符表达式 和 空值合并表达式 ?? 优先级 4
+  fn parse_binary_logical_expression(&mut self) -> Expression {
+    let left = self.parse_logical_and_expression();
+    if self.token == Token::LogicalOr || self.token == Token::NullishCoalescing {
+      let operator = self.token.clone();
+      // 跳过 || 和 ??
+      self.next();
+      return Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(self.parse_logical_and_expression())
+      });
+    }
+    left
+  }
+
+  // 逻辑与 && 运算符表达式 优先级 5
+  fn parse_logical_and_expression(&mut self) -> Expression {
+    let left = self.parse_binary_or_expression();
+    if self.token == Token::LogicalAnd {
+      let operator = self.token.clone();
+      self.next();
+      return Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(self.parse_binary_or_expression())
+      });
+    }
+    left
+  }
+
+  // 按位或 | 运算符表达式 优先级 6
+  fn parse_binary_or_expression(&mut self) -> Expression {
+    let left = self.parse_binary_exclusive_or_expression();
+    if self.token == Token::Or {
+      let operator = self.token.clone();
+      self.next();
+      return Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(self.parse_binary_exclusive_or_expression())
+      });
+    }
+    left
+  }
+
+  // 按位异或 (^) 运算符表达式 优先级 7
+  fn parse_binary_exclusive_or_expression(&mut self) -> Expression {
+    let left = self.parse_binary_and_expression();
+    if self.token == Token::ExclusiveOr {
+      let operator = self.token.clone();
+      self.next();
+      return Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(self.parse_binary_and_expression())
+      });
+    }
+    left
+  }
+
+  // 按位与 (&) 运算符表达式 优先级 8
+  fn parse_binary_and_expression(&mut self) -> Expression {
+    let left = self.parse_equality_expression();
+    if self.token == Token::And {
+      let operator = self.token.clone();
+      self.next();
+      return Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(self.parse_equality_expression())
+      });
+    }
+    left
+  }
+
+  // 相等表达式 优先级 9
+  fn parse_equality_expression(&mut self) -> Expression {
+    let left = self.parse_relationship_expression();
+    match self.token {
+      Token::Equal | Token::StrictEqual | Token::NotEqual | Token::StrictNotEqual => {
+        let operator = self.token.clone();
+        self.next();
+        Expression::Binary(BinaryExpression {
+          left: Box::new(left),
+          operator,
+          right: Box::new(self.parse_relationship_expression())
+        })
+      },
+      _ => left 
+    }
+  }
+
+  // 解析关系运算符 > 、< 、>=、<= 优先级 10
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
   fn parse_relationship_expression(&mut self) -> Expression {
-    let left = self.parse_additive_expression();
-    if self.token == Token::Less || self.token == Token::Greater {
+    let left = self.parse_shift_expression();
+    if self.token == Token::Less || self.token == Token::Greater || self.token == Token::GreaterOrEqual || self.token == Token::LessOrEqual || self.token == Token::In || self.token == Token::Instanceof {
       let operator = self.token.clone();
       // 跳过当前的运算符 >、<
+      self.next();
+      return Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(self.parse_shift_expression())
+      })
+    }
+    return left;
+  }
+
+  // 解析位运算符 优先级 11
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-bitwise-shift-operators
+  fn parse_shift_expression(&mut self) -> Expression {
+    let left = self.parse_additive_expression();
+    if self.token == Token::ShiftLeft || self.token == Token::ShiftRight || self.token == Token::UnsignedShiftRight {
+      let operator = self.token.clone();
+      // 跳过当前的运算符
       self.next();
       return Expression::Binary(BinaryExpression {
         left: Box::new(left),
@@ -501,13 +887,12 @@ impl AST{
   }
 
 
-
   // 解析 + - 语法 优先级 12
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_additive_expression(&mut self) -> Expression {
     let mut left = self.parse_multiplicative_expression();
     loop {
-      if self.token == Token::Plus || self.token == Token::Minus {
+      if self.token == Token::Plus || self.token == Token::Subtract {
         let operator =  self.token.clone();
         self.next();
         let right = self.parse_multiplicative_expression();
@@ -526,12 +911,12 @@ impl AST{
   // 解析 * / % 语法 优先级 13
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_multiplicative_expression(&mut self) -> Expression {
-    let mut left = self.parse_left_hand_side_expression();
+    let mut left = self.parse_exponentiation_expression();
     loop {
       if self.token == Token::Multiply || self.token == Token::Slash || self.token == Token::Remainder {
         let operator =  self.token.clone();
         self.next();
-        let right = self.parse_left_hand_side_expression();
+        let right = self.parse_exponentiation_expression();
         left = Expression::Binary(BinaryExpression{
           left: Box::new(left),
           operator,
@@ -544,10 +929,78 @@ impl AST{
     return left;
   }
 
+  // 幂运算 1**2 -- 优先级 14
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
+  fn parse_exponentiation_expression(&mut self) -> Expression {
+    let left = self.parse_prefix_unary_expression();
+    if self.token == Token::Exponentiation {
+      let operator = self.token.clone();
+      self.next();
+      let right = self.parse_exponentiation_expression();
+      Expression::Binary(BinaryExpression {
+        left: Box::new(left),
+        operator,
+        right: Box::new(right),
+      })
+    } else {
+      left
+    }
+  }
+  // 前置一元运算符  -- 优先级 15
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
+  fn parse_prefix_unary_expression(&mut self) -> Expression {
+    match self.token {
+      Token::Not | Token::BitwiseNot | Token::Plus | Token::Subtract => {
+        let operator = self.token.clone();
+        self.next();
+        Expression::PrefixUnary(PrefixUnaryExpression {
+          operator,
+          operand: Box::new(self.parse_postfix_unary_expression()),
+        })
+      },
+      Token::Typeof | Token::Void | Token::Delete | Token::Await => {
+        let operator = self.token.clone();
+        self.next();
+        Expression::PrefixUnary(PrefixUnaryExpression {
+          operator,
+          operand: Box::new(self.parse_postfix_unary_expression()),
+        })
+      },
+      Token::Increment | Token::Decrement => {
+        let operator = self.token.clone();
+        self.next();
+        let operand = self.parse_postfix_unary_expression();
+        // TODO: check operand is Identifier/Property access
+        Expression::PrefixUnary(PrefixUnaryExpression {
+          operator,
+          operand: Box::new(operand),
+        })
+      },
+      _ => self.parse_postfix_unary_expression()
+    }
+  }
+
+  // 后置一元运算符 ++ -- 优先级 16
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-update-expressions
+  fn parse_postfix_unary_expression(&mut self) -> Expression {
+    let left = self.parse_left_hand_side_expression();
+    if self.token == Token::Increment || self.token == Token::Decrement {
+      // TODO: check left is identifier/property access
+      let expr = Expression::PostfixUnary(PostfixUnaryExpression {
+        operator: self.token.clone(),
+        operand: Box::new(left),
+      });
+      self.next();
+      expr
+    } else {
+      left
+    }
+  }
+
   // 解析访问(.、[])语法 优先级 18
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
   fn parse_left_hand_side_expression(&mut self) -> Expression {
-    let mut left = self.parse_literal_expression();
+    let mut left = self.parse_group_expression();
     loop {
       self.cur_expr = left.clone();
       let new_left = match self.token {
@@ -598,6 +1051,20 @@ impl AST{
       expression,
       arguments
     });
+  }
+
+  // 解析分组表达式 优先级 19
+  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-function-calls
+  fn parse_group_expression(&mut self) -> Expression {
+     if self.token == Token::LeftParenthesis {
+      self.next();
+      let expr = self.parse_expression();
+      self.check_token_and_next(Token::RightParenthesis);
+      return Expression::Group(GroupExpression {
+        expression: Box::new(expr),
+      })
+     }
+     self.parse_literal_expression()
   }
 
   // 解析字面量 优先级 20 最后处理

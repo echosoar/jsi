@@ -46,6 +46,8 @@ pub enum Token {
   Protected,
   Public,
   Static,
+  Async, // ES2015
+  Await, // ES2015
 
   // 字面量 literal
   Undefined,
@@ -60,7 +62,7 @@ pub enum Token {
   // 运算符 operators
   // 标点符号
   Plus, // "+"
-	Minus, // "-"
+	Subtract, // "-"
 	Multiply, // "*"
 	Slash, // "/"
 	Remainder, // "%"
@@ -74,7 +76,7 @@ pub enum Token {
 	AddAssign, // "+="
 	SubtractAssign, // "-="
 	MultiplyAssign, // "*="
-	QuotientAssign, // "/="
+	SlashAssign, // "/="
 	RemainderAssign, // "%="
 	AndAssign, // "&="
 	OrAssign, // "|="
@@ -84,7 +86,9 @@ pub enum Token {
 	UnsignedShiftRightAssign, // ">>>="
 	AndNotAssign, // "&^="
 	LogicalAnd, // "&&"
+	LogicalAndAssign, // "&&="
 	LogicalOr, // "||"
+	LogicalOrAssign, // "||="
 	Increment, // "++"
 	Decrement, // "--"
 	Equal, // "=="
@@ -109,6 +113,11 @@ pub enum Token {
 	Semicolon, // ";"
 	Colon, // ":"
 	QuestionMark, // "?"
+  Exponentiation, // "**" ES2017
+  ExponentiationAssign, // "**=" ES2017
+	NullishCoalescing, // "??" ES2020
+	NullishCoalescingAssign, // "??=" ES2020
+	OptionalChaining, // "?." ES2020
   // not keyword
   ILLEGAL,
   // 结尾
@@ -152,6 +161,8 @@ pub fn get_token_keyword(literal: &String, is_strict: bool) -> Token {
     "while" => Token::While,
     "with" => Token::With,
     "yield" => Token::Yield,
+    "async" => Token::Async,
+    "await" => Token::Await,
     _ => {
       if is_strict {
         match str {

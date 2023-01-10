@@ -13,12 +13,15 @@ pub enum Statement {
 #[derive(Debug,Clone, PartialEq)]
 pub enum Expression {
   Let(LetVariableDeclaration),
-  // Assign(AssignExpression),
+  Assign(AssignExpression),
   Binary(BinaryExpression),
   Conditional(ConditionalExpression),
   PropertyAccess(PropertyAccessExpression),
   ElementAccess(ElementAccessExpression),
   Call(CallExpression),
+  PrefixUnary(PrefixUnaryExpression),
+  PostfixUnary(PostfixUnaryExpression),
+  Group(GroupExpression),
   Identifier(IdentifierLiteral),
   Number(NumberLiteral),
   String(StringLiteral),
@@ -78,7 +81,7 @@ pub struct Parameter {
 pub struct ExpressionStatement {
   pub expression: Expression
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssignExpression {
   pub left: Box<Expression>,
   pub operator: Token,
@@ -120,6 +123,26 @@ pub struct PropertyAccessExpression {
 pub struct ElementAccessExpression {
   pub expression: Box<Expression>,
   pub argument: Box<Expression>,
+}
+
+
+// 前置一元运算符表达式
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrefixUnaryExpression {
+  pub operand: Box<Expression>,
+  pub operator: Token,
+}
+
+// 后置一元运算符表达式 ++ --
+#[derive(Debug, Clone, PartialEq)]
+pub struct PostfixUnaryExpression {
+  pub operand: Box<Expression>,
+  pub operator: Token,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupExpression {
+  pub expression: Box<Expression>
 }
 
 #[derive(Debug, Clone, PartialEq)]
