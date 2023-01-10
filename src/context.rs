@@ -1,16 +1,20 @@
 use std::{rc::{Rc}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, FunctionDeclaration}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::Value, value::{Object}, scope::{Scope, get_value_by_scope}, ast_token::Token};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, FunctionDeclaration, AssignExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, value::{Object}, scope::{Scope, get_value_and_scope}, ast_token::Token};
 
 use super::ast::AST;
 pub struct Context {
-  scope: Scope,
+  scope: Rc<RefCell<Scope>>,
+  cur_scope: Rc<RefCell<Scope>>
 }
 
 impl Context {
     pub fn new() -> Context {
+      let scope = Rc::new(RefCell::new(Scope::new()));
+      let cur_scope = Rc::clone(&scope);
       let ctx = Context {
-        scope: Scope::new(),
+        scope,
+        cur_scope,
       };
       return ctx;
     }
@@ -37,7 +41,7 @@ impl Context {
         match  declaration {
             Declaration::Function(function_statement) => {
               let function = self.new_function(&function_statement);
-              self.scope.set_value(function_statement.name.literal.clone(), function)
+             (*self.scope).borrow_mut().set_value(function_statement.name.literal.clone(), function)
             }
         };
       }
@@ -55,7 +59,7 @@ impl Context {
                 let mut value = self.execute_expression(&let_var.initializer);
                 value.bind_name(name.clone());
                 last_statement_value = value.clone();
-                self.scope.set_value(name, value);
+                (*self.scope).borrow_mut().set_value(name, value);
               }
             }
           },
@@ -66,26 +70,32 @@ impl Context {
             result_value = self.execute_expression(&return_statement.expression);
             last_statement_value = result_value.clone()
           }
-          _ => {}
+          _ => {
+            println!("unknown statement {:?}", statement);
+          }
         }
       }
       (result_value, last_statement_value)
     }
 
     fn execute_expression(&mut self, expression: &Expression) -> Value {
+      self.execute_expression_info(expression).value
+    }
+
+    fn execute_expression_info(&mut self, expression: &Expression) -> ValueInfo {
       // println!("expression: {:?}", expression);
       match expression {
         Expression::Binary(binary) => {
-          self.execute_binary_expression(binary)
+          ValueInfo { value: self.execute_binary_expression(binary), name: None, reference: None }
         },
         Expression::Call(call) => {
-          self.execute_call_expression(call)
+          ValueInfo { value: self.execute_call_expression(call), name: None, reference: None }
         },
         Expression::Object(object) => {
-          self.new_object(object)
+          ValueInfo { value: self.new_object(object), name: None, reference: None }
         },
         Expression::Function(function_declaration) => {
-          self.new_function(function_declaration)
+          ValueInfo { value: self.new_function(function_declaration), name: None, reference: None }
         },
         Expression::PropertyAccess(property_access) => {
           // expression.name
@@ -93,7 +103,7 @@ impl Context {
           let left_obj = left.to_object();
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_property(right.clone());
-          value
+          ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::ElementAccess(element_access) => {
           // expression[argument]
@@ -101,32 +111,45 @@ impl Context {
           let left_obj = left.to_object();
           let right = self.execute_expression(&element_access.argument).to_string();
           let value = (*left_obj).borrow().get_property(right.clone());
-          value
+          ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::Identifier(identifier) => {
-          if let Some(value) = get_value_by_scope(&self.scope, identifier.literal.clone()) {
-            (*value).clone()
+          let name = identifier.literal.clone();
+          let (value, scope) = get_value_and_scope(Rc::clone(&self.scope), name.clone());
+          if let Some(val) = value {
+            ValueInfo{ value: val, name: Some(name.clone()), reference: Some(Value::Scope(Rc::clone(&scope))) }
           } else {
-            Value::Undefined
+            ValueInfo{ value: Value::Undefined, name: Some(name.clone()), reference: Some(Value::Scope(Rc::clone(&scope))) }
           }
         },
+        Expression::Assign(assign) => {
+          ValueInfo{ value: self.execute_assign_expression(assign), name: None, reference: None }
+        },
         Expression::String(string) => {
-          return Value::String(string.value.clone());
+          ValueInfo {value: Value::String(string.value.clone()), name: None, reference: None }
         },
         Expression::Number(number) => {
-          return Value::Number(number.value);
+          return ValueInfo {value: Value::Number(number.value), name: None, reference: None }
         },
         Expression::Keyword(keyword) => {
-          match *keyword {
-            Keywords::False => Value::Boolean(false),
-            Keywords::True => Value::Boolean(true),
-            Keywords::Null => Value::Null,
-            _ => Value::Undefined,
+          ValueInfo {
+            value: match *keyword {
+              Keywords::False => Value::Boolean(false),
+              Keywords::True => Value::Boolean(true),
+              Keywords::Null => Value::Null,
+              _ => Value::Undefined,
+            },
+            name: None,
+            reference: None,
           }
         },
         _ => {
           println!("expression: {:?}", expression);
-          Value::Undefined
+          ValueInfo {
+            value: Value::Undefined,
+            name: None,
+            reference: None,
+          }
         },
       }
     }
@@ -187,6 +210,19 @@ impl Context {
 
       Value::Undefined
     }
+
+    // 执行赋值表达式
+    fn execute_assign_expression(&mut self, expression: &AssignExpression) -> Value {
+      let mut left_info = self.execute_expression_info(&expression.left);
+      let right_value = self.execute_expression(&expression.right);
+      // TODO: more operator
+      if expression.operator == Token::Assign {
+        left_info.set_value(right_value.clone());
+        right_value
+      } else {
+        Value::Undefined
+      }
+    }
     // 基础对象，绑定好原型链
     fn new_base_object(&mut self) -> Rc<RefCell<Object>> {
       let object = Rc::new(RefCell::new(Object::new()));
@@ -242,9 +278,9 @@ impl Context {
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {
           // TODO: 参数引用
-          self.scope.set_value(function_declaration.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone());
+          (*self.scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone());
         } else {
-          self.scope.set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined);
+          (*self.scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined);
         }
       }
       // 执行 body
@@ -255,15 +291,27 @@ impl Context {
 
     // 进入作用域
     fn new_scope(&mut self) {
-      let mut scope = Scope::new();
-      scope.parent = Some(Box::new(self.scope.clone()));
-      self.scope = scope;
+      let mut new_scope = Scope::new();
+      new_scope.parent = Some(Rc::clone(&self.cur_scope));
+      let scope_rc = Rc::new(RefCell::new(new_scope));
+      let rc = Rc::clone(&scope_rc);
+      (*self.cur_scope).borrow_mut().childs.push(scope_rc);
+      self.cur_scope = rc;
     }
 
     // 退出作用域
     fn close_scope(&mut self) {
-      if let Some(parent) = self.scope.parent.clone() {
-        self.scope = *parent
+      if let Some(parent_scope_rc) = &self.cur_scope.borrow().parent {
+        let len = (*parent_scope_rc).borrow_mut().childs.len();
+        let mut cur_scope_index = len;
+        for index in 0..len {
+          if (*parent_scope_rc).borrow_mut().childs[index].borrow().id == self.cur_scope.borrow().id {
+            cur_scope_index = index;
+          }
+        }
+        if cur_scope_index != len {
+          (*parent_scope_rc).borrow_mut().childs.remove(cur_scope_index);
+        }
       }
     }
 } 

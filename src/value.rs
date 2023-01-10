@@ -2,8 +2,44 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Weak, Rc};
 use crate::ast_node::{Statement, IdentifierLiteral};
+use crate::scope::Scope;
 
-#[derive(Debug,Clone)]
+
+#[derive(Debug)]
+pub struct ValueInfo {
+  pub name: Option<String>,
+  pub value: Value,
+  pub reference: Option<Value>
+}
+
+impl ValueInfo {
+  pub fn set_value(&mut self, value: Value) -> Option<String> {
+    if self.name == None {
+      return  None;
+    }
+    let name = match &self.name {
+        Some(name) => name.clone(),
+        _ => String::from(""),
+    };
+    if let Some(reference) = &self.reference {
+      match reference {
+          Value::Object(object) => {
+            object.borrow_mut().define_property_by_value( name.clone(), value);
+            None
+          },
+          Value::Scope(scope) => {
+            scope.borrow_mut().set_value( name.clone(), value);
+            None
+          },
+          _ => Some(name.clone())
+      }
+    } else {
+      return Some(name.clone())
+    }
+  }
+}
+
+#[derive(Debug)]
 pub enum Value {
   // 5种基本数据类型
   String(String),
@@ -18,6 +54,7 @@ pub enum Value {
   // 其他
   NAN,
   RefObject(Weak<RefCell<Object>>),
+  Scope(Rc<RefCell<Scope>>)
 }
 
 impl PartialEq for Value {
@@ -28,6 +65,25 @@ impl PartialEq for Value {
           (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
           _ => false,
       }
+  }
+}
+
+impl Clone for Value {
+  fn clone(&self) -> Value {
+    match self {
+      Value::Object(rc_value) => {
+        Value::Object(Rc::clone(rc_value))
+      },
+      Value::Function(rc_value) => {
+        Value::Function(Rc::clone(rc_value))
+      },
+      Value::String(str) => Value::String(str.clone()),
+      Value::Number(num) => Value::Number(*num),
+      Value::Boolean(bool) => Value::Boolean(*bool),
+      Value::Null => Value::Null,
+      Value::Undefined => Value::Undefined,
+      _ => Value::Undefined,
+    }
   }
 }
 
@@ -73,6 +129,8 @@ impl Value {
     }
     return false
   }
+
+
 
   pub fn to_number(&self) -> f64 {
     match self {
