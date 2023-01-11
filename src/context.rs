@@ -162,48 +162,60 @@ impl Context {
         Token::Equal => {
           return Value::Boolean(left.is_equal_to(&right, false));
         },
-        _ => {
+        Token::StrictEqual => {
+          return Value::Boolean(left.is_equal_to(&right, true));
+        },
+        Token::Plus | Token::Subtract | Token::Multiply | Token::Slash |Token::Remainder => {
           // 数字处理
           if left.is_nan() || right.is_nan() {
             return Value::NAN;
           }
-          // 加法
+          
+          // 加法的特殊处理
           if expression.operator == Token::Plus {
             // 如果有一个是字符串，那就返回字符串
             if left.is_string() || right.is_string() {
               return Value::String(left.to_string() + right.to_string().as_str())
             }
-            return Value::Number(left.to_number() + right.to_number())
-          }
-          // 减法
-          if expression.operator == Token::Subtract {
-            return Value::Number(left.to_number() - right.to_number())
           }
 
-          // 乘法
-          if expression.operator == Token::Multiply {
-            return Value::Number(left.to_number() * right.to_number())
-          }
-        
-          // 除法
+          // 除法的特殊处理
           if expression.operator == Token::Slash {
             if left.is_infinity() && right.is_infinity() {
               return Value::NAN;
             }
-            let left_value = left.to_number();
-            let right_value = right.to_number();
-            return Value::Number(left_value / right_value)
           }
 
-          // 取余
-          if expression.operator == Token::Remainder {
-            return Value::Number(left.to_number() % right.to_number())
-          }
-
-          Value::Undefined
-        }
+          // 计算数字运算
+          self.execute_number_operator_expression(&left, &right, &expression.operator)
+        },
+        _ =>  Value::Undefined
       }
 
+    }
+
+    // 执行方法调用表达式
+    fn execute_number_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
+      let left_number: f64;
+      let right_number: f64;
+      if let Some(num) = left.to_number() {
+        left_number = num;
+      } else {
+        return Value::NAN;
+      }
+      if let Some(num) = right.to_number() {
+        right_number = num;
+      } else {
+        return Value::NAN;
+      }
+      match operator {
+        Token::Plus => Value::Number(left_number + right_number),
+        Token::Subtract => Value::Number(left_number - right_number),
+        Token::Multiply => Value::Number(left_number * right_number),
+        Token::Slash => Value::Number(left_number / right_number),
+        Token::Remainder => Value::Number(left_number % right_number),
+        _=> Value::NAN,
+      }
     }
 
     // 执行方法调用表达式

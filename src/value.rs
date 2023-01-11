@@ -149,20 +149,25 @@ impl Value {
 
 
 
-  pub fn to_number(&self) -> f64 {
+  pub fn to_number(&self) -> Option<f64> {
     match self {
-      Value::String(str) => str.parse::<f64>().unwrap(),
-      Value::Number(number) => *number,
+      Value::String(str) => {
+        match str.parse::<f64>() {
+            Ok(num) => Some(num),
+            _ => None,
+        }
+      },
+      Value::Number(number) => Some(*number),
       Value::Boolean(bool) => {
         if *bool {
-          1f64
+          Some(1f64)
         } else {
-          0f64
+          Some(0f64)
         }
       },
       _ => {
         // TODO: throw error
-        0f64
+       None
       }
     }
   }

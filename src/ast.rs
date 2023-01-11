@@ -24,6 +24,8 @@ pub struct AST {
   cur_expr: Expression,
   // 当前上下文
   scope: ASTScope,
+  // 当碰到换行时，是否需要自动添加 semicolon
+  auto_semicolon_when_new_line: bool,
 }
 
 impl AST{
@@ -40,6 +42,7 @@ impl AST{
       literal: String::from(""),
       cur_expr: Expression::Unknown,
       scope: ASTScope::new(),
+      auto_semicolon_when_new_line: false,
     }
   }
 
@@ -77,7 +80,6 @@ impl AST{
   fn parse_statements(&mut self) -> Vec<Statement> {
     let mut statements: Vec<Statement> = vec![];
     loop {
-      
       if self.token == Token::EOF || self.token == Token::RightBrace {
         // end of file
         // 结束了块级作用域
@@ -263,344 +265,377 @@ impl AST{
     let scan_res = self.scan();
     self.token = scan_res.0;
     self.literal = scan_res.1;
-    // println!("next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
+    // println!("out next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
   // 扫描获取符号
   pub fn scan(&mut self) -> (Token, String) {
+    if self.cur_char_index >= self.length {
+      return (Token::EOF, String::from(""));
+    }
     // TODO: 严格模式
     let is_strict = true;
-    loop {
-      self.skip_white_space();
-      if self.char_is_identifier_first() {
-        let literal = self.get_identifier().unwrap();
-        
-        let token = get_token_keyword(&literal, is_strict);
-        match token {
-          Token::ILLEGAL => {
-            let token_literal = get_token_literal(&literal);
-            match token_literal {
-              Token::ILLEGAL => {
-                // 其他非字面量
-                return (Token::Identifier, literal)
-              },
-              _ => {
-                // 非字面量:null、true和false
-                return (token_literal, literal)
-              },
-            }
-          },
-          _ => {
-            // 关键字
-            return (token, literal)
-          },
-        };
-      }
-      // 数字
-      if self.char >= '0' && self.char <= '9' {
-        return self.scan_number();
-      }
-      // 字符串
-      if self.char == '"' || self.char == '\'' {
-        return self.scan_string();
-      }
-
-      if self.next_char_index == self.length {
-        return (Token::EOF, String::from(""));
-      }
+    // 默认不自动添加分号
+    // 自动添加分号的相关规范 ref: https://tc39.es/ecma262/#sec-automatic-semicolon-insertion
+    self.auto_semicolon_when_new_line = false;
+    self.skip_white_space();
+    if self.char_is_identifier_first() {
+      let literal = self.get_identifier().unwrap();
       
-      let cur_char = self.char;
-      let mut cur_char_string = String::from(cur_char);
-      self.read();
-      let (token, literal) =  match cur_char {
-        '+' => {
+      let token = get_token_keyword(&literal, is_strict);
+      match token {
+        Token::ILLEGAL => {
+          // 非关键字
+          let token_literal = get_token_literal(&literal);
+          match token_literal {
+            Token::ILLEGAL => {
+              // 其他非字面量，比如用户自定义变量
+              return (Token::Identifier, literal)
+            },
+            _ => {
+              // 非字面量:null、true和false
+              return (token_literal, literal)
+            },
+          }
+        },
+        _ => {
+          match token {
+            Token::Continue | Token::Break | Token::Return | Token::Yield => {
+              // TODO: module
+              // 语法限制，如果这些关键字后面有换行，则自动结尾
+              /*
+              return
+              a + b
+              ---
+              return;
+              a + b;
+              */
+              self.auto_semicolon_when_new_line = true;
+            },
+            _ => {}
+          };
+          // 关键字
+          return (token, literal)
+        },
+      };
+    }
+    // 数字
+    if self.char >= '0' && self.char <= '9' {
+      return self.scan_number();
+    }
+    // 字符串
+    if self.char == '"' || self.char == '\'' {
+      return self.scan_string();
+    }
+    if self.next_char_index == self.length {
+      return (Token::EOF, String::from(""));
+    }
+    
+    let cur_char = self.char;
+    let mut cur_char_string = String::from(cur_char);
+    self.read();
+    let (token, literal) =  match cur_char {
+      '+' => {
+        if self.char == '=' {
+          // oper: +=
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::AddAssign, cur_char_string)
+        } else if self.char == '+' {
+          // oper: ++
+          self.auto_semicolon_when_new_line = true;
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::Increment, cur_char_string)
+        } else {
+          // oper: +
+          (Token::Plus, cur_char_string)
+        }
+      },
+      '-' => {
+        if self.char == '=' {
+          // oper: -=
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::SubtractAssign, cur_char_string)
+        } else if self.char == '-' {
+          // oper: --
+          self.auto_semicolon_when_new_line = true;
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::Decrement, cur_char_string)
+        } else {
+          // oper: -
+          (Token::Subtract, cur_char_string)
+        }
+      },
+      '*' => {
+        if self.char == '=' {
+          // oper: *=
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::MultiplyAssign, cur_char_string)
+        } else if self.char == '*' {
+          cur_char_string.push(self.char);
+          self.read();
           if self.char == '=' {
-            // oper: +=
+            // oper: **=
             cur_char_string.push(self.char);
             self.read();
-            (Token::AddAssign, cur_char_string)
-          } else if self.char == '+' {
-            // oper: ++
-            cur_char_string.push(self.char);
-            self.read();
-            (Token::Increment, cur_char_string)
+            (Token::ExponentiationAssign, cur_char_string)
           } else {
-            // oper: +
-            (Token::Plus, cur_char_string)
+            // oper ** 幂运算 Exponentiation Operator（ES2017）
+            (Token::Exponentiation, cur_char_string)
           }
-        },
-        '-' => {
-          if self.char == '=' {
-            // oper: -=
-            cur_char_string.push(self.char);
-            self.read();
-            (Token::SubtractAssign, cur_char_string)
-          } else if self.char == '-' {
-            // oper: --
-            cur_char_string.push(self.char);
-            self.read();
-            (Token::Decrement, cur_char_string)
-          } else {
-            // oper: -
-            (Token::Subtract, cur_char_string)
-          }
-        },
-        '*' => {
-          if self.char == '=' {
-            // oper: *=
-            cur_char_string.push(self.char);
-            self.read();
-            (Token::MultiplyAssign, cur_char_string)
-          } else if self.char == '*' {
-            cur_char_string.push(self.char);
-            self.read();
-            if self.char == '=' {
-              // oper: **=
-              cur_char_string.push(self.char);
-              self.read();
-              (Token::ExponentiationAssign, cur_char_string)
-            } else {
-              // oper ** 幂运算 Exponentiation Operator（ES2017）
-              (Token::Exponentiation, cur_char_string)
-            }
-            
-          } else {
-            // oper: *
-            (Token::Multiply, cur_char_string)
-          }
-        },
-        '/' => {
-          if self.char == '/' {
-            // oper: // TODO: 跳过注释。需要循环处理
-            continue
-          } else if self.char == '*' {
-            // oper: /* */ TODO: 跳过注释。需要循环处理
-            continue
-          } else if self.char == '=' {
-            // oper: /=
-            cur_char_string.push(self.char);
-            self.read();
-            (Token::SlashAssign, cur_char_string)
-          } else {
-            // oper: /
-            (Token::Slash, cur_char_string)
-          }
-        },
-        '%' => {
-          if self.char == '=' {
-            // oper: %=
-            cur_char_string.push(self.char);
-            self.read();
-            (Token::RemainderAssign, cur_char_string)
-          } else {
-            // oper: %
-            (Token::Remainder, cur_char_string)
-          }
-        },
-        '>' => {
+          
+        } else {
+          // oper: *
+          (Token::Multiply, cur_char_string)
+        }
+      },
+      '/' => {
+        if self.char == '/' {
+          // oper: // TODO: 跳过注释。需要循环处理
+          (Token::Slash, cur_char_string)
+        } else if self.char == '*' {
+          // oper: /* */ TODO: 跳过注释。需要循环处理
+          (Token::Slash, cur_char_string)
+        } else if self.char == '=' {
+          // oper: /=
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::SlashAssign, cur_char_string)
+        } else {
+          // oper: /
+          (Token::Slash, cur_char_string)
+        }
+      },
+      '%' => {
+        if self.char == '=' {
+          // oper: %=
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::RemainderAssign, cur_char_string)
+        } else {
+          // oper: %
+          (Token::Remainder, cur_char_string)
+        }
+      },
+      '>' => {
+        if self.char == '>' {
+          cur_char_string.push(self.char);
+          self.read();
           if self.char == '>' {
             cur_char_string.push(self.char);
             self.read();
-            if self.char == '>' {
-              cur_char_string.push(self.char);
-              self.read();
-              if self.char == '=' {
-                 // oper: >>>=
-                 cur_char_string.push(self.char);
-                self.read();
-                 (Token::UnsignedShiftRightAssign, cur_char_string)
-              } else {
-                 //oper:  >>>
-                (Token::UnsignedShiftRight, cur_char_string)
-              }
-            } else if self.char == '=' {
-              // oper: >>=
-              cur_char_string.push(self.char);
-              self.read();
-              (Token::ShiftRightAssign, cur_char_string)
-            } else {
-              // oper: >>
-              (Token::ShiftRight, cur_char_string)
-            }
-          } else if self.char == '=' {
-            // oper: >=
-            cur_char_string.push(self.char);
-            self.read();
-            (Token::GreaterOrEqual, cur_char_string)
-          } else {
-            // oper: >
-            (Token::Greater, cur_char_string)
-          }
-        },
-        '<' => {
-          if self.char == '<' {
-            cur_char_string.push(self.char);
-            self.read();
             if self.char == '=' {
-              // oper: <<=
-              cur_char_string.push(self.char);
+                // oper: >>>=
+                cur_char_string.push(self.char);
               self.read();
-              (Token::ShiftLeftAssign, cur_char_string)
+                (Token::UnsignedShiftRightAssign, cur_char_string)
             } else {
-              // oper: <<
-              (Token::ShiftLeft, cur_char_string)
+                //oper:  >>>
+              (Token::UnsignedShiftRight, cur_char_string)
             }
           } else if self.char == '=' {
-            // oper: <=
+            // oper: >>=
             cur_char_string.push(self.char);
             self.read();
-            (Token::LessOrEqual, cur_char_string)
+            (Token::ShiftRightAssign, cur_char_string)
           } else {
-            // oper: <
-            (Token::Less, cur_char_string)
+            // oper: >>
+            (Token::ShiftRight, cur_char_string)
           }
-        },
-        '=' => {
+        } else if self.char == '=' {
+          // oper: >=
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::GreaterOrEqual, cur_char_string)
+        } else {
+          // oper: >
+          (Token::Greater, cur_char_string)
+        }
+      },
+      '<' => {
+        if self.char == '<' {
+          cur_char_string.push(self.char);
+          self.read();
+          if self.char == '=' {
+            // oper: <<=
+            cur_char_string.push(self.char);
+            self.read();
+            (Token::ShiftLeftAssign, cur_char_string)
+          } else {
+            // oper: <<
+            (Token::ShiftLeft, cur_char_string)
+          }
+        } else if self.char == '=' {
+          // oper: <=
+          cur_char_string.push(self.char);
+          self.read();
+          (Token::LessOrEqual, cur_char_string)
+        } else {
+          // oper: <
+          (Token::Less, cur_char_string)
+        }
+      },
+      '=' => {
+        if self.char == '=' {
+          cur_char_string.push(self.char);
+          self.read();
           if self.char == '=' {
             cur_char_string.push(self.char);
             self.read();
-            if self.char == '=' {
-              cur_char_string.push(self.char);
-              self.read();
-               // oper: ===
-               (Token::StrictEqual, cur_char_string)
-            } else {
-              // oper: ==
-              (Token::Equal, cur_char_string)
-            }
+              // oper: ===
+              (Token::StrictEqual, cur_char_string)
           } else {
-            // oper: =
-            (Token::Assign, cur_char_string)
+            // oper: ==
+            (Token::Equal, cur_char_string)
           }
-        },
-        ':' => (Token::Colon, cur_char_string),
-        '.' => {
-          // TODO: float
-          (Token::Period, cur_char_string)
-        },
-        ',' => (Token::Comma, cur_char_string),
-        ';' => (Token::Semicolon, cur_char_string),
-        '(' => (Token::LeftParenthesis, cur_char_string),
-        ')' => (Token::RightParenthesis, cur_char_string),
-        '[' => (Token::LeftBracket, cur_char_string),
-        ']' => (Token::RightBracket, cur_char_string),
-        '{' => (Token::LeftBrace, cur_char_string),
-        '}' => (Token::RightBrace, cur_char_string),
-        
-        '~' => (Token::BitwiseNot, cur_char_string),
-        '&' => { // 与
-          if self.char == '&' {
+        } else {
+          // oper: =
+          (Token::Assign, cur_char_string)
+        }
+      },
+      ':' => (Token::Colon, cur_char_string),
+      '.' => {
+        // TODO: float
+        (Token::Period, cur_char_string)
+      },
+      ',' => (Token::Comma, cur_char_string),
+      ';' => (Token::Semicolon, cur_char_string),
+      '(' => (Token::LeftParenthesis, cur_char_string),
+      ')' => {
+        self.auto_semicolon_when_new_line = true;
+        (Token::RightParenthesis, cur_char_string)
+      },
+      '[' => (Token::LeftBracket, cur_char_string),
+      ']' => {
+        self.auto_semicolon_when_new_line = true;
+        (Token::RightBracket, cur_char_string)
+      },
+      '{' => (Token::LeftBrace, cur_char_string),
+      '}' => {
+        self.auto_semicolon_when_new_line = true;
+        (Token::RightBrace, cur_char_string)
+      },
+      
+      '~' => (Token::BitwiseNot, cur_char_string),
+      '&' => { // 与
+        if self.char == '&' {
+          cur_char_string.push(self.char);
+          self.read();
+          if self.char == '=' {
             cur_char_string.push(self.char);
             self.read();
-            if self.char == '=' {
-              cur_char_string.push(self.char);
-              self.read();
-              // oper: &&=
-              (Token::LogicalAndAssign, cur_char_string)
-            } else {
-              // oper: &&
-              (Token::LogicalAnd, cur_char_string)
-            }
-          } else if self.char == '=' {
-            cur_char_string.push(self.char);
-            self.read();
-             // oper: &=
-             (Token::AndAssign, cur_char_string)
+            // oper: &&=
+            (Token::LogicalAndAssign, cur_char_string)
           } else {
-            // oper: &
-            (Token::And, cur_char_string)
+            // oper: &&
+            (Token::LogicalAnd, cur_char_string)
           }
-        },
-        '|' => { // 或
-          if self.char == '|' {
+        } else if self.char == '=' {
+          cur_char_string.push(self.char);
+          self.read();
+            // oper: &=
+            (Token::AndAssign, cur_char_string)
+        } else {
+          // oper: &
+          (Token::And, cur_char_string)
+        }
+      },
+      '|' => { // 或
+        if self.char == '|' {
+          cur_char_string.push(self.char);
+          self.read();
+          if self.char == '=' {
             cur_char_string.push(self.char);
             self.read();
-            if self.char == '=' {
-              cur_char_string.push(self.char);
-              self.read();
-              // oper: ||=
-              (Token::LogicalOrAssign, cur_char_string)
-            } else {
-              // oper: ||
-              (Token::LogicalOr, cur_char_string)
-            }
-          } else if self.char == '=' {
+            // oper: ||=
+            (Token::LogicalOrAssign, cur_char_string)
+          } else {
+            // oper: ||
+            (Token::LogicalOr, cur_char_string)
+          }
+        } else if self.char == '=' {
+          cur_char_string.push(self.char);
+          self.read();
+          // oper: !=
+          (Token::OrAssign, cur_char_string)
+        } else {
+          // oper: !
+          (Token::Or, cur_char_string)
+        }
+      },
+      '!' => { // 非
+        if self.char == '=' {
+          cur_char_string.push(self.char);
+          self.read();
+          if self.char == '=' {
             cur_char_string.push(self.char);
             self.read();
+            // oper: !==
+            (Token::StrictNotEqual, cur_char_string)
+          } else {
             // oper: !=
-            (Token::OrAssign, cur_char_string)
-          } else {
-            // oper: !
-            (Token::Or, cur_char_string)
+            (Token::NotEqual, cur_char_string)
           }
-        },
-        '!' => { // 非
+        } else {
+          // oper: !
+          (Token::Not, cur_char_string)
+        }
+      },
+      '^' => { // 异或
+        if self.char == '=' {
+          cur_char_string.push(self.char);
+          self.read();
+          // oper: ^=
+          (Token::ExclusiveOrAssign, cur_char_string)
+        } else {
+          // oper: ^
+          (Token::ExclusiveOr, cur_char_string)
+        }
+      },
+      '?' => {
+        if self.char == '?' {
+          cur_char_string.push(self.char);
+          self.read();
           if self.char == '=' {
             cur_char_string.push(self.char);
             self.read();
-            if self.char == '=' {
-              cur_char_string.push(self.char);
-              self.read();
-              // oper: !==
-              (Token::StrictNotEqual, cur_char_string)
-            } else {
-              // oper: !=
-              (Token::NotEqual, cur_char_string)
-            }
+            // oper: ??=
+            (Token::NullishCoalescingAssign, cur_char_string)
           } else {
-            // oper: !
-            (Token::Not, cur_char_string)
+            // oper: ?? 空值合并运算符 Nullish Coalescing (ES2020)
+            (Token::NullishCoalescing, cur_char_string)
           }
-        },
-        '^' => { // 异或
-          if self.char == '=' {
-            cur_char_string.push(self.char);
-            self.read();
-            // oper: ^=
-            (Token::ExclusiveOrAssign, cur_char_string)
-          } else {
-            // oper: ^
-            (Token::ExclusiveOr, cur_char_string)
-          }
-        },
-        '?' => {
-          if self.char == '?' {
-            cur_char_string.push(self.char);
-            self.read();
-            if self.char == '=' {
-              cur_char_string.push(self.char);
-              self.read();
-              // oper: ??=
-              (Token::NullishCoalescingAssign, cur_char_string)
-            } else {
-              // oper: ?? 空值合并运算符 Nullish Coalescing (ES2020)
-              (Token::NullishCoalescing, cur_char_string)
-            }
-          } else if self.char == '.' {
-            cur_char_string.push(self.char);
-            self.read();
-             // oper: ?. 可选链 Optional Chaining (ES2020)
-             (Token::OptionalChaining, cur_char_string)
-          } else {
-            // oper: ?
-            (Token::QuestionMark, cur_char_string)
-          }
-        },
-        _ => (Token::ILLEGAL, cur_char_string),
-      };
-     
-      return (token, literal);
-    }
+        } else if self.char == '.' {
+          cur_char_string.push(self.char);
+          self.read();
+            // oper: ?. 可选链 Optional Chaining (ES2020)
+            (Token::OptionalChaining, cur_char_string)
+        } else {
+          // oper: ?
+          (Token::QuestionMark, cur_char_string)
+        }
+      },
+      _ => (Token::ILLEGAL, cur_char_string),
+    };
+    
+    return (token, literal);
   }
 
   // 读取下一个字符
-  pub fn read(&mut self) {
+  pub fn read(&mut self) -> bool {
     if self.next_char_index < self.length {
       self.cur_char_index = self.next_char_index;
       self.char = self.code.get(self.cur_char_index).unwrap().clone();
       self.next_char_index = self.next_char_index + 1;
+      true
     } else {
-      self.next_char_index = self.length
+      self.next_char_index = self.length;
+      self.cur_char_index = self.length;
+      false
     }
     // println!("read:{}, {},  {}", self.char, self.cur_char_index,self.next_char_index)
   }
@@ -610,7 +645,9 @@ impl AST{
     let start_index = self.cur_char_index;
     loop {
       if self.char_is_identifier_part() {
-        self.read()
+        if !self.read() {
+          break;
+        }
       } else {
         break;
       }
@@ -664,7 +701,9 @@ impl AST{
   fn read_number(&mut self, binary: i32) {
     loop {
       if get_hex_number_value(self.char) < binary {
-        self.read()
+        if !self.read() {
+          break;
+        }
       } else {
         break;
       }
@@ -678,7 +717,9 @@ impl AST{
     self.read();
     while self.char != str_start {
       // TODO: '\'aa\''
-      self.read();
+      if !self.read() {
+        break;
+      }
     }
     let literal = chars_to_string(&self.code, start_index, self.next_char_index);
     self.read();
@@ -711,7 +752,8 @@ impl AST{
   }
   // 解析表达式
   fn parse_expression(&mut self) -> Expression  {
-    return self.parse_assignment_expression();
+    let res = self.parse_assignment_expression();
+    res
   }
 
   // 解析赋值运算符，优先级 2，从右到左
@@ -934,6 +976,10 @@ impl AST{
   fn parse_postfix_unary_expression(&mut self) -> Expression {
     let left = self.parse_left_hand_side_expression();
     if self.token == Token::Increment || self.token == Token::Decrement {
+      // TODO: left follow new line 
+      // if self.left_with_semicolon {
+      //   return left
+      // }
       // TODO: check left is identifier/property access
       let expr = Expression::PostfixUnary(PostfixUnaryExpression {
         operator: self.token.clone(),
@@ -1209,6 +1255,19 @@ impl AST{
         //  跳过空格
           ' '| '\t' => {
             self.read();
+          },
+          '\n' => {
+            // 当遇到换行符时，这个时候如果前面的表达式存在自动插入的换行，则认为一次词法分析完成
+            /*
+            a = b
+            ++c
+            ---
+            a = b;
+            ++c;
+            */
+            if self.auto_semicolon_when_new_line {
+              return;
+            }
           },
           _ => {
             break;
