@@ -158,43 +158,52 @@ impl Context {
     fn execute_binary_expression(&mut self, expression: &BinaryExpression) -> Value {
       let left = self.execute_expression(expression.left.as_ref());
       let right = self.execute_expression(expression.right.as_ref());
-      if left.is_nan() || right.is_nan() {
-        return Value::NAN;
-      }
-      // 加法
-      if expression.operator == Token::Plus {
-        // 如果有一个是字符串，那就返回字符串
-        if left.is_string() || right.is_string() {
-          return Value::String(left.to_string() + right.to_string().as_str())
+      match expression.operator {
+        Token::Equal => {
+          return Value::Boolean(left.is_equal_to(&right, false));
+        },
+        _ => {
+          // 数字处理
+          if left.is_nan() || right.is_nan() {
+            return Value::NAN;
+          }
+          // 加法
+          if expression.operator == Token::Plus {
+            // 如果有一个是字符串，那就返回字符串
+            if left.is_string() || right.is_string() {
+              return Value::String(left.to_string() + right.to_string().as_str())
+            }
+            return Value::Number(left.to_number() + right.to_number())
+          }
+          // 减法
+          if expression.operator == Token::Subtract {
+            return Value::Number(left.to_number() - right.to_number())
+          }
+
+          // 乘法
+          if expression.operator == Token::Multiply {
+            return Value::Number(left.to_number() * right.to_number())
+          }
+        
+          // 除法
+          if expression.operator == Token::Slash {
+            if left.is_infinity() && right.is_infinity() {
+              return Value::NAN;
+            }
+            let left_value = left.to_number();
+            let right_value = right.to_number();
+            return Value::Number(left_value / right_value)
+          }
+
+          // 取余
+          if expression.operator == Token::Remainder {
+            return Value::Number(left.to_number() % right.to_number())
+          }
+
+          Value::Undefined
         }
-        return Value::Number(left.to_number() + right.to_number())
-      }
-      // 减法
-      if expression.operator == Token::Subtract {
-        return Value::Number(left.to_number() - right.to_number())
       }
 
-      // 乘法
-      if expression.operator == Token::Multiply {
-        return Value::Number(left.to_number() * right.to_number())
-      }
-    
-      // 除法
-      if expression.operator == Token::Slash {
-        if left.is_infinity() && right.is_infinity() {
-          return Value::NAN;
-        }
-        let left_value = left.to_number();
-        let right_value = right.to_number();
-        return Value::Number(left_value / right_value)
-      }
-
-       // 取余
-       if expression.operator == Token::Remainder {
-        return Value::Number(left.to_number() % right.to_number())
-      }
-
-      Value::Undefined
     }
 
     // 执行方法调用表达式

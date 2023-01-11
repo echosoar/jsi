@@ -57,12 +57,29 @@ pub enum Value {
   Scope(Rc<RefCell<Scope>>)
 }
 
+#[derive(PartialEq)]
+pub enum ValueType {
+  // 5种基本数据类型
+  String,
+  Number,
+  Boolean,
+  Null,
+  Undefined,
+  // 3 种引用类型
+  Object,
+  Function,
+  Array,
+  // 其他
+  NAN,
+}
+
 impl PartialEq for Value {
   fn eq(&self, other: &Value) -> bool {
       match (self, other) {
           (Value::String(a), Value::String(b)) => *a == *b,
           (Value::Number(a), Value::Number(b)) => *a == *b,
           (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
+          (Value::Null, Value::Null) | (Value::Undefined, Value::Undefined) => true,
           _ => false,
       }
   }
@@ -166,6 +183,46 @@ impl Value {
         Rc::new(RefCell::new(Object::new()))
       }
     }
+  }
+  pub fn get_value_type(&self) -> ValueType {
+    match self {
+      Value::Object(_) => ValueType::Object,
+      Value::Function(_) => ValueType::Function,
+      Value::Array => ValueType::Array,
+      Value::String(_) => ValueType::String,
+      Value::Number(_) => ValueType::Number,
+      Value::Boolean(_) => ValueType::Boolean,
+      Value::Null => ValueType::Null,
+      Value::Undefined => ValueType::Undefined,
+      _ => {
+        // TODO: more
+        ValueType::NAN
+      },
+    }
+  }
+
+  pub fn is_equal_to(&self, other_value: &Value, is_check_type: bool) -> bool {
+    let self_type = self.get_value_type();
+    let other_type = other_value.get_value_type();
+    let is_same_type = self_type == other_type;
+    if is_check_type && !is_same_type {
+      return false;
+    }
+    if is_same_type {
+      if self_type == ValueType::Boolean || self_type == ValueType::Number || self_type == ValueType::String || self_type == ValueType::Null || self_type == ValueType::Undefined {
+        return self == other_value;
+      }
+    }
+
+    if (self_type == ValueType::Null || self_type == ValueType::Undefined) && (other_type == ValueType::Null || other_type == ValueType::Undefined) {
+      return true;
+    }
+
+    if self_type == ValueType::Object || other_type == ValueType::Object {
+      // TODO: to primary value Number(123) => 123
+      return false;
+    }
+    return self.to_number() == other_value.to_number();
   }
 
   // 匿名方法，需要绑定name
