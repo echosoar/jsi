@@ -2,6 +2,8 @@
 JSI is a JavaScript Interpreter written in Rust.
 
 ---
+### Development
++ git submodule
 
 ### Refs
 + Ecma Standard: https://tc39.es/ecma262/multipage/#sec-intro
