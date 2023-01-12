@@ -2,8 +2,44 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Weak, Rc};
 use crate::ast_node::{Statement, IdentifierLiteral};
+use crate::scope::Scope;
 
-#[derive(Debug,Clone)]
+
+#[derive(Debug)]
+pub struct ValueInfo {
+  pub name: Option<String>,
+  pub value: Value,
+  pub reference: Option<Value>
+}
+
+impl ValueInfo {
+  pub fn set_value(&mut self, value: Value) -> Option<String> {
+    if self.name == None {
+      return  None;
+    }
+    let name = match &self.name {
+        Some(name) => name.clone(),
+        _ => String::from(""),
+    };
+    if let Some(reference) = &self.reference {
+      match reference {
+          Value::Object(object) => {
+            object.borrow_mut().define_property_by_value( name.clone(), value);
+            None
+          },
+          Value::Scope(scope) => {
+            scope.borrow_mut().set_value( name.clone(), value);
+            None
+          },
+          _ => Some(name.clone())
+      }
+    } else {
+      return Some(name.clone())
+    }
+  }
+}
+
+#[derive(Debug)]
 pub enum Value {
   // 5种基本数据类型
   String(String),
@@ -18,6 +54,23 @@ pub enum Value {
   // 其他
   NAN,
   RefObject(Weak<RefCell<Object>>),
+  Scope(Rc<RefCell<Scope>>)
+}
+
+#[derive(PartialEq)]
+pub enum ValueType {
+  // 5种基本数据类型
+  String,
+  Number,
+  Boolean,
+  Null,
+  Undefined,
+  // 3 种引用类型
+  Object,
+  Function,
+  Array,
+  // 其他
+  NAN,
 }
 
 impl PartialEq for Value {
@@ -26,8 +79,28 @@ impl PartialEq for Value {
           (Value::String(a), Value::String(b)) => *a == *b,
           (Value::Number(a), Value::Number(b)) => *a == *b,
           (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
+          (Value::Null, Value::Null) | (Value::Undefined, Value::Undefined) => true,
           _ => false,
       }
+  }
+}
+
+impl Clone for Value {
+  fn clone(&self) -> Value {
+    match self {
+      Value::Object(rc_value) => {
+        Value::Object(Rc::clone(rc_value))
+      },
+      Value::Function(rc_value) => {
+        Value::Function(Rc::clone(rc_value))
+      },
+      Value::String(str) => Value::String(str.clone()),
+      Value::Number(num) => Value::Number(*num),
+      Value::Boolean(bool) => Value::Boolean(*bool),
+      Value::Null => Value::Null,
+      Value::Undefined => Value::Undefined,
+      _ => Value::Undefined,
+    }
   }
 }
 
@@ -74,20 +147,27 @@ impl Value {
     return false
   }
 
-  pub fn to_number(&self) -> f64 {
+
+
+  pub fn to_number(&self) -> Option<f64> {
     match self {
-      Value::String(str) => str.parse::<f64>().unwrap(),
-      Value::Number(number) => *number,
+      Value::String(str) => {
+        match str.parse::<f64>() {
+            Ok(num) => Some(num),
+            _ => None,
+        }
+      },
+      Value::Number(number) => Some(*number),
       Value::Boolean(bool) => {
         if *bool {
-          1f64
+          Some(1f64)
         } else {
-          0f64
+          Some(0f64)
         }
       },
       _ => {
         // TODO: throw error
-        0f64
+       None
       }
     }
   }
@@ -108,6 +188,46 @@ impl Value {
         Rc::new(RefCell::new(Object::new()))
       }
     }
+  }
+  pub fn get_value_type(&self) -> ValueType {
+    match self {
+      Value::Object(_) => ValueType::Object,
+      Value::Function(_) => ValueType::Function,
+      Value::Array => ValueType::Array,
+      Value::String(_) => ValueType::String,
+      Value::Number(_) => ValueType::Number,
+      Value::Boolean(_) => ValueType::Boolean,
+      Value::Null => ValueType::Null,
+      Value::Undefined => ValueType::Undefined,
+      _ => {
+        // TODO: more
+        ValueType::NAN
+      },
+    }
+  }
+
+  pub fn is_equal_to(&self, other_value: &Value, is_check_type: bool) -> bool {
+    let self_type = self.get_value_type();
+    let other_type = other_value.get_value_type();
+    let is_same_type = self_type == other_type;
+    if is_check_type && !is_same_type {
+      return false;
+    }
+    if is_same_type {
+      if self_type == ValueType::Boolean || self_type == ValueType::Number || self_type == ValueType::String || self_type == ValueType::Null || self_type == ValueType::Undefined {
+        return self == other_value;
+      }
+    }
+
+    if (self_type == ValueType::Null || self_type == ValueType::Undefined) && (other_type == ValueType::Null || other_type == ValueType::Undefined) {
+      return true;
+    }
+
+    if self_type == ValueType::Object || other_type == ValueType::Object {
+      // TODO: to primary value Number(123) => 123
+      return false;
+    }
+    return self.to_number() == other_value.to_number();
   }
 
   // 匿名方法，需要绑定name

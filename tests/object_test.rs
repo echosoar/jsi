@@ -82,3 +82,19 @@ fn run_object_with_function_property() {
   let result = jsi.run(String::from("let obj = { fun: function(a) {return a + 123;}}; obj.fun('abc') + 456;"));
   assert_eq!(result , Value::String(String::from("abc123456")));
 }
+
+
+#[test]
+fn run_object_as_param_ref() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let obj = { a: 123};\
+  let fun = function(obj) {\
+    let x = 123;\
+    x = 456;\
+    obj.a = x;};\
+  fun(obj);\
+  obj.a;\
+  "));
+  assert_eq!(result , Value::Number(456f64));
+}

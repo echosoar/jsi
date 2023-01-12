@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -24,6 +24,10 @@ pub struct AST {
   cur_expr: Expression,
   // 当前上下文
   scope: ASTScope,
+  // 前一个 token 如果后面存在换行，是否需要添加 semicolon
+  pre_token_need_semicolon: bool,
+  // 当碰到换行时，是否需要自动添加 semicolon
+  auto_semicolon_when_new_line: bool,
 }
 
 impl AST{
@@ -40,6 +44,8 @@ impl AST{
       literal: String::from(""),
       cur_expr: Expression::Unknown,
       scope: ASTScope::new(),
+      pre_token_need_semicolon: false,
+      auto_semicolon_when_new_line: false,
     }
   }
 
@@ -77,7 +83,6 @@ impl AST{
   fn parse_statements(&mut self) -> Vec<Statement> {
     let mut statements: Vec<Statement> = vec![];
     loop {
-      
       if self.token == Token::EOF || self.token == Token::RightBrace {
         // end of file
         // 结束了块级作用域
@@ -101,7 +106,7 @@ impl AST{
   // 解析生成 statement
   fn parse_statement(&mut self) -> Statement {
     match self.token {
-        Token::Let => self.parse_let_statement(),
+        Token::Var | Token::Let => self.parse_variable_statement(),
         Token::Function => {
           Statement::Function(self.parse_function())
         },
@@ -123,15 +128,23 @@ impl AST{
     }
   }
 
-  // 解析 let 
-  fn parse_let_statement(&mut self) -> Statement {
-    self.check_token_and_next(Token::Let);
-    let mut let_statement = LetVariableStatement {
+  // 解析 let / var
+  fn parse_variable_statement(&mut self) -> Statement {
+    let mut variable_flag = VariableFlag::Var;
+    if self.token == Token::Let {
+      self.check_token_and_next(Token::Let);
+      variable_flag = VariableFlag::Let;
+    } else {
+      self.check_token_and_next(Token::Var);
+    }
+    
+    let mut var_statement = VariableDeclarationStatement {
       list: vec![],
+      flag: variable_flag,
     };
     loop {
       let expression = self.parse_variable_declaration();
-      let_statement.list.push(expression);
+      var_statement.list.push(expression);
       // let a= 1, b = 2;
       if self.token != Token::Comma {
         break;
@@ -139,8 +152,10 @@ impl AST{
       self.next();
     }
     self.semicolon();
-    return Statement::Let(let_statement);
+    return Statement::Var(var_statement);
   }
+
+
 
   // 解析 block statement
   fn parse_block_statement(&mut self) -> Statement {
@@ -213,7 +228,7 @@ impl AST{
   fn parse_return_statement(&mut self) -> Statement {
     self.check_token_and_next(Token::Return);
     let mut expression = Expression::Keyword(Keywords::Undefined);
-    if self.token != Token::Semicolon && self.token != Token::RightBrace && self.token != Token::EOF {
+    if  !self.auto_semicolon_when_new_line && self.token != Token::Semicolon && self.token != Token::RightBrace && self.token != Token::EOF {
       expression = self.parse_expression()
     }
     self.semicolon();
@@ -230,7 +245,7 @@ impl AST{
     }
     let literal = self.literal.clone();
     self.next();
-    let mut node = LetVariableDeclaration{
+    let mut node = VariableDeclaration{
       name: literal,
       initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
     };
@@ -239,7 +254,7 @@ impl AST{
       self.next();
       node.initializer = Box::new(self.parse_expression());
     }
-    return Expression::Let(node)
+    return Expression::Var(node)
   }
 
   fn check_token_and_next(&mut self, token: Token) {
@@ -255,7 +270,12 @@ impl AST{
   }
 
   fn semicolon(&mut self) {
-    self.check_token_and_next(Token::Semicolon)
+    // 如果是自动添加的分号，则跳过
+    if self.auto_semicolon_when_new_line {
+      self.auto_semicolon_when_new_line = false;
+    } else {
+      self.check_token_and_next(Token::Semicolon)
+    }
   }
 
   // 获取下一个符号
@@ -263,25 +283,36 @@ impl AST{
     let scan_res = self.scan();
     self.token = scan_res.0;
     self.literal = scan_res.1;
-    // println!("next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
+    // println!("out next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
   // 扫描获取符号
   pub fn scan(&mut self) -> (Token, String) {
     // TODO: 严格模式
     let is_strict = true;
+    // 默认不自动添加分号
+    // 自动添加分号的相关规范 ref: https://tc39.es/ecma262/#sec-automatic-semicolon-insertion
+    self.auto_semicolon_when_new_line = false;
     loop {
       self.skip_white_space();
+      if self.cur_char_index >= self.length {
+        // 扫描结束了
+        self.pre_token_need_semicolon = false;
+        self.auto_semicolon_when_new_line = true;
+        return (Token::EOF, String::from(""));
+      }
       if self.char_is_identifier_first() {
         let literal = self.get_identifier().unwrap();
         
         let token = get_token_keyword(&literal, is_strict);
         match token {
           Token::ILLEGAL => {
+            // 非关键字
             let token_literal = get_token_literal(&literal);
             match token_literal {
               Token::ILLEGAL => {
-                // 其他非字面量
+                // 其他非字面量，比如用户自定义变量
+                self.pre_token_need_semicolon = true;
                 return (Token::Identifier, literal)
               },
               _ => {
@@ -291,6 +322,21 @@ impl AST{
             }
           },
           _ => {
+            match token {
+              Token::Continue | Token::Break | Token::Return | Token::Yield => {
+                // TODO: module
+                // 语法限制，如果这些关键字后面有换行，则自动结尾
+                /*
+                return
+                a + b
+                ---
+                return;
+                a + b;
+                */
+                self.pre_token_need_semicolon = true;
+              },
+              _ => {}
+            };
             // 关键字
             return (token, literal)
           },
@@ -304,15 +350,19 @@ impl AST{
       if self.char == '"' || self.char == '\'' {
         return self.scan_string();
       }
-
-      if self.next_char_index == self.length {
-        return (Token::EOF, String::from(""));
-      }
       
       let cur_char = self.char;
       let mut cur_char_string = String::from(cur_char);
       self.read();
       let (token, literal) =  match cur_char {
+        '\n' => {
+          // 如果前一个 token 碰到换行时，需要添加分号
+          if self.pre_token_need_semicolon {
+            self.pre_token_need_semicolon = false;
+            self.auto_semicolon_when_new_line = true;
+          }
+          continue;
+        },
         '+' => {
           if self.char == '=' {
             // oper: +=
@@ -321,6 +371,7 @@ impl AST{
             (Token::AddAssign, cur_char_string)
           } else if self.char == '+' {
             // oper: ++
+            self.pre_token_need_semicolon = true;
             cur_char_string.push(self.char);
             self.read();
             (Token::Increment, cur_char_string)
@@ -337,6 +388,7 @@ impl AST{
             (Token::SubtractAssign, cur_char_string)
           } else if self.char == '-' {
             // oper: --
+            self.pre_token_need_semicolon = true;
             cur_char_string.push(self.char);
             self.read();
             (Token::Decrement, cur_char_string)
@@ -372,10 +424,10 @@ impl AST{
         '/' => {
           if self.char == '/' {
             // oper: // TODO: 跳过注释。需要循环处理
-            continue
+            (Token::Slash, cur_char_string)
           } else if self.char == '*' {
             // oper: /* */ TODO: 跳过注释。需要循环处理
-            continue
+            (Token::Slash, cur_char_string)
           } else if self.char == '=' {
             // oper: /=
             cur_char_string.push(self.char);
@@ -405,12 +457,12 @@ impl AST{
               cur_char_string.push(self.char);
               self.read();
               if self.char == '=' {
-                 // oper: >>>=
-                 cur_char_string.push(self.char);
+                  // oper: >>>=
+                  cur_char_string.push(self.char);
                 self.read();
-                 (Token::UnsignedShiftRightAssign, cur_char_string)
+                  (Token::UnsignedShiftRightAssign, cur_char_string)
               } else {
-                 //oper:  >>>
+                  //oper:  >>>
                 (Token::UnsignedShiftRight, cur_char_string)
               }
             } else if self.char == '=' {
@@ -462,8 +514,8 @@ impl AST{
             if self.char == '=' {
               cur_char_string.push(self.char);
               self.read();
-               // oper: ===
-               (Token::StrictEqual, cur_char_string)
+                // oper: ===
+                (Token::StrictEqual, cur_char_string)
             } else {
               // oper: ==
               (Token::Equal, cur_char_string)
@@ -481,11 +533,20 @@ impl AST{
         ',' => (Token::Comma, cur_char_string),
         ';' => (Token::Semicolon, cur_char_string),
         '(' => (Token::LeftParenthesis, cur_char_string),
-        ')' => (Token::RightParenthesis, cur_char_string),
+        ')' => {
+          self.pre_token_need_semicolon = true;
+          (Token::RightParenthesis, cur_char_string)
+        },
         '[' => (Token::LeftBracket, cur_char_string),
-        ']' => (Token::RightBracket, cur_char_string),
+        ']' => {
+          self.pre_token_need_semicolon = true;
+          (Token::RightBracket, cur_char_string)
+        },
         '{' => (Token::LeftBrace, cur_char_string),
-        '}' => (Token::RightBrace, cur_char_string),
+        '}' => {
+          self.pre_token_need_semicolon = true;
+          (Token::RightBrace, cur_char_string)
+        },
         
         '~' => (Token::BitwiseNot, cur_char_string),
         '&' => { // 与
@@ -504,8 +565,8 @@ impl AST{
           } else if self.char == '=' {
             cur_char_string.push(self.char);
             self.read();
-             // oper: &=
-             (Token::AndAssign, cur_char_string)
+              // oper: &=
+              (Token::AndAssign, cur_char_string)
           } else {
             // oper: &
             (Token::And, cur_char_string)
@@ -579,8 +640,8 @@ impl AST{
           } else if self.char == '.' {
             cur_char_string.push(self.char);
             self.read();
-             // oper: ?. 可选链 Optional Chaining (ES2020)
-             (Token::OptionalChaining, cur_char_string)
+              // oper: ?. 可选链 Optional Chaining (ES2020)
+              (Token::OptionalChaining, cur_char_string)
           } else {
             // oper: ?
             (Token::QuestionMark, cur_char_string)
@@ -588,21 +649,24 @@ impl AST{
         },
         _ => (Token::ILLEGAL, cur_char_string),
       };
-     
       return (token, literal);
-    }
+    };
   }
 
   // 读取下一个字符
-  pub fn read(&mut self) {
+  pub fn read(&mut self) -> bool {
     if self.next_char_index < self.length {
       self.cur_char_index = self.next_char_index;
       self.char = self.code.get(self.cur_char_index).unwrap().clone();
       self.next_char_index = self.next_char_index + 1;
+      // println!("read:{}, {},  {}", self.char, self.cur_char_index,self.next_char_index);
+      true
     } else {
-      self.next_char_index = self.length
+      self.next_char_index = self.length;
+      self.cur_char_index = self.length;
+      false
     }
-    // println!("read:{}, {},  {}", self.char, self.cur_char_index,self.next_char_index)
+    
   }
 
   // 获取标识符
@@ -610,7 +674,9 @@ impl AST{
     let start_index = self.cur_char_index;
     loop {
       if self.char_is_identifier_part() {
-        self.read()
+        if !self.read() {
+          break;
+        }
       } else {
         break;
       }
@@ -664,7 +730,9 @@ impl AST{
   fn read_number(&mut self, binary: i32) {
     loop {
       if get_hex_number_value(self.char) < binary {
-        self.read()
+        if !self.read() {
+          break;
+        }
       } else {
         break;
       }
@@ -678,7 +746,9 @@ impl AST{
     self.read();
     while self.char != str_start {
       // TODO: '\'aa\''
-      self.read();
+      if !self.read() {
+        break;
+      }
     }
     let literal = chars_to_string(&self.code, start_index, self.next_char_index);
     self.read();
@@ -711,10 +781,11 @@ impl AST{
   }
   // 解析表达式
   fn parse_expression(&mut self) -> Expression  {
-    return self.parse_assignment_expression();
+    let res = self.parse_assignment_expression();
+    res
   }
 
-  // 解析赋值运算符，优先级 2
+  // 解析赋值运算符，优先级 2，从右到左
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-assignment-operators
   fn parse_assignment_expression(&mut self) -> Expression {
     let left = self.parse_conditional_expression();
@@ -736,7 +807,7 @@ impl AST{
     }
   }
 
-  // 解析三目运算符，优先级 3
+  // 解析三目运算符，优先级 3，从右到左
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-conditional-operator
   fn parse_conditional_expression(&mut self) -> Expression {
     let left = self.parse_binary_logical_expression();
@@ -759,177 +830,126 @@ impl AST{
     return left
   }
 
-  // 逻辑或 || 运算符表达式 和 空值合并表达式 ?? 优先级 4
+  // 逻辑或 || 运算符表达式 和 空值合并表达式 ?? 优先级 4，从左到右
   fn parse_binary_logical_expression(&mut self) -> Expression {
-    let left = self.parse_logical_and_expression();
-    if self.token == Token::LogicalOr || self.token == Token::NullishCoalescing {
-      let operator = self.token.clone();
-      // 跳过 || 和 ??
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_logical_and_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_logical_and_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::LogicalOr,
+      Token::NullishCoalescing,
+    ], next)
   }
 
-  // 逻辑与 && 运算符表达式 优先级 5
+  // 逻辑与 && 运算符表达式 优先级 5，从左到右
   fn parse_logical_and_expression(&mut self) -> Expression {
-    let left = self.parse_binary_or_expression();
-    if self.token == Token::LogicalAnd {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_binary_or_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_binary_or_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::LogicalAnd,
+    ], next)
   }
 
-  // 按位或 | 运算符表达式 优先级 6
+  // 按位或 | 运算符表达式 优先级 6，从左到右
   fn parse_binary_or_expression(&mut self) -> Expression {
-    let left = self.parse_binary_exclusive_or_expression();
-    if self.token == Token::Or {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_binary_exclusive_or_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_binary_exclusive_or_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::Or,
+    ], next)
   }
 
-  // 按位异或 (^) 运算符表达式 优先级 7
+  // 按位异或 (^) 运算符表达式 优先级 7，从左到右
   fn parse_binary_exclusive_or_expression(&mut self) -> Expression {
-    let left = self.parse_binary_and_expression();
-    if self.token == Token::ExclusiveOr {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_binary_and_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_binary_and_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::ExclusiveOr,
+    ], next)
   }
 
-  // 按位与 (&) 运算符表达式 优先级 8
+  // 按位与 (&) 运算符表达式 优先级 8，从左到右
   fn parse_binary_and_expression(&mut self) -> Expression {
-    let left = self.parse_equality_expression();
-    if self.token == Token::And {
-      let operator = self.token.clone();
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_equality_expression())
-      });
-    }
-    left
+    let next = |tst: &mut AST| {
+      tst.parse_equality_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::And,
+    ], next)
   }
 
-  // 相等表达式 优先级 9
+  // 相等表达式 优先级 9，从左到右
   fn parse_equality_expression(&mut self) -> Expression {
-    let left = self.parse_relationship_expression();
-    match self.token {
-      Token::Equal | Token::StrictEqual | Token::NotEqual | Token::StrictNotEqual => {
-        let operator = self.token.clone();
-        self.next();
-        Expression::Binary(BinaryExpression {
-          left: Box::new(left),
-          operator,
-          right: Box::new(self.parse_relationship_expression())
-        })
-      },
-      _ => left 
-    }
+    let next = |tst: &mut AST| {
+      tst.parse_relationship_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::Equal ,
+      Token::StrictEqual ,
+      Token::NotEqual ,
+      Token::StrictNotEqual ,
+    ], next)
   }
 
-  // 解析关系运算符 > 、< 、>=、<= 优先级 10
+  // 解析关系运算符 > 、< 、>=、<= 优先级 10，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
   fn parse_relationship_expression(&mut self) -> Expression {
-    let left = self.parse_shift_expression();
-    if self.token == Token::Less || self.token == Token::Greater || self.token == Token::GreaterOrEqual || self.token == Token::LessOrEqual || self.token == Token::In || self.token == Token::Instanceof {
-      let operator = self.token.clone();
-      // 跳过当前的运算符 >、<
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_shift_expression())
-      })
-    }
-    return left;
+    let next = |tst: &mut AST| {
+      tst.parse_shift_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::Less ,
+      Token::Greater ,
+      Token::GreaterOrEqual ,
+      Token::LessOrEqual ,
+      Token::In ,
+      Token::Instanceof
+    ], next)
   }
 
-  // 解析位运算符 优先级 11
+  // 解析位运算符 优先级 11，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-bitwise-shift-operators
   fn parse_shift_expression(&mut self) -> Expression {
-    let left = self.parse_additive_expression();
-    if self.token == Token::ShiftLeft || self.token == Token::ShiftRight || self.token == Token::UnsignedShiftRight {
-      let operator = self.token.clone();
-      // 跳过当前的运算符
-      self.next();
-      return Expression::Binary(BinaryExpression {
-        left: Box::new(left),
-        operator,
-        right: Box::new(self.parse_additive_expression())
-      })
-    }
-    return left;
+    let next = |tst: &mut AST| {
+      tst.parse_additive_expression()
+    };
+    self.parse_left_associate_expression(vec![
+      Token::ShiftLeft ,
+      Token::ShiftRight ,
+      Token::UnsignedShiftRight ,
+    ], next)
   }
 
 
-  // 解析 + - 语法 优先级 12
+  // 解析 + - 语法 优先级 12，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_additive_expression(&mut self) -> Expression {
-    let mut left = self.parse_multiplicative_expression();
-    loop {
-      if self.token == Token::Plus || self.token == Token::Subtract {
-        let operator =  self.token.clone();
-        self.next();
-        let right = self.parse_multiplicative_expression();
-        left = Expression::Binary(BinaryExpression{
-          left: Box::new(left),
-          operator,
-          right: Box::new(right)
-        });
-      } else {
-        break;
-      }
+    let next = |tst: &mut AST| {
+      tst.parse_multiplicative_expression()
     };
-    return left;
+    self.parse_left_associate_expression(vec![
+      Token::Plus ,
+      Token::Subtract,
+    ], next)
   }
 
-  // 解析 * / % 语法 优先级 13
+  // 解析 * / % 语法 优先级 13，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
   fn parse_multiplicative_expression(&mut self) -> Expression {
-    let mut left = self.parse_exponentiation_expression();
-    loop {
-      if self.token == Token::Multiply || self.token == Token::Slash || self.token == Token::Remainder {
-        let operator =  self.token.clone();
-        self.next();
-        let right = self.parse_exponentiation_expression();
-        left = Expression::Binary(BinaryExpression{
-          left: Box::new(left),
-          operator,
-          right: Box::new(right)
-        });
-      } else {
-        break;
-      }
+    let next = |tst: &mut AST| {
+      tst.parse_exponentiation_expression()
     };
-    return left;
+    self.parse_left_associate_expression(vec![
+      Token::Multiply ,
+      Token::Slash ,
+      Token::Remainder ,
+    ], next)
   }
 
-  // 幂运算 1**2 -- 优先级 14
+  // 幂运算 1**2 -- 优先级 14，从右到左
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
   fn parse_exponentiation_expression(&mut self) -> Expression {
     let left = self.parse_prefix_unary_expression();
@@ -946,7 +966,7 @@ impl AST{
       left
     }
   }
-  // 前置一元运算符  -- 优先级 15
+  // 前置一元运算符  -- 优先级 15，从右到左
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
   fn parse_prefix_unary_expression(&mut self) -> Expression {
     match self.token {
@@ -985,7 +1005,9 @@ impl AST{
   fn parse_postfix_unary_expression(&mut self) -> Expression {
     let left = self.parse_left_hand_side_expression();
     if self.token == Token::Increment || self.token == Token::Decrement {
-      // TODO: check left is identifier/property access
+      if self.auto_semicolon_when_new_line {
+        return left
+      }
       let expr = Expression::PostfixUnary(PostfixUnaryExpression {
         operator: self.token.clone(),
         operand: Box::new(left),
@@ -997,7 +1019,7 @@ impl AST{
     }
   }
 
-  // 解析访问(.、[])语法 优先级 18
+  // 解析访问(.、[])语法 优先级 18，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
   fn parse_left_hand_side_expression(&mut self) -> Expression {
     let mut left = self.parse_group_expression();
@@ -1007,6 +1029,8 @@ impl AST{
         Token::Period => self.parse_property_access_expression(),
         Token::LeftBracket => self.parse_element_access_expression(),
         Token::LeftParenthesis => self.parse_call_expression(),
+        // TODO: new
+        // TODO: optional chaining
         _ => Expression::Unknown,
       };
       if let  Expression::Unknown = new_left {
@@ -1229,6 +1253,28 @@ impl AST{
     self.literal.parse::<f64>().unwrap()
   }
 
+  // 解析左结合表达式
+  fn parse_left_associate_expression<F: Fn(&mut AST)-> Expression>(&mut self, tokens: Vec<Token>, next: F) -> Expression {
+    let mut left = next(self);
+    loop {
+      // 向左结合
+      if tokens.contains(&self.token) {
+        let operator = self.token.clone();
+        // 跳过当前的运算符
+        self.next();
+        let right = next(self);
+        left = Expression::Binary(BinaryExpression{
+          left: Box::new(left),
+          operator,
+          right: Box::new(right)
+        });
+      } else {
+        break;
+      }
+    }
+    return left;
+  }
+
   // 跳过空白字符
   fn skip_white_space(&mut self) {
     loop {
@@ -1237,6 +1283,7 @@ impl AST{
           ' '| '\t' => {
             self.read();
           },
+          // 这里不处理换行，换行在 scan 的时候处理，因为要处理是否自动添加分号
           _ => {
             break;
           }
