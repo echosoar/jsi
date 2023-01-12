@@ -52,9 +52,9 @@ impl Context {
       let mut last_statement_value = Value::Undefined;
       for statement in body.iter() {
         match statement {
-          Statement::Let(let_statement) => {
-            for variable in let_statement.list.iter() {
-              if let Expression::Let(let_var) = variable {
+          Statement::Var(var_statement) => {
+            for variable in var_statement.list.iter() {
+              if let Expression::Var(let_var) = variable {
                 let name = let_var.name.clone();
                 let mut value = self.execute_expression(&let_var.initializer);
                 value.bind_name(name.clone());
@@ -69,7 +69,10 @@ impl Context {
           Statement::Return(return_statement) => {
             result_value = self.execute_expression(&return_statement.expression);
             last_statement_value = result_value.clone()
-          }
+          },
+          Statement::Function(_) => {
+            // skip, 因为函数声明前置了
+          },
           _ => {
             println!("unknown statement {:?}", statement);
           }

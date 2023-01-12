@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, LetVariableStatement, StringLiteral, LetVariableDeclaration, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -106,7 +106,7 @@ impl AST{
   // 解析生成 statement
   fn parse_statement(&mut self) -> Statement {
     match self.token {
-        Token::Let => self.parse_let_statement(),
+        Token::Var | Token::Let => self.parse_variable_statement(),
         Token::Function => {
           Statement::Function(self.parse_function())
         },
@@ -128,15 +128,23 @@ impl AST{
     }
   }
 
-  // 解析 let 
-  fn parse_let_statement(&mut self) -> Statement {
-    self.check_token_and_next(Token::Let);
-    let mut let_statement = LetVariableStatement {
+  // 解析 let / var
+  fn parse_variable_statement(&mut self) -> Statement {
+    let mut variable_flag = VariableFlag::Var;
+    if self.token == Token::Let {
+      self.check_token_and_next(Token::Let);
+      variable_flag = VariableFlag::Let;
+    } else {
+      self.check_token_and_next(Token::Var);
+    }
+    
+    let mut var_statement = VariableDeclarationStatement {
       list: vec![],
+      flag: variable_flag,
     };
     loop {
       let expression = self.parse_variable_declaration();
-      let_statement.list.push(expression);
+      var_statement.list.push(expression);
       // let a= 1, b = 2;
       if self.token != Token::Comma {
         break;
@@ -144,8 +152,10 @@ impl AST{
       self.next();
     }
     self.semicolon();
-    return Statement::Let(let_statement);
+    return Statement::Var(var_statement);
   }
+
+
 
   // 解析 block statement
   fn parse_block_statement(&mut self) -> Statement {
@@ -218,7 +228,7 @@ impl AST{
   fn parse_return_statement(&mut self) -> Statement {
     self.check_token_and_next(Token::Return);
     let mut expression = Expression::Keyword(Keywords::Undefined);
-    if self.token != Token::Semicolon && self.token != Token::RightBrace && self.token != Token::EOF {
+    if  !self.auto_semicolon_when_new_line && self.token != Token::Semicolon && self.token != Token::RightBrace && self.token != Token::EOF {
       expression = self.parse_expression()
     }
     self.semicolon();
@@ -235,7 +245,7 @@ impl AST{
     }
     let literal = self.literal.clone();
     self.next();
-    let mut node = LetVariableDeclaration{
+    let mut node = VariableDeclaration{
       name: literal,
       initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
     };
@@ -244,7 +254,7 @@ impl AST{
       self.next();
       node.initializer = Box::new(self.parse_expression());
     }
-    return Expression::Let(node)
+    return Expression::Var(node)
   }
 
   fn check_token_and_next(&mut self, token: Token) {
@@ -260,7 +270,12 @@ impl AST{
   }
 
   fn semicolon(&mut self) {
-    self.check_token_and_next(Token::Semicolon)
+    // 如果是自动添加的分号，则跳过
+    if self.auto_semicolon_when_new_line {
+      self.auto_semicolon_when_new_line = false;
+    } else {
+      self.check_token_and_next(Token::Semicolon)
+    }
   }
 
   // 获取下一个符号

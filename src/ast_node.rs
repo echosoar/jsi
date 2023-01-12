@@ -2,7 +2,7 @@ use crate::ast_token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
-  Let(LetVariableStatement),
+  Var(VariableDeclarationStatement),
   Function(FunctionDeclaration),
   Block(BlockStatement),
   Return(ReturnStatement),
@@ -12,7 +12,7 @@ pub enum Statement {
 
 #[derive(Debug,Clone, PartialEq)]
 pub enum Expression {
-  Let(LetVariableDeclaration),
+  Var(VariableDeclaration),
   Assign(AssignExpression),
   Binary(BinaryExpression),
   Conditional(ConditionalExpression),
@@ -46,8 +46,15 @@ pub enum Declaration {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LetVariableStatement {
-  pub list: Vec<Expression>
+pub enum VariableFlag {
+  Var,
+  Let,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariableDeclarationStatement {
+  pub list: Vec<Expression>,
+  pub flag: VariableFlag,
 }
 
 
@@ -176,7 +183,7 @@ pub struct  PropertyAssignment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LetVariableDeclaration {
+pub struct VariableDeclaration {
   pub name: String,
   pub initializer: Box<Expression>
 }
