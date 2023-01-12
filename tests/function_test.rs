@@ -10,14 +10,14 @@ fn run_function() {
 #[test]
 fn run_function_name_and_length() {
   let mut jsi_vm = JSI::new();
-  let value = jsi_vm.run(String::from("\
-  function abc(a, b, c) { } ;\
-  let foo = function(x, y) {};\
-  let obj = { x: function() {}};\
-  {\
-    abc: { name: abc.name, length: abc.length},\
-    foo: { name: foo.name, length: foo.length},\
-    obj: { name: obj.x.name, length: obj.x.length},\
+  let value = jsi_vm.run(String::from("\n
+  function abc(a, b, c) { } ;\n
+  let foo = function(x, y) {};\n
+  let obj = { x: function() {}};\n
+  {\n
+    abc: { name: abc.name, length: abc.length},\n
+    foo: { name: foo.name, length: foo.length},\n
+    obj: { name: obj.x.name, length: obj.x.length},\n
   };"));
   match value {
     Value::Object(obj) => {
