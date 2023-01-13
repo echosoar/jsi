@@ -5,7 +5,9 @@ use jsi::JSI;
 fn ast_class() {
   let mut jsi_vm = JSI::new();
   let program= jsi_vm.parse(String::from("class A {\n
-    private xxx = 213;\n
+    a
+    b;
+    xxx = 213;\n
     constructor(arg) {\n
         this.a = arg;
     }

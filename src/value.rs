@@ -1,7 +1,7 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::{Weak, Rc};
 use crate::ast_node::{Statement, IdentifierLiteral};
+use crate::builtins::object::Object;
 use crate::scope::Scope;
 
 
@@ -50,7 +50,7 @@ pub enum Value {
   // 3 种引用类型
   Object(Rc<RefCell<Object>>),
   Function(Rc<RefCell<Object>>),
-  Array,
+  Array(Rc<RefCell<Object>>),
   // 其他
   NAN,
   RefObject(Weak<RefCell<Object>>),
@@ -123,6 +123,9 @@ impl Value {
         }
       },
       Value::NAN => String::from("NaN"),
+      Value::Array(array) => {
+        (*array).borrow().to_string(Rc::clone(array))
+      },
       _ => String::from(""),
     }
   }
@@ -184,8 +187,8 @@ impl Value {
       Value::Object(obj) => Rc::clone(obj),
       Value::Function(function) => Rc::clone(function),
       _ => {
-        // TODO: throw error
-        Rc::new(RefCell::new(Object::new()))
+        // TODO: throw error TypeError: Cannot convert type to object
+        Rc::new(RefCell::new(Object::new(None)))
       }
     }
   }
@@ -193,7 +196,7 @@ impl Value {
     match self {
       Value::Object(_) => ValueType::Object,
       Value::Function(_) => ValueType::Function,
-      Value::Array => ValueType::Array,
+      Value::Array(_) => ValueType::Array,
       Value::String(_) => ValueType::String,
       Value::Number(_) => ValueType::Number,
       Value::Boolean(_) => ValueType::Boolean,
@@ -255,69 +258,4 @@ impl Value {
     }
   }
 
-}
-
-#[derive(Debug,Clone,PartialEq)]
-pub struct Object {
-  // 构造此对象的构造函数
-  // 比如函数的 constructor 就是 Function
-  // constructor
-  property: HashMap<String, Property>,
-  // 属性列表，对象的属性列表需要次序
-  property_list: Vec<String>,
-  // 原型对象，用于查找原型链
-  pub prototype: Option<Box<Object>>,
-  // 对象的值
-  value: Option<Box<Statement>>,
-}
-
-impl Object {
-  pub fn new() -> Object {
-    Object {
-      property: HashMap::new(),
-      property_list: vec![],
-      prototype: None,
-      value: None,
-    }
-  }
-
-  pub fn set_value(&mut self, value: Option<Box<Statement>>) -> bool {
-    self.value = value;
-    return true;
-  }
-
-  pub fn get_value(&self) -> Option<Box<Statement>> {
-    self.value.clone()
-  }
-
-  // TODO: descriptor
-  pub fn define_property_by_value(&mut self, name: String, value: Value) -> bool {
-    self.define_property(name, Property { value });
-    return true;
-  }
-
-  // TODO: descriptor
-  pub fn define_property(&mut self, name: String, property: Property) -> bool {
-    // 需要实现 descriptpor
-    if !self.property_list.contains(&name) {
-      self.property_list.push(name.clone());
-    }
-    self.property.insert(name, property);
-    return true;
-  }
-
-  pub fn get_property(&self, name: String) -> Value {
-    let prop = self.property.get(&name);
-    if let Some(prop) = prop {
-      prop.value.clone()
-    } else {
-      Value::Undefined
-    }
-  }
-}
-
-#[derive(Debug,Clone,PartialEq)]
-pub struct Property {
-  pub value: Value,
-  // TODO: 属性的描述符 descriptor writable ，是否可枚举等
 }

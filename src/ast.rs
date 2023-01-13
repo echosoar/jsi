@@ -229,6 +229,7 @@ impl AST{
     return func;
   }
 
+  // 解析 class(ES2015)
   fn parse_class(&mut self) -> ClassDeclaration {
     self.check_token_and_next(Token::Class);
     // class name
@@ -245,7 +246,8 @@ impl AST{
       let mut modifiers: Vec<Token> = vec![];
       loop {
         match self.token {
-          Token::Private | Token::Public | Token::Protected | Token::Async => {
+          // ES not define Token::Private | Token::Public | Token::Protected |
+          Token::Async => {
             modifiers.push(self.token.clone());
             self.next();
             continue;

@@ -1,4 +1,6 @@
-use crate::ast_token::Token;
+use std::{rc::Rc, cell::RefCell};
+
+use crate::{ast_token::Token, value::Value, builtins::object::Object};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
@@ -8,6 +10,7 @@ pub enum Statement {
   Block(BlockStatement),
   Return(ReturnStatement),
   Expression(ExpressionStatement),
+  BuiltinFunction(BuiltinFunctionDeclaration),
   Unknown,
 }
 
@@ -33,7 +36,6 @@ pub enum Expression {
   Class(ClassDeclaration),
   Constructor(FunctionDeclaration),
   ClassMethod(ClassMethodDeclaration),
-  // other
   Unknown,
 }
 
@@ -73,6 +75,12 @@ pub struct FunctionDeclaration {
   pub body: BlockStatement,
   pub declarations: Vec<Declaration>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct  BuiltinFunctionDeclaration {
+  pub call: fn(Option<Rc<RefCell<Object>>>, Vec<Value>) -> Value
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDeclaration {
   pub name: IdentifierLiteral,

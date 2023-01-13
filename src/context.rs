@@ -1,6 +1,6 @@
 use std::{rc::{Rc}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, FunctionDeclaration, AssignExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, value::{Object}, scope::{Scope, get_value_and_scope}, ast_token::Token};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{new_base_object, Object, global_object, Property}, function::new_function}};
 
 use super::ast::AST;
 pub struct Context {
@@ -12,10 +12,11 @@ impl Context {
     pub fn new() -> Context {
       let scope = Rc::new(RefCell::new(Scope::new()));
       let cur_scope = Rc::clone(&scope);
-      let ctx = Context {
+      let mut ctx = Context {
         scope,
         cur_scope,
       };
+      ctx.init();
       return ctx;
     }
     
@@ -40,7 +41,7 @@ impl Context {
        for declaration in declarations.iter() {
         match  declaration {
             Declaration::Function(function_statement) => {
-              let function = self.new_function(&function_statement);
+              let function = new_function(&function_statement);
              (*self.scope).borrow_mut().set_value(function_statement.name.literal.clone(), function)
             }
         };
@@ -98,14 +99,14 @@ impl Context {
           ValueInfo { value: self.new_object(object), name: None, reference: None }
         },
         Expression::Function(function_declaration) => {
-          ValueInfo { value: self.new_function(function_declaration), name: None, reference: None }
+          ValueInfo { value: new_function(function_declaration), name: None, reference: None }
         },
         Expression::PropertyAccess(property_access) => {
           // expression.name
           let left = self.execute_expression(&property_access.expression);
           let left_obj = left.to_object();
           let right = &property_access.name.literal;
-          let value = (*left_obj).borrow().get_property(right.clone());
+          let value = (*left_obj).borrow().get_property_value(right.clone());
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::ElementAccess(element_access) => {
@@ -113,7 +114,7 @@ impl Context {
           let left = self.execute_expression(&element_access.expression);
           let left_obj = left.to_object();
           let right = self.execute_expression(&element_access.argument).to_string();
-          let value = (*left_obj).borrow().get_property(right.clone());
+          let value = (*left_obj).borrow().get_property_value(right.clone());
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::Identifier(identifier) => {
@@ -247,19 +248,9 @@ impl Context {
         Value::Undefined
       }
     }
-    // 基础对象，绑定好原型链
-    fn new_base_object(&mut self) -> Rc<RefCell<Object>> {
-      let object = Rc::new(RefCell::new(Object::new()));
-      let object_clone = Rc::clone(&object);
-      let mut object_mut = (*object_clone).borrow_mut();
-      let prototype =  Rc::new(RefCell::new(Object::new()));
-      // constructor 弱引用
-      (*prototype).borrow_mut().define_property_by_value(String::from("constructor"), Value::RefObject(Rc::downgrade(&object)));
-      object_mut.define_property_by_value(String::from("prototype"), Value::Object(prototype));
-      object
-    }
+
     fn new_object(&mut self, expression: &ObjectLiteral) -> Value {
-      let object = self.new_base_object();
+      let object = new_base_object(None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
       // TODO:
@@ -270,28 +261,23 @@ impl Context {
         let name = self.execute_expression(&property.name).to_string();
         let mut initializer = self.execute_expression(&property.initializer);
         initializer.bind_name(name.clone());
-        object_mut.define_property_by_value(name, initializer);
+        object_mut.define_property(name, Property {
+          enumerable: true,
+          value: initializer,
+        });
       }
       Value::Object(object)
-    }
-
-    // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
-    fn new_function(&mut self, function_declaration: &FunctionDeclaration) -> Value {
-      let function = self.new_base_object();
-      let function_clone = Rc::clone(&function);
-      let mut function_mut = (*function_clone).borrow_mut();
-      function_mut.set_value(Some(Box::new(Statement::Function((*function_declaration).clone()))));
-      // TODO: function.prototype = global.function_prototype;
-      // TODO: function name https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-setfunctionname
-      function_mut.define_property_by_value(String::from("name"),  Value::String(function_declaration.name.literal.clone()));
-      function_mut.define_property_by_value(String::from("length"), Value::Number(function_declaration.parameters.len() as f64));
-
-      Value::Function(function)
     }
 
     fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, arguments: Vec<Value>) -> Value {
       // 获取 function 定义
       let function_define_value = (*function_define).borrow_mut().get_value().unwrap();
+      // 内置方法
+      if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
+        // TODO: this
+        return (builtin_function.call)(None, arguments);
+      }
+
       let function_declaration =  match *function_define_value {
         Statement::Function(function_declaration) => Some(function_declaration),
         _ => None,
@@ -337,5 +323,12 @@ impl Context {
           (*parent_scope_rc).borrow_mut().childs.remove(cur_scope_index);
         }
       }
+    }
+
+    // 初始化，主要是挂载全局对象
+    fn init(&mut self) {
+      // 挂载全局对象
+      let mut global_scope = self.scope.borrow_mut();
+      global_scope.set_value(String::from("Object"), Value::Object(global_object()));
     }
 } 

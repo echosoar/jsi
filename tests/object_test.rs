@@ -98,3 +98,13 @@ fn run_object_as_param_ref() {
   "));
   assert_eq!(result , Value::Number(456f64));
 }
+
+#[test]
+fn run_object_keys() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let obj = { a: 123, b: false, c: 'xxx'}\n
+  Object.keys(obj)"));
+  // TODO: check object.keys().length
+  assert_eq!(result.to_string() , String::from("a,b,c"));
+}
