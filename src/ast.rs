@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -109,6 +109,10 @@ impl AST{
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::Function => {
           Statement::Function(self.parse_function())
+        },
+        Token::Class => {
+          // class (ES2015)
+          Statement::Class(self.parse_class())
         },
         Token::Return => self.parse_return_statement(),
         _ => {
@@ -223,6 +227,32 @@ impl AST{
       self.scope.declare(Declaration::Function(func.clone()));
     }
     return func;
+  }
+
+  fn parse_class(&mut self) -> ClassDeclaration {
+    self.check_token_and_next(Token::Class);
+    // class name
+    self.check_token(Token::Identifier);
+    let name = self.literal.clone();
+    self.next();
+    // extends
+    if self.token == Token::Extends {
+      // TODO: 解析 extends
+    }
+    self.check_token_and_next(Token::LeftBrace);
+    while self.token != Token::RightBrace && self.token != Token::EOF {
+      if self.token == Token::Identifier {
+        
+        self.next()
+      } else {
+        self.check_token(Token::Identifier);
+      }
+    }
+    ClassDeclaration {
+      name: IdentifierLiteral { literal: name },
+      members: vec![],
+      heritage: None,
+    }
   }
 
   fn parse_return_statement(&mut self) -> Statement {

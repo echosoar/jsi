@@ -4,6 +4,7 @@ use crate::ast_token::Token;
 pub enum Statement {
   Var(VariableDeclarationStatement),
   Function(FunctionDeclaration),
+  Class(ClassDeclaration),
   Block(BlockStatement),
   Return(ReturnStatement),
   Expression(ExpressionStatement),
@@ -28,6 +29,12 @@ pub enum Expression {
   Keyword(Keywords),
   Object(ObjectLiteral),
   Function(FunctionDeclaration),
+  // for class
+  Class(ClassDeclaration),
+  Constructor,
+  ClassProperty,
+  ClassMethod,
+  // other
   Unknown,
 }
 
@@ -66,6 +73,13 @@ pub struct FunctionDeclaration {
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
   pub declarations: Vec<Declaration>,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDeclaration {
+  pub name: IdentifierLiteral,
+  pub members: Vec<Expression>,
+  // 继承
+  pub heritage: Option<Box<ClassDeclaration>>
 }
 
 #[derive(Debug, Clone, PartialEq)]
