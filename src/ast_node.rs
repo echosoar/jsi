@@ -31,9 +31,8 @@ pub enum Expression {
   Function(FunctionDeclaration),
   // for class
   Class(ClassDeclaration),
-  Constructor,
-  ClassProperty,
-  ClassMethod,
+  Constructor(FunctionDeclaration),
+  ClassMethod(ClassMethodDeclaration),
   // other
   Unknown,
 }
@@ -80,6 +79,13 @@ pub struct ClassDeclaration {
   pub members: Vec<Expression>,
   // 继承
   pub heritage: Option<Box<ClassDeclaration>>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassMethodDeclaration {
+  pub name: IdentifierLiteral,
+  pub modifiers: Vec<Token>,
+  pub method: Box<FunctionDeclaration>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

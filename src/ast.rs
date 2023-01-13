@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -108,7 +108,7 @@ impl AST{
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::Function => {
-          Statement::Function(self.parse_function())
+          Statement::Function(self.parse_function(true))
         },
         Token::Class => {
           // class (ES2015)
@@ -173,7 +173,7 @@ impl AST{
   }
 
   // 解析 function statement
-  fn parse_function(&mut self) -> FunctionDeclaration {
+  fn parse_function(&mut self, variable_lifting: bool) -> FunctionDeclaration {
     // 如果是 function 关键字，则跳过
     if self.token == Token::Function {
       self.next();
@@ -223,7 +223,7 @@ impl AST{
       body,
       declarations,
     };
-    if !is_anonymous {
+    if variable_lifting && !is_anonymous {
       self.scope.declare(Declaration::Function(func.clone()));
     }
     return func;
@@ -240,17 +240,48 @@ impl AST{
       // TODO: 解析 extends
     }
     self.check_token_and_next(Token::LeftBrace);
+    let mut members:  Vec<Expression>= vec![];
     while self.token != Token::RightBrace && self.token != Token::EOF {
+      let mut modifiers: Vec<Token> = vec![];
+      loop {
+        match self.token {
+          Token::Private | Token::Public | Token::Protected | Token::Async => {
+            modifiers.push(self.token.clone());
+            self.next();
+            continue;
+          },
+          _ => {
+            break;
+          }
+        };
+      }
+     
       if self.token == Token::Identifier {
+        if self.literal == String::from("constructor") {
+          // constructor
+          let constructor = self.parse_function(false);
+          members.push(Expression::Constructor(constructor));
+        } else if self.next_is('(', true) {
+          // method
+          let method = self.parse_function(false);
+          members.push(Expression::ClassMethod(ClassMethodDeclaration {
+            name: method.name.clone(),
+            modifiers,
+            method: Box::new(method), 
+          }));
+        } else {
+          // TODO: property
+          self.next()
+        }
         
-        self.next()
       } else {
-        self.check_token(Token::Identifier);
+        // TODO: throw error
+        self.next()
       }
     }
     ClassDeclaration {
       name: IdentifierLiteral { literal: name },
-      members: vec![],
+      members,
       heritage: None,
     }
   }
@@ -316,6 +347,28 @@ impl AST{
     // println!("out next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
+  // 查看下一次 scan 获取的是不是 token
+  fn next_is(&mut self, check_char: char, skip_space: bool) -> bool {
+    let mut start_index = self.cur_char_index;
+    loop {
+      // EOF
+      if start_index >= self.length {
+        return false;
+      }
+      let char = self.code[start_index];
+      start_index = start_index + 1;
+      if skip_space {
+        match char {
+          // TODO: 更多空白符
+          ' ' | '\n' | '\r' | '\t' => {
+            continue;
+          },
+          _ => {}
+        }
+      }
+      return char == check_char; 
+    }
+  }
   // 扫描获取符号
   pub fn scan(&mut self) -> (Token, String) {
     // TODO: 严格模式
@@ -1168,7 +1221,7 @@ impl AST{
         self.parse_object_literal()
       },
       Token::Function => {
-        Expression::Function(self.parse_function())
+        Expression::Function(self.parse_function(true))
       },
       _ => {
         self.next();
