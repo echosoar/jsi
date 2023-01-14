@@ -1,10 +1,10 @@
-use std::cell::{RefCell, Ref};
+use std::cell::{RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc};
 use super::array::new_array;
-use crate::ast_node::{Statement, BuiltinFunctionDeclaration};
+use crate::ast_node::{Statement, CallContext};
 use crate::value::Value;
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug,Clone)]
 pub struct Object {
   // 构造此对象的构造函数
   // 比如函数的 constructor 就是 Function
@@ -65,19 +65,34 @@ impl Object {
     }
   }
 
-  pub fn to_string(&self, obj_rc: Rc<RefCell<Object>>) -> String {
-    if let Some(value) = self.inner_property.get(&String::from("to_string")) {
+  // 定义原型链上面的属性
+  pub fn define_prototype_property(&mut self, name: String, property: Property) -> bool {
+    let proto = self.prototype.as_mut().unwrap();
+    proto.define_property(name, property)
+  }
+
+  // [静态]调用内置方法
+  pub fn call_builtin(method_name: String, args: Vec<Value>, ctx: &mut CallContext) -> Value {
+    let this_rc =  ctx.this.upgrade().unwrap();
+    let this = this_rc.borrow_mut();
+    if let Some(value) = this.inner_property.get(&method_name) {
       if let Value::Function(fun) = &value.value {
         let fun_value = fun.borrow().get_value();
         if let Some(fun_value) = fun_value {
           if let Statement::BuiltinFunction(fun_value) = *fun_value {
-            let value = (fun_value.call)(Some(obj_rc), vec![]);
-            if let Value::String(str) = value {
-              return str;
-            }
+            return (fun_value)(ctx, args);
           }
         }
       }
+    }
+    Value::Undefined
+  }
+
+  // 转换为字符串
+  pub fn to_string(&self, ctx: &mut CallContext) -> String {
+    let value = Object::call_builtin(String::from("to_string"), vec![], ctx);
+    if let Value::String(str) = value {
+      return str;
     }
     String::from("")
   }
@@ -104,20 +119,19 @@ pub fn new_base_object(value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
   object
 }
 
+
 // Object 
 pub fn global_object() -> Rc<RefCell<Object>> {
   let obj = new_base_object(None);
   let obj_mut = Rc::clone(&obj);
-  let object_keys_method = new_base_object(Some(Box::new(Statement::BuiltinFunction(BuiltinFunctionDeclaration {
-    call: object_keys
-  }))));
+  let object_keys_method = new_base_object(Some(Box::new(Statement::BuiltinFunction(object_keys))));
   obj_mut.borrow_mut().define_property_by_value(String::from("keys"), Value::Function(object_keys_method));
   obj
 }
 
 
 // Object.keys()
-fn object_keys(_: Option<Rc<RefCell<Object>>>, args: Vec<Value>) -> Value {
+fn object_keys(_: &mut CallContext, args: Vec<Value>) -> Value {
   let array =  new_array(0);
   let result = match array {
     Value::Array(arr) => Some(arr),

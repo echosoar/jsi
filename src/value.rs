@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::{Weak, Rc};
-use crate::ast_node::{Statement, IdentifierLiteral};
+use crate::ast_node::{Statement, IdentifierLiteral, CallContext};
 use crate::builtins::object::Object;
 use crate::scope::Scope;
 
@@ -124,7 +124,12 @@ impl Value {
       },
       Value::NAN => String::from("NaN"),
       Value::Array(array) => {
-        (*array).borrow().to_string(Rc::clone(array))
+        let mut arr = array.borrow_mut();
+        let mut ctx = CallContext {
+          // TODO: self
+          this: Rc::downgrade(array),
+        };
+        arr.to_string(&mut ctx)
       },
       _ => String::from(""),
     }
@@ -186,6 +191,7 @@ impl Value {
     match self {
       Value::Object(obj) => Rc::clone(obj),
       Value::Function(function) => Rc::clone(function),
+      Value::Array(array) => Rc::clone(array),
       _ => {
         // TODO: throw error TypeError: Cannot convert type to object
         Rc::new(RefCell::new(Object::new(None)))

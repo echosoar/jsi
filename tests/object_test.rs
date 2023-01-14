@@ -4,8 +4,13 @@ use jsi::{JSI, ast_node::{Expression, Statement, ObjectLiteral, ExpressionStatem
 fn ast_base() {
   let mut jsi = JSI::new();
   let program = jsi.parse(String::from("{a: 123, b: '123', [1 + 'a']: false}"));
-  assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
-    expression: Expression::Object(ObjectLiteral {
+  let expr = match &program.body[0] {
+    Statement::Expression(expr_statement) => {
+      expr_statement.expression.clone()
+    },
+    _ => Expression::Unknown,
+  };
+  assert_eq!(expr, Expression::Object(ObjectLiteral {
       properties: vec![
         PropertyAssignment{
           name: Box::new(Expression::String(StringLiteral { literal: String::from("a"), value: String::from("a")})),
@@ -24,8 +29,7 @@ fn ast_base() {
           initializer: Box::new(Expression::Keyword(Keywords::False)),
         }
       ]
-    })
-  })]);
+  }));
 }
 
 #[test]

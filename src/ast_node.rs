@@ -1,8 +1,8 @@
-use std::{rc::Rc, cell::RefCell};
+use std::{fmt, cell::{RefCell, RefMut}, borrow::BorrowMut, rc::{Rc, Weak}};
 
 use crate::{ast_token::Token, value::Value, builtins::object::Object};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub enum Statement {
   Var(VariableDeclarationStatement),
   Function(FunctionDeclaration),
@@ -10,8 +10,28 @@ pub enum Statement {
   Block(BlockStatement),
   Return(ReturnStatement),
   Expression(ExpressionStatement),
-  BuiltinFunction(BuiltinFunctionDeclaration),
+  BuiltinFunction(BuiltinFunction),
   Unknown,
+}
+
+impl PartialEq for Statement {
+  fn eq(&self, other: &Statement) -> bool {
+    match (self, other) {
+      (Statement::Var(a), Statement::Var(b)) => *a == *b,
+      (Statement::Function(a), Statement::Function(b)) => *a == *b,
+      (Statement::Class(a), Statement::Class(b)) => *a == *b,
+      (Statement::Block(a), Statement::Block(b)) => *a == *b,
+      (Statement::Return(a), Statement::Return(b)) => *a == *b,
+      (Statement::Expression(a), Statement::Expression(b)) => *a == *b,
+      _ => false,
+    }
+  }
+}
+
+impl fmt::Debug for Statement {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "statement")
+  }
 }
 
 #[derive(Debug,Clone, PartialEq)]
@@ -74,11 +94,6 @@ pub struct FunctionDeclaration {
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
   pub declarations: Vec<Declaration>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct  BuiltinFunctionDeclaration {
-  pub call: fn(Option<Rc<RefCell<Object>>>, Vec<Value>) -> Value
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -214,4 +229,11 @@ pub struct  PropertyAssignment {
 pub struct VariableDeclaration {
   pub name: String,
   pub initializer: Box<Expression>
+}
+
+
+
+pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> Value;
+pub struct CallContext {
+  pub this: Weak<RefCell<Object>>
 }

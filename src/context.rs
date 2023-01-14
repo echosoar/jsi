@@ -1,6 +1,6 @@
 use std::{rc::{Rc}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{new_base_object, Object, global_object, Property}, function::new_function}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{new_base_object, Object, global_object, Property}, function::new_function}};
 
 use super::ast::AST;
 pub struct Context {
@@ -275,7 +275,8 @@ impl Context {
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         // TODO: this
-        return (builtin_function.call)(None, arguments);
+        let mut ctx = CallContext{ this: Rc::downgrade(&function_define) };
+        return (builtin_function)(&mut ctx, arguments);
       }
 
       let function_declaration =  match *function_define_value {
