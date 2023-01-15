@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Weak, Rc};
 use crate::ast_node::{Statement, IdentifierLiteral, CallContext};
-use crate::builtins::object::Object;
+use crate::builtins::object::{Object, Property};
 use crate::scope::Scope;
 
 
@@ -24,7 +24,10 @@ impl ValueInfo {
     if let Some(reference) = &self.reference {
       match reference {
           Value::Object(object) => {
-            object.borrow_mut().define_property_by_value( name.clone(), value);
+            object.borrow_mut().define_property( name.clone(), Property {
+              enumerable: false,
+              value: value,
+            });
             None
           },
           Value::Scope(scope) => {
@@ -123,13 +126,15 @@ impl Value {
         }
       },
       Value::NAN => String::from("NaN"),
-      Value::Array(array) => {
-        let mut arr = array.borrow_mut();
-        let mut ctx = CallContext {
-          // TODO: self
-          this: Rc::downgrade(array),
-        };
-        arr.to_string(&mut ctx)
+      Value::Array(_) => {
+        // let mut arr = array.borrow_mut();
+        // let mut ctx = &CallContext {
+        //   // TODO: self
+        //   this: Rc::downgrade(array),
+        // };
+        // arr.to_string(&mut ctx)
+        // TODO: arr.call("toString")
+        String::from("")
       },
       _ => String::from(""),
     }
@@ -244,7 +249,7 @@ impl Value {
     match self {
       Value::Function(function) => {
         let mut function_define =function.borrow_mut();
-        let mut value = function_define.get_value().unwrap();
+        let mut value = function_define.get_initializer().unwrap();
         match *value {
             Statement::Function(func) => {
               if func.is_anonymous {
@@ -254,7 +259,7 @@ impl Value {
                 };
                 value = Box::new(Statement::Function(new_func));
                 function_define.set_value(Some(value));
-                function_define.define_property_by_value(String::from("name"), Value::String(String::from(name)));
+                function_define.define_property(String::from("name"), Property { enumerable: false, value: Value::String(String::from(name)) });
               }
             },
             _ => {}

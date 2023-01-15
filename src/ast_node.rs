@@ -1,6 +1,6 @@
 use std::{fmt, cell::{RefCell, RefMut}, borrow::BorrowMut, rc::{Rc, Weak}};
 
-use crate::{ast_token::Token, value::Value, builtins::object::Object};
+use crate::{ast_token::Token, value::Value, builtins::{object::Object, global::Global}};
 
 #[derive(Clone)]
 pub enum Statement {
@@ -234,6 +234,7 @@ pub struct VariableDeclaration {
 
 
 pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> Value;
-pub struct CallContext {
+pub struct CallContext<'a> {
+  pub global: &'a Global,
   pub this: Weak<RefCell<Object>>
 }

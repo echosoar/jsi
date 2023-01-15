@@ -1,10 +1,11 @@
 use std::{rc::{Rc}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{new_base_object, Object, global_object, Property}, function::new_function}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function}, global::Global}};
 
 use super::ast::AST;
 pub struct Context {
   scope: Rc<RefCell<Scope>>,
+  global: Global,
   cur_scope: Rc<RefCell<Scope>>
 }
 
@@ -12,7 +13,9 @@ impl Context {
     pub fn new() -> Context {
       let scope = Rc::new(RefCell::new(Scope::new()));
       let cur_scope = Rc::clone(&scope);
+      let global = Global::new();
       let mut ctx = Context {
+        global,
         scope,
         cur_scope,
       };
@@ -41,7 +44,7 @@ impl Context {
        for declaration in declarations.iter() {
         match  declaration {
             Declaration::Function(function_statement) => {
-              let function = new_function(&function_statement);
+              let function = create_function(&self.global, &function_statement);
              (*self.scope).borrow_mut().set_value(function_statement.name.literal.clone(), function)
             }
         };
@@ -99,14 +102,15 @@ impl Context {
           ValueInfo { value: self.new_object(object), name: None, reference: None }
         },
         Expression::Function(function_declaration) => {
-          ValueInfo { value: new_function(function_declaration), name: None, reference: None }
+          ValueInfo { value: create_function(&self.global, function_declaration), name: None, reference: None }
         },
         Expression::PropertyAccess(property_access) => {
           // expression.name
           let left = self.execute_expression(&property_access.expression);
           let left_obj = left.to_object();
           let right = &property_access.name.literal;
-          let value = (*left_obj).borrow().get_property_value(right.clone());
+          println!("PropertyAccess: {:?} {:?}", left, right);
+          let value = (*left_obj).borrow().get_value(right.clone());
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::ElementAccess(element_access) => {
@@ -114,7 +118,7 @@ impl Context {
           let left = self.execute_expression(&element_access.expression);
           let left_obj = left.to_object();
           let right = self.execute_expression(&element_access.argument).to_string();
-          let value = (*left_obj).borrow().get_property_value(right.clone());
+          let value = (*left_obj).borrow().get_value(right.clone());
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::Identifier(identifier) => {
@@ -250,7 +254,8 @@ impl Context {
     }
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> Value {
-      let object = new_base_object(None);
+      // 获取 object 实例
+      let object = create_object(&self.global, None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
       // TODO:
@@ -271,11 +276,11 @@ impl Context {
 
     fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, arguments: Vec<Value>) -> Value {
       // 获取 function 定义
-      let function_define_value = (*function_define).borrow_mut().get_value().unwrap();
+      let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         // TODO: this
-        let mut ctx = CallContext{ this: Rc::downgrade(&function_define) };
+        let mut ctx = CallContext{ global: &self.global, this: Rc::downgrade(&function_define) };
         return (builtin_function)(&mut ctx, arguments);
       }
 
@@ -330,6 +335,6 @@ impl Context {
     fn init(&mut self) {
       // 挂载全局对象
       let mut global_scope = self.scope.borrow_mut();
-      global_scope.set_value(String::from("Object"), Value::Object(global_object()));
+      global_scope.set_value(String::from("Object"), Value::Object(Rc::clone(&self.global.object)));
     }
 } 
