@@ -5,12 +5,13 @@ use std::rc::{Rc};
 use super::array::create_array;
 // use super::array::new_array;
 use super::function::builtin_function;
-use super::global::Global;
+use super::global::{Global, ClassType};
 use crate::ast_node::{Statement, CallContext};
 use crate::value::Value;
 #[derive(Debug,Clone)]
 // 对象
 pub struct Object {
+  pub class_type: ClassType,
   // 静态属性，比如 Object.keys
   pub property: HashMap<String, Property>,
   // 属性列表，对象的属性列表需要次序
@@ -30,8 +31,9 @@ pub struct Object {
 }
 
 impl Object {
-  pub fn new(value: Option<Box<Statement>>) -> Object {
+  pub fn new(obj_type: ClassType, value: Option<Box<Statement>>) -> Object {
     Object {
+      class_type: obj_type,
       property: HashMap::new(),
       inner_property: HashMap::new(),
       property_list: vec![],
@@ -124,39 +126,6 @@ impl Object {
     }
     Value::Undefined
   }
-
-  // // 定义原型链上面的属性
-  // pub fn define_prototype_property(&mut self, name: String, property: Property) -> bool {
-  //   // let proto = self.prototype.as_mut().unwrap();
-  //   // proto.define_property(name, property)
-  // }
-
-  // // [静态]调用内置方法
-  // pub fn call_builtin(method_name: String, args: Vec<Value>, ctx: &mut CallContext) -> Value {
-  //   println!("method_name {:?}", method_name);
-  //   let this =  ctx.this.upgrade().unwrap();
-  //   let this = this.borrow_mut();
-  //   if let Some(value) = this.inner_property.get(&method_name) {
-  //     if let Value::Function(fun) = &value.value {
-  //       let fun_value = fun.borrow().get_value();
-  //       if let Some(fun_value) = fun_value {
-  //         if let Statement::BuiltinFunction(fun_value) = *fun_value {
-  //           return (fun_value)(ctx, args);
-  //         }
-  //       }
-  //     }
-  //   }
-  //   Value::Undefined
-  // }
-
-  // // 转换为字符串
-  // pub fn to_string(&self, ctx: &mut CallContext) -> String {
-  //   let value = Object::call_builtin(String::from("to_string"), vec![], ctx);
-  //   if let Value::String(str) = value {
-  //     return str;
-  //   }
-  //   String::from("")
-  // }
 }
 
 #[derive(Debug,Clone,PartialEq)]
@@ -169,8 +138,8 @@ pub struct Property {
 
 
 // 实例化对象
-pub fn create_object(global: &Global, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
-  let object = Rc::new(RefCell::new(Object::new(value)));
+pub fn create_object(global: &Global, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
+  let object = Rc::new(RefCell::new(Object::new(obj_type, value)));
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
   // 绑定 obj.constructor = global.Object

@@ -508,11 +508,31 @@ impl AST{
         },
         '/' => {
           if self.char == '/' {
-            // oper: // TODO: 跳过注释。需要循环处理
-            (Token::Slash, cur_char_string)
+            // 单行注释
+            loop {
+              self.read();
+              match self.char {
+                '\n' => {
+                  self.read();
+                  break;
+                },
+                _ => {}
+              };
+            }
+            continue;
           } else if self.char == '*' {
-            // oper: /* */ TODO: 跳过注释。需要循环处理
-            (Token::Slash, cur_char_string)
+            // 多行注释
+            loop {
+              self.read();
+              if self.char == '*' {
+                self.read();
+                if self.char == '/' {
+                  self.read();
+                  break;
+                }
+              }
+            }
+            continue;
           } else if self.char == '=' {
             // oper: /=
             cur_char_string.push(self.char);

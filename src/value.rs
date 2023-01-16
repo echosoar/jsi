@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Weak, Rc};
-use crate::ast_node::{Statement, IdentifierLiteral, CallContext};
+use crate::ast_node::{Statement, IdentifierLiteral};
+use crate::builtins::global::ClassType;
 use crate::builtins::object::{Object, Property};
 use crate::scope::Scope;
 
@@ -199,7 +200,7 @@ impl Value {
       Value::Array(array) => Rc::clone(array),
       _ => {
         // TODO: throw error TypeError: Cannot convert type to object
-        Rc::new(RefCell::new(Object::new(None)))
+        Rc::new(RefCell::new(Object::new(ClassType::Object,None)))
       }
     }
   }

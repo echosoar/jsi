@@ -6,11 +6,11 @@ use crate::value::Value;
 use super::array::bind_global_array;
 use super::object::{Object, Property, bind_global_object};
 pub fn new_global_object() -> Rc<RefCell<Object>> {
-  let object = Rc::new(RefCell::new(Object::new(None)));
+  let object = Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
   // 创建原型链
-  let prototype =  Rc::new(RefCell::new(Object::new(None)));
+  let prototype =  Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
   // constructor 弱引用
   (*prototype).borrow_mut().define_property(String::from("constructor"), Property {
     enumerable: false,
@@ -26,6 +26,17 @@ pub struct Global {
   pub object: Rc<RefCell<Object>>,
   pub array: Rc<RefCell<Object>>,
   pub function: Rc<RefCell<Object>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ClassType {
+  Object,
+  Array,
+  Function,
+  String,
+  Boolean,
+  Number,
+  Null,
 }
 
 impl Global {

@@ -2,12 +2,11 @@ use std::{rc::Rc};
 
 use crate::{value::Value, ast_node::{CallContext}};
 
-use super::{object::{create_object, Property}, global::Global, function::builtin_function};
-
+use super::{object::{create_object, Property}, global::{Global, ClassType}, function::builtin_function};
 
  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
  pub fn create_array(global: &Global, length: usize) -> Value {
-  let array = create_object(global, None);
+  let array = create_object(global, ClassType::Array, None);
   let array_clone = Rc::clone(&array);
   let mut array_mut = (*array_clone).borrow_mut();
   array_mut.define_property(String::from("length"),  Property { enumerable: true, value: Value::Number(length as f64) });
@@ -17,7 +16,11 @@ use super::{object::{create_object, Property}, global::Global, function::builtin
 }
 
 pub fn bind_global_array(global: &Global) {
-  let arr = (*global.array).borrow_mut();
+  let mut arr = (*global.array).borrow_mut();
+
+ let name = String::from("isArray");
+ arr.property.insert(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, array_static_is_array) });
+
   if let Some(prop)= &arr.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = prototype_rc.borrow_mut();
@@ -30,11 +33,25 @@ pub fn bind_global_array(global: &Global) {
   }
 }
 
+// Array.isArray
+fn array_static_is_array(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+  let this_origin = ctx.this.upgrade();
+  let this_rc = this_origin.unwrap();
+  let this = this_rc.borrow();
+  if let ClassType::Array = this.class_type {
+    Value::Boolean(true)
+  } else {
+    Value::Boolean(false)
+  }
+}
 
+
+// Array.prototype.toString
 fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
   array_join(ctx, vec![])
 }
 
+// Array.prototype.join
 fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   let mut join = ",";
   if args.len() > 0 {

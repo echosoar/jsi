@@ -108,6 +108,8 @@ fn run_object_keys() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   let obj = { a: 123, b: false, c: 'xxx'}\n
+  // Object.keys returns an array\n
+  /* array.toString() */
   Object.keys(obj).toString()"));
   assert_eq!(result , Value::String(String::from("a,b,c")));
 }

@@ -1,6 +1,6 @@
 use std::{rc::{Rc}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function}, global::Global}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function}, global::{Global, ClassType}}};
 
 use super::ast::AST;
 pub struct Context {
@@ -254,7 +254,7 @@ impl Context {
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> Value {
       // 获取 object 实例
-      let object = create_object(&self.global, None);
+      let object = create_object(&self.global,ClassType::Array, None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
       // TODO:
