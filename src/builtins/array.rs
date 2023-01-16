@@ -23,6 +23,10 @@ pub fn bind_global_array(global: &Global) {
     let mut prototype = prototype_rc.borrow_mut();
     let name = String::from("toString");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 0f64, array_to_string) });
+    let name = String::from("join");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, array_join) });
+    let name = String::from("push");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, array_push) });
   }
 }
 
@@ -47,7 +51,8 @@ fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> Value {
 }
 
 fn array_iter_mut<F: FnMut(i32, &Value)>(ctx: &mut CallContext, mut callback: F) {
-  let this_rc = ctx.this.upgrade().unwrap();
+  let this_origin = ctx.this.upgrade();
+  let this_rc = this_origin.unwrap();
   let this = this_rc.borrow_mut();
   let len = this.get_property_value(String::from("length"));
   if let Value::Number(len) = len {
@@ -57,40 +62,17 @@ fn array_iter_mut<F: FnMut(i32, &Value)>(ctx: &mut CallContext, mut callback: F)
   }
 }
 
-// // new Array
-// fn array_constructor(_: &mut CallContext, args: Vec<Value>) -> Value {
-//   let mut len = args.len();
-//   let mut need_to_init_value = true;
-//   if len == 1 {
-//     if let Value::Number(num) = args[0] {
-//       len = num as usize;
-//       need_to_init_value = false;
-//     }
-//   }
-//   let arr = new_array(len);
-//   if need_to_init_value {
-//     if let Value::Array(arr) = &arr {
-//       let ctx = &mut CallContext {
-//         this: Rc::downgrade(arr),
-//       };
-//       Object::call_builtin(String::from("push"), args, ctx);
-//     }
-//   };
-//   return arr
-// }
-
-// // Array.prototype.push
-// fn array_push(ctx: &mut CallContext, args: Vec<Value>) -> Value {
-//   // 插入值
-//   let this_rc = ctx.this.upgrade().unwrap();
-//   let mut this = this_rc.borrow_mut();
-//   let mut len = this.get_property_value(String::from("length")).to_number().unwrap() as usize;
-//   for value in args.iter() { 
-//     this.define_property(len.to_string(), Property { enumerable: true, value: value.clone() });
-//     len += 1
-//   }
-//   let new_length = Value::Number(len as f64);
-//   this.define_property_by_value(len.to_string(),  new_length.clone());
-
-//   return new_length
-// }
+// Array.prototype.push
+fn array_push(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+  // 插入值
+  let this_rc = ctx.this.upgrade().unwrap();
+  let mut this = this_rc.borrow_mut();
+  let mut len = this.get_property_value(String::from("length")).to_number().unwrap() as usize;
+  for value in args.iter() { 
+    this.define_property(len.to_string(), Property { enumerable: true, value: value.clone() });
+    len += 1
+  }
+  let new_length = Value::Number(len as f64);
+  this.define_property(String::from("length"),  Property { enumerable: false, value: new_length.clone() });
+  return new_length
+}

@@ -102,6 +102,29 @@ impl Object {
     Value::Undefined
   }
 
+  pub fn call(ctx: &mut CallContext, name: String, arguments:Vec<Value>) -> Value {
+    let this = ctx.this.upgrade().unwrap();
+    let fun = {
+      //  处理临时借用
+      let this_mut = (*this).borrow_mut();
+      this_mut.get_value(name)
+    };
+   
+    if let Value::Function(function_define) = &fun {
+      // 获取 function 定义
+      let fun_clone = Rc::clone(function_define);
+      let fun_obj = (*fun_clone).borrow_mut();
+      let function_define_value = fun_obj.get_initializer().unwrap();
+      
+      // 内置方法
+      if let Statement::BuiltinFunction(builtin_function) = function_define_value.as_ref() {
+        // let mut ctx = CallContext{ global: ctx.global, this: Rc::downgrade(&function_define) };
+        return (builtin_function)( ctx, arguments);
+      }
+    }
+    Value::Undefined
+  }
+
   // // 定义原型链上面的属性
   // pub fn define_prototype_property(&mut self, name: String, property: Property) -> bool {
   //   // let proto = self.prototype.as_mut().unwrap();
@@ -160,30 +183,30 @@ pub fn create_object(global: &Global, value: Option<Box<Statement>>) -> Rc<RefCe
 // Object.keys()
 fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   let array = create_array(ctx.global, 0);
-  // let result = match array {
-  //   Value::Array(arr) => Some(arr),
-  //   _ => None
-  // }.unwrap();
-  // if args.len() < 1 {
-  //   return Value::Array(result);
-  // }
-  // let obj = args[0].to_object();
-  // let obj = obj.borrow();
-  // let mut index = 0;
-  // for key in obj.property_list.iter() {
-  //   let prop = obj.property.get(key);
-  //   if let Some(property) = prop {
-  //     if property.enumerable {
-  //       result.borrow_mut().(index.to_string(), Value::String(key.clone()));
-  //       index += 1;
-  //     }
-  //   }
-    
-  // }
-  // // TODO: using array.push
-  // result.borrow_mut().define_property_by_value(String::from("length"),  Value::Number(index as f64));
-  // return Value::Array(result)
-  array
+  let array_obj = match array {
+    Value::Array(arr) => Some(arr),
+    _ => None
+  }.unwrap();
+
+  if args.len() < 1 {
+    return Value::Array(array_obj);
+  }
+  let weak = Rc::downgrade(&array_obj);
+  let call_ctx = &mut CallContext {
+    global: &ctx.global,
+    this: weak,
+  };
+  let obj_rc= args[0].to_object();
+  let obj = obj_rc.borrow();
+  for key in obj.property_list.iter() {
+    let prop = obj.property.get(key);
+    if let Some(property) = prop {
+      if property.enumerable {
+        Object::call(call_ctx, String::from("push"), vec![Value::String(key.clone())]);
+      }
+    }
+  }
+  return Value::Array(array_obj);
 }
 
 

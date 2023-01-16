@@ -109,7 +109,5 @@ fn run_object_keys() {
   let result = jsi.run(String::from("\
   let obj = { a: 123, b: false, c: 'xxx'}\n
   Object.keys(obj).toString()"));
-  // TODO: check object.keys().length
-  // assert_eq!(result , String::from("a,b,c"));
-  println!("result {:?}", result)
+  assert_eq!(result , Value::String(String::from("a,b,c")));
 }

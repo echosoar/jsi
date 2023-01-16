@@ -109,7 +109,6 @@ impl Context {
           let left = self.execute_expression(&property_access.expression);
           let left_obj = left.to_object();
           let right = &property_access.name.literal;
-          println!("PropertyAccess: {:?} {:?}", left, right);
           let value = (*left_obj).borrow().get_value(right.clone());
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
@@ -228,15 +227,15 @@ impl Context {
 
     // 执行方法调用表达式
     fn execute_call_expression(&mut self, expression: &CallExpression) -> Value {
-      let callee = self.execute_expression(expression.expression.as_ref());
+      let callee = self.execute_expression_info(expression.expression.as_ref());
       let mut arguments: Vec<Value> = vec![];
       for arg in expression.arguments.iter() {
         arguments.push(self.execute_expression(arg));
       }
-      if let Value::Function(function_object) = callee {
-        return self.call_function_object(function_object, arguments);
+      if let Value::Function(function_object) = callee.value {
+        return self.call_function_object(function_object, callee.reference, arguments);
       }
-
+      // TODO: throw error,非函数
       Value::Undefined
     }
 
@@ -274,14 +273,24 @@ impl Context {
       Value::Object(object)
     }
 
-    fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, arguments: Vec<Value>) -> Value {
+    fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, arguments: Vec<Value>) -> Value {
       // 获取 function 定义
       let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
-        // TODO: this
-        let mut ctx = CallContext{ global: &self.global, this: Rc::downgrade(&function_define) };
-        return (builtin_function)(&mut ctx, arguments);
+        let mut this_obj = function_define;
+        if let Some(call_this_value) = call_this {
+          if let Value::Object(obj) = call_this_value {
+            this_obj = obj;
+          } else if let Value::Array(obj) = call_this_value {
+            this_obj = obj;
+          } else if let Value::Function(obj) = call_this_value {
+            this_obj = obj;
+          }
+        }
+        let mut ctx = CallContext{ global: &self.global, this: Rc::downgrade(&this_obj) };
+        let result = (builtin_function)(&mut ctx, arguments);
+        return result;
       }
 
       let function_declaration =  match *function_define_value {
