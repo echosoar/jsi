@@ -1,6 +1,6 @@
 use std::{rc::{Rc}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function}, global::{Global, ClassType}}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function}, global::{Global, ClassType}, array::create_array}};
 
 use super::ast::AST;
 pub struct Context {
@@ -101,6 +101,9 @@ impl Context {
         Expression::Object(object) => {
           ValueInfo { value: self.new_object(object), name: None, reference: None }
         },
+        Expression::Array(array) => {
+          ValueInfo { value: self.new_array(array), name: None, reference: None }
+        },
         Expression::Function(function_declaration) => {
           ValueInfo { value: create_function(&self.global, function_declaration), name: None, reference: None }
         },
@@ -110,6 +113,7 @@ impl Context {
           let left_obj = left.to_object();
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
+          
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::ElementAccess(element_access) => {
@@ -271,6 +275,23 @@ impl Context {
         });
       }
       Value::Object(object)
+    }
+
+    fn new_array(&mut self, expression: &ArrayLiteral) -> Value {
+      let array = create_array(&self.global, expression.elements.len());
+      if let Value::Array(arr_obj) = &array {
+        let mut arguments: Vec<Value> = vec![];
+        for element in &expression.elements {
+          arguments.push(self.execute_expression(element));
+        }
+        let weak = Rc::downgrade(arr_obj);
+        let call_ctx = &mut CallContext {
+          global: &self.global,
+          this: weak,
+        };
+        Object::call(call_ctx, String::from("push"), arguments);
+      }
+      array
     }
 
     fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, arguments: Vec<Value>) -> Value {

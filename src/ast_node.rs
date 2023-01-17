@@ -1,4 +1,4 @@
-use std::{fmt, cell::{RefCell, RefMut}, borrow::BorrowMut, rc::{Rc, Weak}};
+use std::{fmt, cell::RefCell, rc::Weak};
 
 use crate::{ast_token::Token, value::Value, builtins::{object::Object, global::Global}};
 
@@ -51,6 +51,7 @@ pub enum Expression {
   String(StringLiteral),
   Keyword(Keywords),
   Object(ObjectLiteral),
+  Array(ArrayLiteral),
   Function(FunctionDeclaration),
   // for class
   Class(ClassDeclaration),
@@ -216,6 +217,11 @@ pub struct  StringLiteral {
 #[derive(Debug, Clone, PartialEq)]
 pub struct  ObjectLiteral {
   pub properties: Vec<PropertyAssignment>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayLiteral {
+  pub elements: Vec<Expression>
 }
 
 

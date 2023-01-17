@@ -95,6 +95,9 @@ impl Clone for Value {
       Value::Object(rc_value) => {
         Value::Object(Rc::clone(rc_value))
       },
+      Value::Array(rc_value) => {
+        Value::Array(Rc::clone(rc_value))
+      },
       Value::Function(rc_value) => {
         Value::Function(Rc::clone(rc_value))
       },

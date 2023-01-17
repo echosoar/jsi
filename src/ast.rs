@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -1242,6 +1242,9 @@ impl AST{
       Token::LeftBrace => {
         self.parse_object_literal()
       },
+      Token::LeftBracket => {
+        self.parse_array_literal()
+      },
       Token::Function => {
         Expression::Function(self.parse_function(true))
       },
@@ -1252,6 +1255,29 @@ impl AST{
     }
   }
 
+  // 解析数组字面量
+  fn parse_array_literal(&mut self) -> Expression {
+    self.check_token_and_next(Token::LeftBracket);
+    let mut elements: Vec<Expression>= vec![];
+    while self.token != Token::RightBracket && self.token != Token::EOF {
+      // [,,1]
+      if self.token == Token::Comma {
+        elements.push(Expression::Keyword(Keywords::Undefined));
+        self.next();
+        continue;
+      }
+      let item = self.parse_expression();
+      elements.push(item);
+      if self.token != Token::RightBracket {
+        self.check_token_and_next(Token::Comma);
+      }
+    };
+    self.check_token_and_next(Token::RightBracket);
+
+    Expression::Array(ArrayLiteral {
+      elements
+    })
+  }
   // 解析对象字面量
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#prod-ObjectLiteral
   fn parse_object_literal(&mut self) -> Expression {
