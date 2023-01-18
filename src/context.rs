@@ -278,7 +278,7 @@ impl Context {
     }
 
     fn new_array(&mut self, expression: &ArrayLiteral) -> Value {
-      let array = create_array(&self.global, expression.elements.len());
+      let array = create_array(&self.global, 0);
       if let Value::Array(arr_obj) = &array {
         let mut arguments: Vec<Value> = vec![];
         for element in &expression.elements {
