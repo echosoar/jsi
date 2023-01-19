@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::rc::{Weak, Rc};
-use crate::ast_node::{Statement, IdentifierLiteral};
-use crate::builtins::global::ClassType;
+use crate::ast_node::{Statement, IdentifierLiteral, ClassType};
 use crate::builtins::object::{Object, Property};
 use crate::scope::Scope;
 
@@ -101,6 +100,9 @@ impl Clone for Value {
       Value::Function(rc_value) => {
         Value::Function(Rc::clone(rc_value))
       },
+      Value::RefObject(obj) => {
+        return Value::RefObject(obj.clone());
+      },
       Value::String(str) => Value::String(str.clone()),
       Value::Number(num) => Value::Number(*num),
       Value::Boolean(bool) => Value::Boolean(*bool),
@@ -196,17 +198,27 @@ impl Value {
   }
 
   pub fn to_object(&self) -> Rc<RefCell<Object>> {
-    // TODO: more type
-    match self {
-      Value::Object(obj) => Rc::clone(obj),
-      Value::Function(function) => Rc::clone(function),
-      Value::Array(array) => Rc::clone(array),
-      _ => {
-        // TODO: throw error TypeError: Cannot convert type to object
-        Rc::new(RefCell::new(Object::new(ClassType::Object,None)))
+    let rc_obj = self.to_weak_rc_object();
+    if let Some(wrc) = rc_obj {
+      let rc = wrc.upgrade();
+      if let Some(obj)= &rc {
+        return Rc::clone(obj);
       }
     }
+    return Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
   }
+
+
+  pub fn to_weak_rc_object(&self) -> Option<Weak<RefCell<Object>>> {
+    match self {
+      Value::Object(obj) => Some(Rc::downgrade(obj)),
+      Value::Function(function) => Some(Rc::downgrade(function)),
+      Value::Array(array) => Some(Rc::downgrade(array)),
+      Value::RefObject(obj) => Some(obj.clone()),
+      _ => None
+    }
+  }
+
   pub fn get_value_type(&self) -> ValueType {
     match self {
       Value::Object(_) => ValueType::Object,

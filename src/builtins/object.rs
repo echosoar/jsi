@@ -1,12 +1,12 @@
 use std::borrow::BorrowMut;
 use std::cell::{RefCell};
 use std::collections::HashMap;
-use std::rc::{Rc};
+use std::rc::{Rc, Weak};
 use super::array::create_array;
 // use super::array::new_array;
 use super::function::builtin_function;
-use super::global::{Global, ClassType};
-use crate::ast_node::{Statement, CallContext};
+use super::global::get_global_object;
+use crate::ast_node::{Statement, CallContext, ClassType};
 use crate::value::Value;
 #[derive(Debug,Clone)]
 // 对象
@@ -25,7 +25,7 @@ pub struct Object {
   pub prototype: Option<Rc<RefCell<Object>>>,
   // 如果是实例，则存在 constructor 值，指向构造方法
   // 如： arr.constructor = Array
-  pub constructor: Option<Rc<RefCell<Object>>>,
+  pub constructor: Option<Weak<RefCell<Object>>>,
   // 对象的值
   value: Option<Box<Statement>>,
 }
@@ -40,6 +40,19 @@ impl Object {
       prototype: None,
       constructor: None,
       value,
+    }
+  }
+
+  // 强制拷贝
+  pub fn force_copy(&self) -> Object {
+    Object {
+      class_type: self.class_type.clone(),
+      property: self.property.clone(),
+      inner_property: self.inner_property.clone(),
+      property_list: self.property_list.clone(),
+      prototype: self.prototype.clone(),
+      constructor: self.constructor.clone(),
+      value: self.value.clone(),
     }
   }
 
@@ -79,23 +92,33 @@ impl Object {
 
   // 从当前属性和原型链上面寻找值
   pub fn get_value(&self, name: String) -> Value {
+    if name == String::from("prototype") {
+      if let Some(proto) = &self.prototype {
+        return Value::Object(Rc::clone(proto));
+      } else {
+        return Value::Undefined
+      }
+    }
     let prop = self.property.get(&name);
     if let Some(prop) = prop {
       return prop.value.clone()
     } else {
       if let Some(constructor) = &self.constructor {
-        let mut cur = Rc::clone(constructor);
-        loop {
-          let broow = Rc::clone(&cur);
-          let cur_mut = broow.borrow();
-          let prop = cur_mut.property.get(&name);
-          if let Some(prop) = prop {
-            return prop.value.clone()
-          } else {
-            if let Some(constructor) = &cur_mut.prototype {
-              cur = Rc::clone(constructor);
+        let constructor_rc = constructor.upgrade();
+        if let Some(cur) = constructor_rc {
+          let mut cur = cur;
+          loop {
+            let broow = Rc::clone(&cur);
+            let cur_mut = broow.borrow();
+            let prop = cur_mut.property.get(&name);
+            if let Some(prop) = prop {
+              return prop.value.clone()
             } else {
-              break;
+              if let Some(constructor) = &cur_mut.prototype {
+                cur = Rc::clone(constructor);
+              } else {
+                break;
+              }
             }
           }
         }
@@ -138,20 +161,42 @@ pub struct Property {
 
 
 // 实例化对象
-pub fn create_object(global: &Global, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
+pub fn create_object(global: &Rc<RefCell<Object>>, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(obj_type, value)));
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
   // 绑定 obj.constructor = global.Object
-  object_mut.constructor = Some(Rc::clone(&global.object));
+  let global_object = get_global_object(global, String::from("Object"));
+  object_mut.constructor = Some(Rc::downgrade(&global_object));
   object
+}
+
+
+
+pub fn bind_global_object(global: &Rc<RefCell<Object>>) {
+  let obj_rc = get_global_object(global, String::from("Object"));
+  let mut obj = (*obj_rc).borrow_mut();
+  let property = obj.property.borrow_mut();
+  // Object.keys
+  let name = String::from("keys");
+  property.insert(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, object_keys) });
+
+  if let Some(prop)= &obj.prototype {
+    let prototype_rc = Rc::clone(prop);
+    let mut prototype = (*prototype_rc).borrow_mut();
+    // Object.prototype.toString
+    let name = String::from("toString");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 0f64, to_string) });
+  }
+ 
 }
 
 
 
 // Object.keys()
 fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
-  let array = create_array(ctx.global, 0);
+  let hangle_global = ctx.global.upgrade().unwrap();
+  let array = create_array(&hangle_global, 0);
   let array_obj = match array {
     Value::Array(arr) => Some(arr),
     _ => None
@@ -162,8 +207,9 @@ fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   }
   let weak = Rc::downgrade(&array_obj);
   let call_ctx = &mut CallContext {
-    global: &ctx.global,
+    global: Rc::downgrade(&hangle_global),
     this: weak,
+    reference: None,
   };
   let obj_rc= args[0].to_object();
   let obj = obj_rc.borrow();
@@ -179,9 +225,13 @@ fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
 }
 
 
-pub fn bind_global_object(global: &Global) {
-  let mut obj = (*global.object).borrow_mut();
- let property = obj.property.borrow_mut();
- let name = String::from("keys");
- property.insert(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, object_keys) });
+// Object.keys()
+fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+  let this_origin = ctx.this.upgrade();
+  let this_rc = this_origin.unwrap();
+  let this = this_rc.borrow();
+  let mut obj_type : String = "[object ".to_owned();
+  obj_type.push_str(this.class_type.to_string().as_str());
+  obj_type.push(']');
+  Value::String(obj_type)
 }

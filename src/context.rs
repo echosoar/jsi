@@ -1,11 +1,11 @@
-use std::{rc::{Rc}, cell::RefCell};
+use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function}, global::{Global, ClassType}, array::create_array}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function}, global::{new_global_this, get_global_object}, array::create_array}};
 
 use super::ast::AST;
 pub struct Context {
   scope: Rc<RefCell<Scope>>,
-  global: Global,
+  global: Rc<RefCell<Object>>,
   cur_scope: Rc<RefCell<Scope>>
 }
 
@@ -13,7 +13,7 @@ impl Context {
     pub fn new() -> Context {
       let scope = Rc::new(RefCell::new(Scope::new()));
       let cur_scope = Rc::clone(&scope);
-      let global = Global::new();
+      let global = new_global_this();
       let mut ctx = Context {
         global,
         scope,
@@ -113,7 +113,7 @@ impl Context {
           let left_obj = left.to_object();
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
-          
+          // println!("PropertyAccess: {:?} {:?}",left_obj, right);
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
         Expression::ElementAccess(element_access) => {
@@ -237,7 +237,11 @@ impl Context {
         arguments.push(self.execute_expression(arg));
       }
       if let Value::Function(function_object) = callee.value {
-        return self.call_function_object(function_object, callee.reference, arguments);
+        let mut reference = None;
+        if let Some(call_ref) = &callee.reference {
+          reference = call_ref.to_weak_rc_object();
+        }
+        return self.call_function_object(function_object, callee.reference, reference, arguments);
       }
       // TODO: throw error,非函数
       Value::Undefined
@@ -286,30 +290,37 @@ impl Context {
         }
         let weak = Rc::downgrade(arr_obj);
         let call_ctx = &mut CallContext {
-          global: &self.global,
+          global: Rc::downgrade(&self.global),
           this: weak,
+          reference: None,
         };
         Object::call(call_ctx, String::from("push"), arguments);
       }
       array
     }
 
-    fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, arguments: Vec<Value>) -> Value {
+    fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> Value {
       // 获取 function 定义
       let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
+      // 获取 function 调用的 this
+      let mut this_obj = function_define;
+      if let Some(call_this_value) = call_this {
+        if let Value::Object(obj) = call_this_value {
+          this_obj = obj;
+        } else if let Value::Array(obj) = call_this_value {
+          this_obj = obj;
+        } else if let Value::Function(obj) = call_this_value {
+          this_obj = obj;
+        }
+      }
+      println!("call this {:?}", this_obj);
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
-        let mut this_obj = function_define;
-        if let Some(call_this_value) = call_this {
-          if let Value::Object(obj) = call_this_value {
-            this_obj = obj;
-          } else if let Value::Array(obj) = call_this_value {
-            this_obj = obj;
-          } else if let Value::Function(obj) = call_this_value {
-            this_obj = obj;
-          }
-        }
-        let mut ctx = CallContext{ global: &self.global, this: Rc::downgrade(&this_obj) };
+        let mut ctx = CallContext{
+          global:  Rc::downgrade(&self.global),
+          this: Rc::downgrade(&this_obj),
+          reference: None,
+        };
         let result = (builtin_function)(&mut ctx, arguments);
         return result;
       }
@@ -365,6 +376,12 @@ impl Context {
     fn init(&mut self) {
       // 挂载全局对象
       let mut global_scope = self.scope.borrow_mut();
-      global_scope.set_value(String::from("Object"), Value::Object(Rc::clone(&self.global.object)));
+      global_scope.set_value(String::from("globalThis"), Value::RefObject(Rc::downgrade(&self.global)));
+      let object = get_global_object(&self.global, String::from("Object"));
+      global_scope.set_value(String::from("Object"), Value::RefObject(Rc::downgrade(&object)));
+      let array = get_global_object(&self.global, String::from("Array"));
+      global_scope.set_value(String::from("Array"), Value::RefObject(Rc::downgrade(&array)));
+      let function = get_global_object(&self.global, String::from("Function"));
+      global_scope.set_value(String::from("Function"), Value::RefObject(Rc::downgrade(&function)));
     }
 } 
