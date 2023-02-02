@@ -1,12 +1,12 @@
-use std::{rc::Rc, cell::RefCell};
+use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}};
+use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope};
 
 use super::{object::{create_object, Property, Object}, global::{get_global_object}};
 
 // 初始化一个方法
 // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
- pub fn create_function(global: &Rc<RefCell<Object>>, function_declaration: &FunctionDeclaration) -> Value {
+ pub fn create_function(global: &Rc<RefCell<Object>>, function_declaration: &FunctionDeclaration, define_scope: Weak<RefCell<Scope>>) -> Value {
   let global_function = get_global_object(global, String::from("Function"));
   let function = create_object(global,ClassType::Function, Some(Box::new(Statement::Function((*function_declaration).clone()))));
   let function_clone = Rc::clone(&function);
@@ -23,6 +23,9 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
     enumerable: false,
     value: Value::Number(function_declaration.parameters.len() as f64)
   });
+  
+  // define_scope
+  function_mut.set_inner_property_value(String::from("define_scope"), Value::Scope(define_scope));
   Value::Function(function)
 }
 
@@ -71,6 +74,7 @@ fn function_call(ctx: &mut CallContext, args: Vec<Value>) -> Value {
     this = args[0].clone();
   }
   let new_fun = function_bind(ctx, vec![this]);
+  println!("newfun: {:?}", new_fun);
   Value::Undefined
 }
 
@@ -81,11 +85,18 @@ fn function_bind(ctx: &mut CallContext, args: Vec<Value>) -> Value {
     this = args[0].clone();
   }
   let reference = &ctx.reference;
-  if let Some(ref_wk) = reference {
-    let fun = ref_wk.upgrade().unwrap();
-    let fun_obj = fun.borrow();
-    let new_fun = fun_obj.force_copy();
-    println!("reference: {:?}", new_fun);
+  let ref_fun_wk = reference.as_ref().unwrap();
+  let fun = ref_fun_wk.upgrade().unwrap();
+  let fun_obj = fun.borrow();
+  let mut new_fun = fun_obj.force_copy();
+  new_fun.set_inner_property_value(String::from("this"), this);
+  Value::Function(Rc::new(RefCell::new(new_fun)))
+}
+
+pub fn get_function_this(func: Rc<RefCell<Object>>)-> Rc<RefCell<Object>> {
+  let bind_this = func.borrow().get_inner_property_value(String::from("this"));
+  if let Some(this) = bind_this {
+    return this.to_object()
   }
-  Value::String("call".to_owned())
+  return func
 }

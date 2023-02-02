@@ -31,7 +31,10 @@ impl ValueInfo {
             None
           },
           Value::Scope(scope) => {
-            scope.borrow_mut().set_value( name.clone(), value);
+            let scope_rc = scope.upgrade();
+            if let Some(scope)= scope_rc {
+              scope.borrow_mut().set_value( name.clone(), value);
+            }
             None
           },
           _ => Some(name.clone())
@@ -57,7 +60,7 @@ pub enum Value {
   // 其他
   NAN,
   RefObject(Weak<RefCell<Object>>),
-  Scope(Rc<RefCell<Scope>>)
+  Scope(Weak<RefCell<Scope>>)
 }
 
 #[derive(PartialEq)]
@@ -100,14 +103,18 @@ impl Clone for Value {
       Value::Function(rc_value) => {
         Value::Function(Rc::clone(rc_value))
       },
-      Value::RefObject(obj) => {
-        return Value::RefObject(obj.clone());
-      },
+      
       Value::String(str) => Value::String(str.clone()),
       Value::Number(num) => Value::Number(*num),
       Value::Boolean(bool) => Value::Boolean(*bool),
       Value::Null => Value::Null,
       Value::Undefined => Value::Undefined,
+      Value::RefObject(obj) => {
+        return Value::RefObject(obj.clone());
+      },
+      Value::Scope(obj) => {
+        return Value::Scope(obj.clone());
+      },
       _ => Value::Undefined,
     }
   }

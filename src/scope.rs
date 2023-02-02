@@ -6,6 +6,7 @@ use crate::{value::Value};
 pub struct Scope {
   pub id: i32,
   pub parent: Option<Rc<RefCell<Scope>>>,
+  pub from: Option<Rc<RefCell<Scope>>>,
   pub childs: Vec<Rc<RefCell<Scope>>>,
   variables: HashMap<String, Value>
 }
@@ -16,6 +17,7 @@ impl Scope {
       id: 0,
       childs: vec![],
       parent: None,
+      from: None,
       variables: HashMap::new(),
     }
   }
@@ -26,6 +28,7 @@ impl Scope {
 }
 
 pub fn get_value_and_scope(scope: Rc<RefCell<Scope>>, identifier: String) -> (Option<Value>, Rc<RefCell<Scope>>) {
+  // println!("get_value_and_scope: {:?} {:?}", identifier, scope);
   let s = scope.borrow();
   let value = s.variables.get(&identifier);
   if let Some(val) = value {

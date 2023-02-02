@@ -45,3 +45,32 @@ fn run_function_name_and_length() {
     _ => assert!(false, ""),
   };
 }
+
+
+
+#[test]
+fn run_function_scope1() {
+  let mut jsi_vm = JSI::new();
+  let value = jsi_vm.run(String::from("\n
+  let fun1 = function(x, y) {
+    let a = 123;
+    return fun2();
+  };\n
+  let fun2 = function() {
+    return a;
+  };\n
+  fun1()"));
+  assert_eq!(value , Value::Undefined);
+}
+
+#[test]
+fn run_function_scope2() {
+  let mut jsi_vm = JSI::new();
+  let value = jsi_vm.run(String::from("\n
+  let a = 123;
+  let fun = function() {
+    return a;
+  };\n
+  fun()"));
+  assert_eq!(value , Value::Number(123f64));
+}

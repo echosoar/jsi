@@ -90,6 +90,19 @@ impl Object {
     }
   }
 
+  pub fn get_inner_property_value(&self, name: String) -> Option<Value> {
+    let prop = self.inner_property.get(&name);
+    if let Some(prop) = prop {
+      Some(prop.value.clone())
+    } else {
+      None
+    }
+  }
+
+  pub fn set_inner_property_value(&mut self, name: String, value: Value) {
+    self.inner_property.insert(name, Property { enumerable: false, value });
+  }
+
   // 从当前属性和原型链上面寻找值
   pub fn get_value(&self, name: String) -> Value {
     if name == String::from("prototype") {
