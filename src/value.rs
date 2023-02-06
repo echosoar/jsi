@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Weak, Rc};
 use crate::ast_node::{Statement, IdentifierLiteral, ClassType};
+use crate::builtins::boolean::create_boolean;
 use crate::builtins::object::{Object, Property};
 use crate::scope::Scope;
 
@@ -57,10 +58,15 @@ pub enum Value {
   Object(Rc<RefCell<Object>>),
   Function(Rc<RefCell<Object>>),
   Array(Rc<RefCell<Object>>),
+  // 3 中包装对象
+  StringObj(Rc<RefCell<Object>>),
+  NumberObj(Rc<RefCell<Object>>),
+  BooleanObj(Rc<RefCell<Object>>),
   // 其他
   NAN,
   RefObject(Weak<RefCell<Object>>),
-  Scope(Weak<RefCell<Scope>>)
+  Scope(Weak<RefCell<Scope>>),
+  FunctionNeedToCall(Rc<RefCell<Object>>,Vec<Value>),
 }
 
 #[derive(PartialEq)]
@@ -197,22 +203,45 @@ impl Value {
       }
     }
   }
-  pub fn is_boolean(&self) -> bool {
-    if let Value::Boolean(_) = self {
-      return true
+  pub fn to_boolean(&self) -> bool {
+    match self {
+        Value::Undefined | Value::Null => false,
+        Value::String(str) => {
+          return str.to_owned() == String::from("");
+        },
+        Value::Number(num) => {
+          return num.to_owned() == 0f64;
+        },
+        Value::Boolean(boolean) => {
+          return boolean.to_owned();
+        },
+        _ => true
     }
-    return false
   }
 
-  pub fn to_object(&self) -> Rc<RefCell<Object>> {
-    let rc_obj = self.to_weak_rc_object();
-    if let Some(wrc) = rc_obj {
-      let rc = wrc.upgrade();
-      if let Some(obj)= &rc {
-        return Rc::clone(obj);
+  pub fn to_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {
+    let default = Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
+    match self {
+      Value::Boolean(boolean) => {
+        let boolobj = create_boolean(global, Value::Boolean(boolean.to_owned()));
+        if let Value::BooleanObj(obj) = boolobj {
+          return obj;
+        }
+        return default;
+      },
+      // TODO: number、string
+      _ => {
+        let rc_obj = self.to_weak_rc_object();
+        if let Some(wrc) = rc_obj {
+          let rc = wrc.upgrade();
+          if let Some(obj)= &rc {
+            return Rc::clone(obj);
+          }
+        }
+        return default;
       }
     }
-    return Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
+    
   }
 
 

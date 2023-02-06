@@ -224,7 +224,7 @@ fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
     this: weak,
     reference: None,
   };
-  let obj_rc= args[0].to_object();
+  let obj_rc= args[0].to_object(&hangle_global);
   let obj = obj_rc.borrow();
   for key in obj.property_list.iter() {
     let prop = obj.property.get(key);

@@ -74,8 +74,8 @@ fn function_call(ctx: &mut CallContext, args: Vec<Value>) -> Value {
     this = args[0].clone();
   }
   let new_fun = function_bind(ctx, vec![this]);
-  println!("newfun: {:?}", new_fun);
-  Value::Undefined
+  let global = ctx.global.upgrade().unwrap();
+  Value::FunctionNeedToCall(new_fun.to_object(&global), args)
 }
 
 // Function.prototype.bind
@@ -93,10 +93,10 @@ fn function_bind(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   Value::Function(Rc::new(RefCell::new(new_fun)))
 }
 
-pub fn get_function_this(func: Rc<RefCell<Object>>)-> Rc<RefCell<Object>> {
+pub fn get_function_this(global: &Rc<RefCell<Object>>, func: Rc<RefCell<Object>>)-> Rc<RefCell<Object>> {
   let bind_this = func.borrow().get_inner_property_value(String::from("this"));
   if let Some(this) = bind_this {
-    return this.to_object()
+    return this.to_object(global)
   }
   return func
 }

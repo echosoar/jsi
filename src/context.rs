@@ -111,7 +111,7 @@ impl Context {
         Expression::PropertyAccess(property_access) => {
           // expression.name
           let left = self.execute_expression(&property_access.expression);
-          let left_obj = left.to_object();
+          let left_obj = left.to_object(&self.global);
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
           // println!("PropertyAccess: {:?} {:?}",left_obj, right);
@@ -120,7 +120,7 @@ impl Context {
         Expression::ElementAccess(element_access) => {
           // expression[argument]
           let left = self.execute_expression(&element_access.expression);
-          let left_obj = left.to_object();
+          let left_obj = left.to_object(&self.global);
           let right = self.execute_expression(&element_access.argument).to_string();
           let value = (*left_obj).borrow().get_value(right.clone());
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
@@ -311,7 +311,7 @@ impl Context {
         } else if let Value::Array(obj) = call_this_value {
           this_obj = obj;
         } else if let Value::Function(func) = call_this_value {
-          this_obj = get_function_this(func);
+          this_obj = get_function_this(&self.global, func);
         }
       }
       // 内置方法
@@ -321,8 +321,10 @@ impl Context {
           this: Rc::downgrade(&this_obj),
           reference: reference,
         };
-        println!("call this {:?} {:?}", ctx.reference, arguments);
         let result = (builtin_function)(&mut ctx, arguments);
+        if let Value::FunctionNeedToCall(function_define, args) = result {
+          return self.call_function_object(function_define.clone(), Some(Value::Function(function_define)), None, args);
+        }
         return result;
       }
 
