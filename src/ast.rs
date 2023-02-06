@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -108,7 +108,11 @@ impl AST{
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::Function => {
-          Statement::Function(self.parse_function())
+          Statement::Function(self.parse_function(true))
+        },
+        Token::Class => {
+          // class (ES2015)
+          Statement::Class(self.parse_class())
         },
         Token::Return => self.parse_return_statement(),
         _ => {
@@ -169,7 +173,7 @@ impl AST{
   }
 
   // 解析 function statement
-  fn parse_function(&mut self) -> FunctionDeclaration {
+  fn parse_function(&mut self, variable_lifting: bool) -> FunctionDeclaration {
     // 如果是 function 关键字，则跳过
     if self.token == Token::Function {
       self.next();
@@ -219,10 +223,69 @@ impl AST{
       body,
       declarations,
     };
-    if !is_anonymous {
+    if variable_lifting && !is_anonymous {
       self.scope.declare(Declaration::Function(func.clone()));
     }
     return func;
+  }
+
+  // 解析 class(ES2015)
+  fn parse_class(&mut self) -> ClassDeclaration {
+    self.check_token_and_next(Token::Class);
+    // class name
+    self.check_token(Token::Identifier);
+    let name = self.literal.clone();
+    self.next();
+    // extends
+    if self.token == Token::Extends {
+      // TODO: 解析 extends
+    }
+    self.check_token_and_next(Token::LeftBrace);
+    let mut members:  Vec<Expression>= vec![];
+    while self.token != Token::RightBrace && self.token != Token::EOF {
+      let mut modifiers: Vec<Token> = vec![];
+      loop {
+        match self.token {
+          // ES not define Token::Private | Token::Public | Token::Protected |
+          Token::Async => {
+            modifiers.push(self.token.clone());
+            self.next();
+            continue;
+          },
+          _ => {
+            break;
+          }
+        };
+      }
+     
+      if self.token == Token::Identifier {
+        if self.literal == String::from("constructor") {
+          // constructor
+          let constructor = self.parse_function(false);
+          members.push(Expression::Constructor(constructor));
+        } else if self.next_is('(', true) {
+          // method
+          let method = self.parse_function(false);
+          members.push(Expression::ClassMethod(ClassMethodDeclaration {
+            name: method.name.clone(),
+            modifiers,
+            method: Box::new(method), 
+          }));
+        } else {
+          // TODO: property
+          self.next()
+        }
+        
+      } else {
+        // TODO: throw error
+        self.next()
+      }
+    }
+    ClassDeclaration {
+      name: IdentifierLiteral { literal: name },
+      members,
+      heritage: None,
+    }
   }
 
   fn parse_return_statement(&mut self) -> Statement {
@@ -286,6 +349,28 @@ impl AST{
     // println!("out next: >{:?}<, >{}<, >{}<", self.token, self.literal, self.char);
   }
 
+  // 查看下一次 scan 获取的是不是 token
+  fn next_is(&mut self, check_char: char, skip_space: bool) -> bool {
+    let mut start_index = self.cur_char_index;
+    loop {
+      // EOF
+      if start_index >= self.length {
+        return false;
+      }
+      let char = self.code[start_index];
+      start_index = start_index + 1;
+      if skip_space {
+        match char {
+          // TODO: 更多空白符
+          ' ' | '\n' | '\r' | '\t' => {
+            continue;
+          },
+          _ => {}
+        }
+      }
+      return char == check_char; 
+    }
+  }
   // 扫描获取符号
   pub fn scan(&mut self) -> (Token, String) {
     // TODO: 严格模式
@@ -423,11 +508,31 @@ impl AST{
         },
         '/' => {
           if self.char == '/' {
-            // oper: // TODO: 跳过注释。需要循环处理
-            (Token::Slash, cur_char_string)
+            // 单行注释
+            loop {
+              self.read();
+              match self.char {
+                '\n' => {
+                  self.read();
+                  break;
+                },
+                _ => {}
+              };
+            }
+            continue;
           } else if self.char == '*' {
-            // oper: /* */ TODO: 跳过注释。需要循环处理
-            (Token::Slash, cur_char_string)
+            // 多行注释
+            loop {
+              self.read();
+              if self.char == '*' {
+                self.read();
+                if self.char == '/' {
+                  self.read();
+                  break;
+                }
+              }
+            }
+            continue;
           } else if self.char == '=' {
             // oper: /=
             cur_char_string.push(self.char);
@@ -1137,8 +1242,11 @@ impl AST{
       Token::LeftBrace => {
         self.parse_object_literal()
       },
+      Token::LeftBracket => {
+        self.parse_array_literal()
+      },
       Token::Function => {
-        Expression::Function(self.parse_function())
+        Expression::Function(self.parse_function(true))
       },
       _ => {
         self.next();
@@ -1147,6 +1255,29 @@ impl AST{
     }
   }
 
+  // 解析数组字面量
+  fn parse_array_literal(&mut self) -> Expression {
+    self.check_token_and_next(Token::LeftBracket);
+    let mut elements: Vec<Expression>= vec![];
+    while self.token != Token::RightBracket && self.token != Token::EOF {
+      // [,,1]
+      if self.token == Token::Comma {
+        elements.push(Expression::Keyword(Keywords::Undefined));
+        self.next();
+        continue;
+      }
+      let item = self.parse_expression();
+      elements.push(item);
+      if self.token != Token::RightBracket {
+        self.check_token_and_next(Token::Comma);
+      }
+    };
+    self.check_token_and_next(Token::RightBracket);
+
+    Expression::Array(ArrayLiteral {
+      elements
+    })
+  }
   // 解析对象字面量
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#prod-ObjectLiteral
   fn parse_object_literal(&mut self) -> Expression {

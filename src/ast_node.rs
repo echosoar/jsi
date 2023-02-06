@@ -1,13 +1,37 @@
-use crate::ast_token::Token;
+use std::{fmt, cell::RefCell, rc::Weak};
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::{ast_token::Token, value::Value, builtins::{object::Object}};
+
+#[derive(Clone)]
 pub enum Statement {
   Var(VariableDeclarationStatement),
   Function(FunctionDeclaration),
+  Class(ClassDeclaration),
   Block(BlockStatement),
   Return(ReturnStatement),
   Expression(ExpressionStatement),
+  BuiltinFunction(BuiltinFunction),
   Unknown,
+}
+
+impl PartialEq for Statement {
+  fn eq(&self, other: &Statement) -> bool {
+    match (self, other) {
+      (Statement::Var(a), Statement::Var(b)) => *a == *b,
+      (Statement::Function(a), Statement::Function(b)) => *a == *b,
+      (Statement::Class(a), Statement::Class(b)) => *a == *b,
+      (Statement::Block(a), Statement::Block(b)) => *a == *b,
+      (Statement::Return(a), Statement::Return(b)) => *a == *b,
+      (Statement::Expression(a), Statement::Expression(b)) => *a == *b,
+      _ => false,
+    }
+  }
+}
+
+impl fmt::Debug for Statement {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "statement")
+  }
 }
 
 #[derive(Debug,Clone, PartialEq)]
@@ -27,7 +51,12 @@ pub enum Expression {
   String(StringLiteral),
   Keyword(Keywords),
   Object(ObjectLiteral),
+  Array(ArrayLiteral),
   Function(FunctionDeclaration),
+  // for class
+  Class(ClassDeclaration),
+  Constructor(FunctionDeclaration),
+  ClassMethod(ClassMethodDeclaration),
   Unknown,
 }
 
@@ -66,6 +95,21 @@ pub struct FunctionDeclaration {
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
   pub declarations: Vec<Declaration>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDeclaration {
+  pub name: IdentifierLiteral,
+  pub members: Vec<Expression>,
+  // 继承
+  pub heritage: Option<Box<ClassDeclaration>>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassMethodDeclaration {
+  pub name: IdentifierLiteral,
+  pub modifiers: Vec<Token>,
+  pub method: Box<FunctionDeclaration>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -175,6 +219,11 @@ pub struct  ObjectLiteral {
   pub properties: Vec<PropertyAssignment>
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayLiteral {
+  pub elements: Vec<Expression>
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct  PropertyAssignment {
@@ -186,4 +235,42 @@ pub struct  PropertyAssignment {
 pub struct VariableDeclaration {
   pub name: String,
   pub initializer: Box<Expression>
+}
+
+
+
+pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> Value;
+pub struct CallContext {
+  // 全局对象，globalThis
+  pub global: Weak<RefCell<Object>>,
+  // 调用时的 this
+  pub this: Weak<RefCell<Object>>,
+  // 引用，调用的发起方，比如  a.call()，reference 就是 a
+  // 当直接调用 call() 的时候，refererce 是 None
+  pub reference: Option<Weak<RefCell<Object>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ClassType {
+  Object,
+  Array,
+  Function,
+  String,
+  Boolean,
+  Number,
+  Null,
+}
+
+impl  ClassType {
+  pub fn to_string(&self) -> String {
+    match self {
+      Self::Object => String::from("Object"),
+      Self::Array => String::from("Array"),
+      Self::Function => String::from("Function"),
+      Self::String => String::from("String"),
+      Self::Boolean => String::from("Boolean"),
+      Self::Number => String::from("Number"),
+      Self::Null => String::from("Null"),
+    }
+  }
 }

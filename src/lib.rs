@@ -5,6 +5,7 @@ pub mod ast_node;
 pub mod ast_utils;
 pub mod value;
 pub mod scope;
+pub mod builtins;
 
 use ast::Program;
 use context::Context;

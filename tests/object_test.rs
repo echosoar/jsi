@@ -4,8 +4,13 @@ use jsi::{JSI, ast_node::{Expression, Statement, ObjectLiteral, ExpressionStatem
 fn ast_base() {
   let mut jsi = JSI::new();
   let program = jsi.parse(String::from("{a: 123, b: '123', [1 + 'a']: false}"));
-  assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
-    expression: Expression::Object(ObjectLiteral {
+  let expr = match &program.body[0] {
+    Statement::Expression(expr_statement) => {
+      expr_statement.expression.clone()
+    },
+    _ => Expression::Unknown,
+  };
+  assert_eq!(expr, Expression::Object(ObjectLiteral {
       properties: vec![
         PropertyAssignment{
           name: Box::new(Expression::String(StringLiteral { literal: String::from("a"), value: String::from("a")})),
@@ -24,8 +29,7 @@ fn ast_base() {
           initializer: Box::new(Expression::Keyword(Keywords::False)),
         }
       ]
-    })
-  })]);
+  }));
 }
 
 #[test]
@@ -97,4 +101,15 @@ fn run_object_as_param_ref() {
   obj.a;\
   "));
   assert_eq!(result , Value::Number(456f64));
+}
+
+#[test]
+fn run_object_keys() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let obj = { a: 123, b: false, c: 'xxx'}\n
+  // Object.keys returns an array\n
+  /* array.toString() */
+  Object.keys(obj).toString()"));
+  assert_eq!(result , Value::String(String::from("a,b,c")));
 }

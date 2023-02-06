@@ -1,7 +1,8 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::{Weak, Rc};
-use crate::ast_node::{Statement, IdentifierLiteral};
+use crate::ast_node::{Statement, IdentifierLiteral, ClassType};
+use crate::builtins::boolean::create_boolean;
+use crate::builtins::object::{Object, Property};
 use crate::scope::Scope;
 
 
@@ -24,11 +25,17 @@ impl ValueInfo {
     if let Some(reference) = &self.reference {
       match reference {
           Value::Object(object) => {
-            object.borrow_mut().define_property_by_value( name.clone(), value);
+            object.borrow_mut().define_property( name.clone(), Property {
+              enumerable: false,
+              value: value,
+            });
             None
           },
           Value::Scope(scope) => {
-            scope.borrow_mut().set_value( name.clone(), value);
+            let scope_rc = scope.upgrade();
+            if let Some(scope)= scope_rc {
+              scope.borrow_mut().set_value( name.clone(), value);
+            }
             None
           },
           _ => Some(name.clone())
@@ -50,11 +57,16 @@ pub enum Value {
   // 3 种引用类型
   Object(Rc<RefCell<Object>>),
   Function(Rc<RefCell<Object>>),
-  Array,
+  Array(Rc<RefCell<Object>>),
+  // 3 中包装对象
+  StringObj(Rc<RefCell<Object>>),
+  NumberObj(Rc<RefCell<Object>>),
+  BooleanObj(Rc<RefCell<Object>>),
   // 其他
   NAN,
   RefObject(Weak<RefCell<Object>>),
-  Scope(Rc<RefCell<Scope>>)
+  Scope(Weak<RefCell<Scope>>),
+  FunctionNeedToCall(Rc<RefCell<Object>>,Vec<Value>),
 }
 
 #[derive(PartialEq)]
@@ -91,14 +103,24 @@ impl Clone for Value {
       Value::Object(rc_value) => {
         Value::Object(Rc::clone(rc_value))
       },
+      Value::Array(rc_value) => {
+        Value::Array(Rc::clone(rc_value))
+      },
       Value::Function(rc_value) => {
         Value::Function(Rc::clone(rc_value))
       },
+      
       Value::String(str) => Value::String(str.clone()),
       Value::Number(num) => Value::Number(*num),
       Value::Boolean(bool) => Value::Boolean(*bool),
       Value::Null => Value::Null,
       Value::Undefined => Value::Undefined,
+      Value::RefObject(obj) => {
+        return Value::RefObject(obj.clone());
+      },
+      Value::Scope(obj) => {
+        return Value::Scope(obj.clone());
+      },
       _ => Value::Undefined,
     }
   }
@@ -123,6 +145,16 @@ impl Value {
         }
       },
       Value::NAN => String::from("NaN"),
+      Value::Array(_) => {
+        // let mut arr = array.borrow_mut();
+        // let mut ctx = &CallContext {
+        //   // TODO: self
+        //   this: Rc::downgrade(array),
+        // };
+        // arr.to_string(&mut ctx)
+        // TODO: arr.call("toString")
+        String::from("")
+      },
       _ => String::from(""),
     }
   }
@@ -171,29 +203,63 @@ impl Value {
       }
     }
   }
-  pub fn is_boolean(&self) -> bool {
-    if let Value::Boolean(_) = self {
-      return true
+  pub fn to_boolean(&self) -> bool {
+    match self {
+        Value::Undefined | Value::Null => false,
+        Value::String(str) => {
+          return str.to_owned() == String::from("");
+        },
+        Value::Number(num) => {
+          return num.to_owned() == 0f64;
+        },
+        Value::Boolean(boolean) => {
+          return boolean.to_owned();
+        },
+        _ => true
     }
-    return false
   }
 
-  pub fn to_object(&self) -> Rc<RefCell<Object>> {
-    // TODO: more type
+  pub fn to_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {
+    let default = Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
     match self {
-      Value::Object(obj) => Rc::clone(obj),
-      Value::Function(function) => Rc::clone(function),
+      Value::Boolean(boolean) => {
+        let boolobj = create_boolean(global, Value::Boolean(boolean.to_owned()));
+        if let Value::BooleanObj(obj) = boolobj {
+          return obj;
+        }
+        return default;
+      },
+      // TODO: number、string
       _ => {
-        // TODO: throw error
-        Rc::new(RefCell::new(Object::new()))
+        let rc_obj = self.to_weak_rc_object();
+        if let Some(wrc) = rc_obj {
+          let rc = wrc.upgrade();
+          if let Some(obj)= &rc {
+            return Rc::clone(obj);
+          }
+        }
+        return default;
       }
     }
+    
   }
+
+
+  pub fn to_weak_rc_object(&self) -> Option<Weak<RefCell<Object>>> {
+    match self {
+      Value::Object(obj) => Some(Rc::downgrade(obj)),
+      Value::Function(function) => Some(Rc::downgrade(function)),
+      Value::Array(array) => Some(Rc::downgrade(array)),
+      Value::RefObject(obj) => Some(obj.clone()),
+      _ => None
+    }
+  }
+
   pub fn get_value_type(&self) -> ValueType {
     match self {
       Value::Object(_) => ValueType::Object,
       Value::Function(_) => ValueType::Function,
-      Value::Array => ValueType::Array,
+      Value::Array(_) => ValueType::Array,
       Value::String(_) => ValueType::String,
       Value::Number(_) => ValueType::Number,
       Value::Boolean(_) => ValueType::Boolean,
@@ -235,7 +301,7 @@ impl Value {
     match self {
       Value::Function(function) => {
         let mut function_define =function.borrow_mut();
-        let mut value = function_define.get_value().unwrap();
+        let mut value = function_define.get_initializer().unwrap();
         match *value {
             Statement::Function(func) => {
               if func.is_anonymous {
@@ -245,7 +311,7 @@ impl Value {
                 };
                 value = Box::new(Statement::Function(new_func));
                 function_define.set_value(Some(value));
-                function_define.define_property_by_value(String::from("name"), Value::String(String::from(name)));
+                function_define.define_property(String::from("name"), Property { enumerable: false, value: Value::String(String::from(name)) });
               }
             },
             _ => {}
@@ -255,69 +321,4 @@ impl Value {
     }
   }
 
-}
-
-#[derive(Debug,Clone,PartialEq)]
-pub struct Object {
-  // 构造此对象的构造函数
-  // 比如函数的 constructor 就是 Function
-  // constructor
-  property: HashMap<String, Property>,
-  // 属性列表，对象的属性列表需要次序
-  property_list: Vec<String>,
-  // 原型对象，用于查找原型链
-  pub prototype: Option<Box<Object>>,
-  // 对象的值
-  value: Option<Box<Statement>>,
-}
-
-impl Object {
-  pub fn new() -> Object {
-    Object {
-      property: HashMap::new(),
-      property_list: vec![],
-      prototype: None,
-      value: None,
-    }
-  }
-
-  pub fn set_value(&mut self, value: Option<Box<Statement>>) -> bool {
-    self.value = value;
-    return true;
-  }
-
-  pub fn get_value(&self) -> Option<Box<Statement>> {
-    self.value.clone()
-  }
-
-  // TODO: descriptor
-  pub fn define_property_by_value(&mut self, name: String, value: Value) -> bool {
-    self.define_property(name, Property { value });
-    return true;
-  }
-
-  // TODO: descriptor
-  pub fn define_property(&mut self, name: String, property: Property) -> bool {
-    // 需要实现 descriptpor
-    if !self.property_list.contains(&name) {
-      self.property_list.push(name.clone());
-    }
-    self.property.insert(name, property);
-    return true;
-  }
-
-  pub fn get_property(&self, name: String) -> Value {
-    let prop = self.property.get(&name);
-    if let Some(prop) = prop {
-      prop.value.clone()
-    } else {
-      Value::Undefined
-    }
-  }
-}
-
-#[derive(Debug,Clone,PartialEq)]
-pub struct Property {
-  pub value: Value,
-  // TODO: 属性的描述符 descriptor writable ，是否可枚举等
 }
