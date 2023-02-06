@@ -31,7 +31,8 @@ pub fn bind_global_boolean(global:  &Rc<RefCell<Object>>) {
 // Boolean.prototype.toString
 fn boolean_to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
   let value = boolean_value_of(ctx, vec![]);
-  Value::String(value.to_string())
+  let global = ctx.global.upgrade().unwrap();
+  Value::String(value.to_string(&global))
 }
 
 // Boolean.prototype.valueOf

@@ -62,8 +62,9 @@ fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> Value {
     }
   }
   let mut string_list: Vec<String> = vec![];
+  let global = ctx.global.upgrade().unwrap();
   let iter = |_: i32, value: &Value| {
-    string_list.push(value.to_string());
+    string_list.push(value.to_string(&global));
   };
   array_iter_mut(ctx, iter);
   Value::String(string_list.join(join))

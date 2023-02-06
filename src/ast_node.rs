@@ -53,6 +53,8 @@ pub enum Expression {
   Object(ObjectLiteral),
   Array(ArrayLiteral),
   Function(FunctionDeclaration),
+  // {[a]: 12}
+  ComputedPropertyName(ComputedPropertyName),
   // for class
   Class(ClassDeclaration),
   Constructor(FunctionDeclaration),
@@ -95,6 +97,12 @@ pub struct FunctionDeclaration {
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
   pub declarations: Vec<Declaration>,
+}
+
+// ES2015 Computed Property Name
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComputedPropertyName {
+  pub expression: Box<Expression>
 }
 
 #[derive(Debug, Clone, PartialEq)]

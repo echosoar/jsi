@@ -1,4 +1,4 @@
-use jsi::{JSI, ast_node::{Expression, Statement, ObjectLiteral, ExpressionStatement, PropertyAssignment, NumberLiteral, StringLiteral, Keywords, BinaryExpression}, ast_token::Token, value::Value};
+use jsi::{JSI, ast_node::{Expression, Statement, ObjectLiteral, ExpressionStatement, PropertyAssignment, NumberLiteral, StringLiteral, Keywords, BinaryExpression, ComputedPropertyName}, ast_token::Token, value::Value};
 
 #[test]
 fn ast_base() {
@@ -21,10 +21,12 @@ fn ast_base() {
           initializer: Box::new(Expression::String(StringLiteral { literal: String::from("'123'"), value: String::from("123") })),
         },
         PropertyAssignment{
-          name: Box::new(Expression::Binary(BinaryExpression {
-            left: Box::new(Expression::Number(NumberLiteral { literal: String::from("1"), value: 1f64 })),
-            operator: Token::Plus,
-            right: Box::new(Expression::String(StringLiteral { literal: String::from("'a'"), value: String::from("a") })),
+          name: Box::new(Expression::ComputedPropertyName(ComputedPropertyName {
+            expression: Box::new(Expression::Binary(BinaryExpression {
+              left: Box::new(Expression::Number(NumberLiteral { literal: String::from("1"), value: 1f64 })),
+              operator: Token::Plus,
+              right: Box::new(Expression::String(StringLiteral { literal: String::from("'a'"), value: String::from("a") })),
+            }))
           })),
           initializer: Box::new(Expression::Keyword(Keywords::False)),
         }
@@ -104,12 +106,11 @@ fn run_object_as_param_ref() {
 }
 
 #[test]
-fn run_object_keys() {
+fn run_object_with_array_key() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
-  let obj = { a: 123, b: false, c: 'xxx'}\n
-  // Object.keys returns an array\n
-  /* array.toString() */
-  Object.keys(obj).toString()"));
-  assert_eq!(result , Value::String(String::from("a,b,c")));
+  let a = [1,2]\n
+  let b = {[a]: 3}\n
+  Object.keys(b).toString()"));
+  assert_eq!(result , Value::String(String::from("1,2")));
 }

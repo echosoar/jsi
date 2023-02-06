@@ -117,11 +117,14 @@ impl Context {
           // println!("PropertyAccess: {:?} {:?}",left_obj, right);
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
+        Expression::ComputedPropertyName(property_name) => {
+          ValueInfo { value: self.execute_expression(&property_name.expression), name: None, reference: None }
+        },
         Expression::ElementAccess(element_access) => {
           // expression[argument]
           let left = self.execute_expression(&element_access.expression);
           let left_obj = left.to_object(&self.global);
-          let right = self.execute_expression(&element_access.argument).to_string();
+          let right = self.execute_expression(&element_access.argument).to_string(&self.global);
           let value = (*left_obj).borrow().get_value(right.clone());
           ValueInfo { value, name: Some(right.clone()), reference: Some(Value::Object(left_obj)) }
         },
@@ -187,7 +190,7 @@ impl Context {
           if expression.operator == Token::Plus {
             // 如果有一个是字符串，那就返回字符串
             if left.is_string() || right.is_string() {
-              return Value::String(left.to_string() + right.to_string().as_str())
+              return Value::String(left.to_string(&self.global) + right.to_string(&self.global).as_str())
             }
           }
 
@@ -271,7 +274,7 @@ impl Context {
       // 绑定属性
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
-        let name = self.execute_expression(&property.name).to_string();
+        let name = self.execute_expression(&property.name).to_string(&self.global);
         let mut initializer = self.execute_expression(&property.initializer);
         initializer.bind_name(name.clone());
         object_mut.define_property(name, Property {

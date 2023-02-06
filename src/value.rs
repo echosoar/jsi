@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::rc::{Weak, Rc};
-use crate::ast_node::{Statement, IdentifierLiteral, ClassType};
+use crate::ast_node::{Statement, IdentifierLiteral, ClassType, CallContext};
 use crate::builtins::boolean::create_boolean;
+use crate::builtins::number::create_number;
 use crate::builtins::object::{Object, Property};
+use crate::builtins::string::create_string;
 use crate::scope::Scope;
 
 
@@ -109,7 +111,15 @@ impl Clone for Value {
       Value::Function(rc_value) => {
         Value::Function(Rc::clone(rc_value))
       },
-      
+      Value::StringObj(rc_value) => {
+        Value::StringObj(Rc::clone(rc_value))
+      },
+      Value::NumberObj(rc_value) => {
+        Value::NumberObj(Rc::clone(rc_value))
+      },
+      Value::BooleanObj(rc_value) => {
+        Value::BooleanObj(Rc::clone(rc_value))
+      },
       Value::String(str) => Value::String(str.clone()),
       Value::Number(num) => Value::Number(*num),
       Value::Boolean(bool) => Value::Boolean(*bool),
@@ -133,7 +143,7 @@ impl Value {
     }
     return false
   }
-  pub fn to_string(&self) -> String {
+  pub fn to_string(&self, global: &Rc<RefCell<Object>>) -> String {
     match self {
       Value::String(str) => str.clone(),
       Value::Number(number) => number.to_string(),
@@ -145,15 +155,15 @@ impl Value {
         }
       },
       Value::NAN => String::from("NaN"),
-      Value::Array(_) => {
-        // let mut arr = array.borrow_mut();
-        // let mut ctx = &CallContext {
-        //   // TODO: self
-        //   this: Rc::downgrade(array),
-        // };
-        // arr.to_string(&mut ctx)
-        // TODO: arr.call("toString")
-        String::from("")
+      Value::Array(obj) => {
+        let weak = Rc::downgrade(obj);
+        let call_ctx = &mut CallContext {
+          global: Rc::downgrade(global),
+          this: weak,
+          reference: None,
+        };
+        let value = Object::call(call_ctx, String::from("toString"), vec![]);
+        return value.to_string(global)
       },
       _ => String::from(""),
     }
@@ -222,14 +232,27 @@ impl Value {
   pub fn to_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {
     let default = Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
     match self {
-      Value::Boolean(boolean) => {
-        let boolobj = create_boolean(global, Value::Boolean(boolean.to_owned()));
-        if let Value::BooleanObj(obj) = boolobj {
+      Value::String(string) => {
+        let obj = create_string(global, Value::String(string.to_owned()));
+        if let Value::StringObj(obj) = obj {
           return obj;
         }
         return default;
       },
-      // TODO: number、string
+      Value::Number(number) => {
+        let obj = create_number(global, Value::Number(number.to_owned()));
+        if let Value::NumberObj(obj) = obj {
+          return obj;
+        }
+        return default;
+      },
+      Value::Boolean(boolean) => {
+        let obj = create_boolean(global, Value::Boolean(boolean.to_owned()));
+        if let Value::BooleanObj(obj) = obj {
+          return obj;
+        }
+        return default;
+      },
       _ => {
         let rc_obj = self.to_weak_rc_object();
         if let Some(wrc) = rc_obj {
@@ -250,6 +273,9 @@ impl Value {
       Value::Object(obj) => Some(Rc::downgrade(obj)),
       Value::Function(function) => Some(Rc::downgrade(function)),
       Value::Array(array) => Some(Rc::downgrade(array)),
+      Value::StringObj(obj) => Some(Rc::downgrade(obj)),
+      Value::NumberObj(obj) => Some(Rc::downgrade(obj)),
+      Value::BooleanObj(obj) => Some(Rc::downgrade(obj)),
       Value::RefObject(obj) => Some(obj.clone()),
       _ => None
     }
