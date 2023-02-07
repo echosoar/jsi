@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -107,14 +107,15 @@ impl AST{
   fn parse_statement(&mut self) -> Statement {
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
+        Token::If => self.parse_if_statement(),
         Token::Function => {
           Statement::Function(self.parse_function(true))
         },
+        Token::Return => self.parse_return_statement(),
         Token::Class => {
           // class (ES2015)
           Statement::Class(self.parse_class())
         },
-        Token::Return => self.parse_return_statement(),
         _ => {
           let expression = self.parse_expression();
           match  expression {
@@ -170,6 +171,30 @@ impl AST{
     return Statement::Block(BlockStatement{
       statements,
     })
+  }
+
+  // 解析 if/else/else if
+  fn parse_if_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::If);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let mut statement = IfStatement {
+      condition: self.parse_expression(),
+      then_statement: Box::new(Statement::Unknown),
+      else_statement: Box::new(Statement::Unknown),
+    };
+    self.check_token_and_next(Token::RightParenthesis);
+    // 判断是否是 单行if
+    if self.token == Token::LeftBrace {
+      statement.then_statement = Box::new(self.parse_block_statement());
+    } else {
+      statement.then_statement = Box::new(self.parse_statement());
+    }
+
+    if self.token == Token::Else {
+      self.next();
+      statement.else_statement = Box::new(self.parse_statement());
+    }
+    return Statement::If(statement)
   }
 
   // 解析 function statement

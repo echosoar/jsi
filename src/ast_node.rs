@@ -5,6 +5,7 @@ use crate::{ast_token::Token, value::Value, builtins::{object::Object}};
 #[derive(Clone)]
 pub enum Statement {
   Var(VariableDeclarationStatement),
+  If(IfStatement),
   Function(FunctionDeclaration),
   Class(ClassDeclaration),
   Block(BlockStatement),
@@ -86,6 +87,13 @@ pub enum VariableFlag {
 pub struct VariableDeclarationStatement {
   pub list: Vec<Expression>,
   pub flag: VariableFlag,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfStatement {
+  pub condition: Expression,
+  pub then_statement: Box<Statement>,
+  pub else_statement: Box<Statement>,
 }
 
 
