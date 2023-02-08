@@ -116,6 +116,10 @@ impl AST{
           // class (ES2015)
           Statement::Class(self.parse_class())
         },
+        Token::LeftBrace => {
+          // block
+          self.parse_block_statement()
+        },
         _ => {
           let expression = self.parse_expression();
           match  expression {

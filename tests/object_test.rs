@@ -3,10 +3,14 @@ use jsi::{JSI, ast_node::{Expression, Statement, ObjectLiteral, ExpressionStatem
 #[test]
 fn ast_base() {
   let mut jsi = JSI::new();
-  let program = jsi.parse(String::from("{a: 123, b: '123', [1 + 'a']: false}"));
+  let program = jsi.parse(String::from("let a = {a: 123, b: '123', [1 + 'a']: false}"));
   let expr = match &program.body[0] {
-    Statement::Expression(expr_statement) => {
-      expr_statement.expression.clone()
+    Statement::Var(expr_statement) => {
+     if let Expression::Var(v) = &expr_statement.list[0] {
+      *v.initializer.clone()
+     } else {
+      Expression::Unknown
+     }
     },
     _ => Expression::Unknown,
   };
@@ -37,9 +41,18 @@ fn ast_base() {
 #[test]
 fn ast_with_child_object() {
   let mut jsi = JSI::new();
-  let program = jsi.parse(String::from("{obj: { x: false}}"));
-  assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
-    expression: Expression::Object(ObjectLiteral {
+  let program = jsi.parse(String::from("let a = {obj: { x: false}}"));
+  let expr = match &program.body[0] {
+    Statement::Var(expr_statement) => {
+     if let Expression::Var(v) = &expr_statement.list[0] {
+      *v.initializer.clone()
+     } else {
+      Expression::Unknown
+     }
+    },
+    _ => Expression::Unknown,
+  };
+  assert_eq!(expr, Expression::Object(ObjectLiteral {
       properties: vec![
         PropertyAssignment{
           name: Box::new(Expression::String(StringLiteral { literal: String::from("obj"), value: String::from("obj")})),
@@ -53,8 +66,7 @@ fn ast_with_child_object() {
           })),
         },
       ]
-    })
-  })]);
+    }));
 }
 
 #[test]

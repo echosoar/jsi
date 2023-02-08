@@ -55,34 +55,51 @@ impl Context {
       let mut result_value = Value::Undefined;
       let mut last_statement_value = Value::Undefined;
       for statement in body.iter() {
-        match statement {
-          Statement::Var(var_statement) => {
-            for variable in var_statement.list.iter() {
-              if let Expression::Var(let_var) = variable {
-                let name = let_var.name.clone();
-                let mut value = self.execute_expression(&let_var.initializer);
-                value.bind_name(name.clone());
-                last_statement_value = value.clone();
-                (*self.cur_scope).borrow_mut().set_value(name, value);
-              }
-            }
-          },
-          Statement::Expression(expression) => {
-            last_statement_value = self.execute_expression(&expression.expression);
-          },
-          Statement::Return(return_statement) => {
-            result_value = self.execute_expression(&return_statement.expression);
-            last_statement_value = result_value.clone()
-          },
-          Statement::Function(_) => {
-            // skip, 因为函数声明前置了
-          },
-          _ => {
-            println!("unknown statement {:?}", statement);
-          }
-        }
+        self.call_statement(statement, &mut result_value, &mut last_statement_value);
       }
       (result_value, last_statement_value)
+    }
+
+    fn call_statement(&mut self, statement: &Statement, result_value: &mut Value, last_statement_value: &mut Value) {
+      match statement {
+        Statement::Var(var_statement) => {
+          for variable in var_statement.list.iter() {
+            if let Expression::Var(let_var) = variable {
+              let name = let_var.name.clone();
+              let mut value = self.execute_expression(&let_var.initializer);
+              value.bind_name(name.clone());
+              (*last_statement_value) = value.clone();
+              (*self.cur_scope).borrow_mut().set_value(name, value);
+            }
+          }
+        },
+        Statement::Expression(expression) => {
+          (*last_statement_value) = self.execute_expression(&expression.expression);
+        },
+        Statement::Return(return_statement) => {
+          (*result_value) = self.execute_expression(&return_statement.expression);
+          (*last_statement_value) = result_value.clone()
+        },
+        Statement::Function(_) => {
+          // skip, 因为函数声明前置了
+        },
+        Statement::If(if_statement) => {
+          let condition = self.execute_expression(&if_statement.condition);
+          if condition.to_boolean() {
+            self.call_statement(&if_statement.then_statement, result_value, last_statement_value);
+          } else {
+            self.call_statement(&if_statement.else_statement, result_value, last_statement_value);
+          }
+        },
+        Statement::Block(block) => {
+          self.switch_scope(Some(Rc::clone(&self.cur_scope)));
+          self.call_block(&vec![], &block.statements);
+          self.close_scope();
+        },
+        _ => {
+          println!("unknown statement {:?}", statement);
+        }
+      }
     }
 
     fn execute_expression(&mut self, expression: &Expression) -> Value {
