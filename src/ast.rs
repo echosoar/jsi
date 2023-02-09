@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -108,6 +108,7 @@ impl AST{
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
+        Token::For => self.parse_for_statement(),
         Token::Function => {
           Statement::Function(self.parse_function(true))
         },
@@ -147,23 +148,27 @@ impl AST{
       self.check_token_and_next(Token::Var);
     }
     
-    let mut var_statement = VariableDeclarationStatement {
-      list: vec![],
+    let var_statement = VariableDeclarationStatement {
+      list: self.parse_variable_declarations(),
       flag: variable_flag,
     };
+    self.semicolon();
+    return Statement::Var(var_statement);
+  }
+
+  fn parse_variable_declarations(&mut self) -> Vec<Expression> {
+    let mut list: Vec<Expression> = vec![];
     loop {
       let expression = self.parse_variable_declaration();
-      var_statement.list.push(expression);
+      list.push(expression);
       // let a= 1, b = 2;
       if self.token != Token::Comma {
         break;
       }
       self.next();
     }
-    self.semicolon();
-    return Statement::Var(var_statement);
+    list
   }
-
 
 
   // 解析 block statement
@@ -199,6 +204,48 @@ impl AST{
       statement.else_statement = Box::new(self.parse_statement());
     }
     return Statement::If(statement)
+  }
+
+  // 解析 for 循环
+  // TODO: for in/ of
+  fn parse_for_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::For);
+    self.check_token_and_next(Token::LeftParenthesis);
+    // 解析 initializer
+    // 需要额外处理 var 的情况
+    let mut initializer = Statement::Unknown;
+    if self.token == Token::Var || self.token == Token::Let {
+        initializer = self.parse_variable_statement();
+    } else if self.token != Token::Semicolon {
+      initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression() })
+    }
+    // TODO: self.check_token_and_next(Token::Semicolon);
+    let codition = self.parse_expression();
+    println!("codition: {:?} {:?}", codition, self.token);
+    self.check_token_and_next(Token::Semicolon);
+    let incrementor = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+    println!("incrementor: {:?} {:?}", incrementor , self.token);
+    let statement = ForStatement {
+      initializer: Box::new(initializer),
+      codition: codition,
+      incrementor: incrementor,
+      statement: Box::new(Statement::Unknown),
+    };
+    // self.check_token_and_next(Token::RightParenthesis);
+    // // 判断是否是 单行if
+    // if self.token == Token::LeftBrace {
+    //   statement.then_statement = Box::new(self.parse_block_statement());
+    // } else {
+    //   statement.then_statement = Box::new(self.parse_statement());
+    // }
+
+    // if self.token == Token::Else {
+    //   self.next();
+    //   statement.else_statement = Box::new(self.parse_statement());
+    // }
+    // return Statement::If(statement)
+    return  Statement::For(statement);
   }
 
   // 解析 function statement

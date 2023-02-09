@@ -6,6 +6,7 @@ use crate::{ast_token::Token, value::Value, builtins::{object::Object}};
 pub enum Statement {
   Var(VariableDeclarationStatement),
   If(IfStatement),
+  For(ForStatement),
   Function(FunctionDeclaration),
   Class(ClassDeclaration),
   Block(BlockStatement),
@@ -94,6 +95,14 @@ pub struct IfStatement {
   pub condition: Expression,
   pub then_statement: Box<Statement>,
   pub else_statement: Box<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForStatement {
+  pub initializer: Box<Statement>,
+  pub codition: Expression,
+  pub incrementor: Expression,
+  pub statement: Box<Statement>,
 }
 
 
