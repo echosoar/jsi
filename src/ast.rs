@@ -226,25 +226,14 @@ impl AST{
     let incrementor = self.parse_expression();
     self.check_token_and_next(Token::RightParenthesis);
     println!("incrementor: {:?} {:?}", incrementor , self.token);
+
+    let block = self.parse_block_statement();
     let statement = ForStatement {
       initializer: Box::new(initializer),
       codition: codition,
       incrementor: incrementor,
-      statement: Box::new(Statement::Unknown),
+      statement: Box::new(block),
     };
-    // self.check_token_and_next(Token::RightParenthesis);
-    // // 判断是否是 单行if
-    // if self.token == Token::LeftBrace {
-    //   statement.then_statement = Box::new(self.parse_block_statement());
-    // } else {
-    //   statement.then_statement = Box::new(self.parse_statement());
-    // }
-
-    // if self.token == Token::Else {
-    //   self.next();
-    //   statement.else_statement = Box::new(self.parse_statement());
-    // }
-    // return Statement::If(statement)
     return  Statement::For(statement);
   }
 

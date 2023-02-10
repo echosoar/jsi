@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
 
 use super::ast::AST;
 pub struct Context {
@@ -63,6 +63,7 @@ impl Context {
     fn call_statement(&mut self, statement: &Statement, result_value: &mut Value, last_statement_value: &mut Value) {
       match statement {
         Statement::Var(var_statement) => {
+          // var_statement.flag 是 var 还是 let，在上层调用链路中处理
           for variable in var_statement.list.iter() {
             if let Expression::Var(let_var) = variable {
               let name = let_var.name.clone();
@@ -91,6 +92,7 @@ impl Context {
             self.call_statement(&if_statement.else_statement, result_value, last_statement_value);
           }
         },
+        Statement::For(for_statment) => self.execute_for(for_statment),
         Statement::Block(block) => {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
           self.call_block(&vec![], &block.statements);
@@ -111,6 +113,9 @@ impl Context {
       match expression {
         Expression::Binary(binary) => {
           ValueInfo { value: self.execute_binary_expression(binary), name: None, reference: None }
+        },
+        Expression::PostfixUnary(expr) => {
+          ValueInfo { value: self.execute_postfix_unary_expression(expr), name: None, reference: None }
         },
         Expression::Call(call) => {
           ValueInfo { value: self.execute_call_expression(call), name: None, reference: None }
@@ -221,6 +226,7 @@ impl Context {
           // 计算数字运算
           self.execute_number_operator_expression(&left, &right, &expression.operator)
         },
+        Token::Less | Token::Greater => self.execute_compare_operator_expression(&left, &right, &expression.operator),
         _ =>  Value::Undefined
       }
 
@@ -246,6 +252,27 @@ impl Context {
         Token::Multiply => Value::Number(left_number * right_number),
         Token::Slash => Value::Number(left_number / right_number),
         Token::Remainder => Value::Number(left_number % right_number),
+        _=> Value::NAN,
+      }
+    }
+
+    // 执行方法调用表达式
+    fn execute_compare_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
+      let left_number: f64;
+      let right_number: f64;
+      if let Some(num) = left.to_number() {
+        left_number = num;
+      } else {
+        return Value::NAN;
+      }
+      if let Some(num) = right.to_number() {
+        right_number = num;
+      } else {
+        return Value::NAN;
+      }
+      match operator {
+        Token::Greater => Value::Boolean(left_number > right_number),
+        Token::Less => Value::Boolean(left_number < right_number),
         _=> Value::NAN,
       }
     }
@@ -279,6 +306,76 @@ impl Context {
       } else {
         Value::Undefined
       }
+    }
+
+    // 执行 i++ i--
+    fn execute_postfix_unary_expression(&mut self, expression: &PostfixUnaryExpression) -> Value {
+      let mut operand_info = self.execute_expression_info(&expression.operand);
+      let origin_value = operand_info.value.clone();
+      let mut new_value = origin_value.to_number().unwrap();
+      match &expression.operator {
+          Token::Increment => {
+            new_value = new_value + 1f64;
+          },
+          Token::Decrement => {
+            new_value = new_value - 1f64;
+          },
+          _ => {}
+      }
+      operand_info.set_value(Value::Number(new_value));
+      origin_value
+    }
+
+    // 执行循环
+    fn execute_for(&mut self, for_statment: &ForStatement) {
+      let mut is_change_scope = false;
+      let initializer = *for_statment.initializer.clone();
+      let mut result = Value::Undefined;
+      let mut last_statment_value = Value::Undefined;
+      if let Statement::Var(var) = &initializer  {
+        if var.flag == VariableFlag::Var {
+          self.call_statement(&initializer, &mut result, &mut last_statment_value)
+        } else if var.flag == VariableFlag::Let {
+          self.switch_scope(Some(Rc::clone(&self.cur_scope)));
+          is_change_scope = true;
+          self.call_statement(&initializer, &mut result, &mut last_statment_value)
+        }
+      } else if let Statement::Unknown = &initializer {
+        // nothing to do
+      } else {
+        self.call_statement(&initializer, &mut result, &mut last_statment_value)
+      }
+
+      if !is_change_scope {
+        self.switch_scope(Some(Rc::clone(&self.cur_scope)));
+      }
+
+      loop {
+        let condition = &for_statment.codition;
+        if let Expression::Unknown = condition {
+          // nothing to do
+        } else {
+          let value = self.execute_expression(condition);
+          if !value.to_boolean() {
+            break;
+          }
+        }
+
+        // TODO: expression
+        if let Statement::Block(block) = for_statment.statement.as_ref() {
+          // TODO: break, break label, continue, continue label
+          self.call_block(&vec![], &block.statements);
+        }
+
+        let incrementor = &for_statment.incrementor;
+        if let Expression::Unknown = condition {
+          // nothing to do
+        } else {
+          self.execute_expression(incrementor);
+        }
+      }
+
+      self.close_scope();
     }
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> Value {
