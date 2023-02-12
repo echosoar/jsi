@@ -8,6 +8,7 @@ pub struct Scope {
   pub parent: Option<Rc<RefCell<Scope>>>,
   pub from: Option<Rc<RefCell<Scope>>>,
   pub childs: Vec<Rc<RefCell<Scope>>>,
+  pub labels: Vec<String>,
   variables: HashMap<String, Value>
 }
 
@@ -18,6 +19,7 @@ impl Scope {
       childs: vec![],
       parent: None,
       from: None,
+      labels: vec![],
       variables: HashMap::new(),
     }
   }

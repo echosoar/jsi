@@ -4,16 +4,20 @@ use crate::{ast_token::Token, value::Value, builtins::{object::Object}};
 
 #[derive(Clone)]
 pub enum Statement {
-  Var(VariableDeclarationStatement),
-  If(IfStatement),
+  // A -> Z
+  Block(BlockStatement),
+  Break(BreakStatement),
+  BuiltinFunction(BuiltinFunction),
+  Class(ClassDeclaration),
+  Continue(ContinueStatement),
+  Expression(ExpressionStatement),
   For(ForStatement),
   Function(FunctionDeclaration),
-  Class(ClassDeclaration),
-  Block(BlockStatement),
+  If(IfStatement),
+  Label(LabeledStatement),
   Return(ReturnStatement),
-  Expression(ExpressionStatement),
-  BuiltinFunction(BuiltinFunction),
-  Unknown,
+  Unknown, // 未知
+  Var(VariableDeclarationStatement),
 }
 
 impl PartialEq for Statement {
@@ -32,7 +36,25 @@ impl PartialEq for Statement {
 
 impl fmt::Debug for Statement {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "statement")
+    let mut stype = "unknown";
+    match self {
+      Statement::Block(_) => { stype = "block"},
+      Statement::Break(_) => { stype = "break"},
+      Statement::BuiltinFunction(_) => { stype = "builtin function"},
+      Statement::Class(_) => { stype = "class"},
+      Statement::Continue(_) => { stype = "continue"},
+      Statement::Expression(_) => { stype = "expression"},
+      Statement::For(_) => { stype = "for"},
+      Statement::Function(_) => { stype = "function"},
+      Statement::If(_) => { stype = "if"},
+      Statement::Label(_) => { stype = "label"},
+      Statement::Return(_) => { stype = "return"},
+      Statement::Var(_) => { stype = "var"},
+      _ => {
+        stype = "other"
+      },
+    }
+    write!(f, "{}", stype)
   }
 }
 
@@ -98,6 +120,13 @@ pub struct IfStatement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct LabeledStatement {
+  pub label: IdentifierLiteral,
+  pub statement: Box<Statement>,
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ForStatement {
   pub initializer: Box<Statement>,
   pub codition: Expression,
@@ -145,6 +174,16 @@ pub struct BlockStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStatement {
   pub expression: Expression
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BreakStatement {
+  pub label: Option<IdentifierLiteral>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContinueStatement {
+  pub label: Option<IdentifierLiteral>
 }
 
 #[derive(Debug, Clone, PartialEq)]

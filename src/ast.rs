@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -109,6 +109,8 @@ impl AST{
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
         Token::For => self.parse_for_statement(),
+        Token::Break => self.parse_break_statement(),
+        Token::Continue => self.parse_continue_statement(),
         Token::Function => {
           Statement::Function(self.parse_function(true))
         },
@@ -123,8 +125,23 @@ impl AST{
         },
         _ => {
           let expression = self.parse_expression();
+
+          // label:
+          if self.token == Token::Colon {
+            if let Expression::Identifier(identifier) = expression {
+              // TODO: 检测当前的作用域是否已经存在这个 lable，如果存在，则报错
+              //  let label = identifier.literal;
+              self.next();
+               let statement = self.parse_statement();
+               return Statement::Label(LabeledStatement {
+                label: identifier,
+                statement: Box::new(statement),
+               });
+            }
+          }
+          
           match  expression {
-              Expression::Unknown => {
+              Expression::Unknown => {      
                 Statement::Unknown
               },
               _ => {
@@ -235,6 +252,58 @@ impl AST{
       statement: Box::new(block),
     };
     return  Statement::For(statement);
+  }
+
+  fn parse_break_statement(&mut self) -> Statement {
+    self.check_token_and_next(Token::Break);
+    let mut semicolon = false;
+    // break;
+    if self.token == Token::Semicolon {
+      self.next();
+      semicolon = true;
+    }
+
+    // for() { break }
+    if semicolon || self.token == Token::RightBrace {
+      /*
+      TODO:
+      if self.scope.in_iteration || self.scope.in_switch {
+
+      } else {
+        // need label, throw error Illegal break statement
+      }
+      */
+      return Statement::Break(BreakStatement {
+        label: None
+      });
+    }
+
+    self.check_token(Token::Identifier);
+    return  Statement::Break(BreakStatement {
+      label: Some(IdentifierLiteral { literal: self.literal.clone() })
+    });
+  }
+
+  fn parse_continue_statement(&mut self) -> Statement {
+    self.check_token_and_next(Token::Continue);
+    let mut semicolon = false;
+    // continue;
+    if self.token == Token::Semicolon {
+      self.next();
+      semicolon = true;
+    }
+
+    // for() { continue }
+    if semicolon || self.token == Token::RightBrace {
+      return Statement::Continue(ContinueStatement {
+        label: None
+      });
+    }
+
+    self.check_token(Token::Identifier);
+    return  Statement::Continue(ContinueStatement {
+      label: Some(IdentifierLiteral { literal: self.literal.clone() })
+    });
   }
 
   // 解析 function statement

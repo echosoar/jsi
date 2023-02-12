@@ -1,6 +1,6 @@
-use std::{rc::{Rc, Weak}, cell::RefCell};
+use std::{rc::{Rc, Weak}, cell::RefCell, ops::Index};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
 
 use super::ast::AST;
 pub struct Context {
@@ -39,7 +39,7 @@ impl Context {
       self.call_block(&program.declarations, &program.body).1
     }
 
-    fn call_block(&mut self, declarations: &Vec<Declaration>, body: &Vec<Statement>) -> (Value, Value) {
+    fn call_block(&mut self, declarations: &Vec<Declaration>, body: &Vec<Statement>) -> (Value, Value, Value) {
        // 绑定函数声明
        for declaration in declarations.iter() {
         match  declaration {
@@ -54,13 +54,18 @@ impl Context {
       // 执行 statement
       let mut result_value = Value::Undefined;
       let mut last_statement_value = Value::Undefined;
+      // 中断，类似于 break 、continue 等
+      let mut interrupt = Value::Undefined;
       for statement in body.iter() {
-        self.call_statement(statement, &mut result_value, &mut last_statement_value);
+        self.call_statement(statement, &mut result_value, &mut last_statement_value, &mut interrupt);
+        if interrupt != Value::Undefined {
+          break;
+        }
       }
-      (result_value, last_statement_value)
+      (result_value, last_statement_value, interrupt)
     }
 
-    fn call_statement(&mut self, statement: &Statement, result_value: &mut Value, last_statement_value: &mut Value) {
+    fn call_statement(&mut self, statement: &Statement, result_value: &mut Value, last_statement_value: &mut Value, interrupt: &mut Value) {
       match statement {
         Statement::Var(var_statement) => {
           // var_statement.flag 是 var 还是 let，在上层调用链路中处理
@@ -87,16 +92,58 @@ impl Context {
         Statement::If(if_statement) => {
           let condition = self.execute_expression(&if_statement.condition);
           if condition.to_boolean() {
-            self.call_statement(&if_statement.then_statement, result_value, last_statement_value);
+            if let Statement::Unknown = *if_statement.then_statement {
+              // no then
+            } else {
+              self.call_statement(&if_statement.then_statement, result_value, last_statement_value, interrupt);
+            }
           } else {
-            self.call_statement(&if_statement.else_statement, result_value, last_statement_value);
+            if let Statement::Unknown = *if_statement.else_statement {
+              // no else
+            } else {
+              self.call_statement(&if_statement.else_statement, result_value, last_statement_value, interrupt);
+            }
           }
         },
-        Statement::For(for_statment) => self.execute_for(for_statment),
+        Statement::Label(label_statement) => {
+          self.cur_scope.borrow_mut().labels.push(label_statement.label.literal.clone());
+          self.call_statement(&label_statement.statement, result_value, last_statement_value, interrupt);
+          self.cur_scope.borrow_mut().labels.pop();
+        },
+        Statement::For(for_statment) => {
+          self.execute_for(for_statment, result_value, last_statement_value, interrupt)
+        },
         Statement::Block(block) => {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
-          self.call_block(&vec![], &block.statements);
+          let result = self.call_block(&vec![], &block.statements);
+          (*interrupt) = result.2;
           self.close_scope();
+        },
+        Statement::Break(break_statement) => {
+          println!("label: {:?}", break_statement.label);
+          if let Some(label) = &break_statement.label {
+            
+            let label_exists = self.cur_scope.borrow_mut().labels.contains(&label.literal);
+            if !label_exists {
+              // TODO: throw error label not exists
+            }
+            (*interrupt) = Value::Interrupt(Token::Break,Expression::Identifier(IdentifierLiteral {literal: label.literal.clone()}));
+          } else {
+            (*interrupt) = Value::Interrupt(Token::Break, Expression::Unknown);
+          }
+        },
+        Statement::Continue(continue_statement) => {
+          println!("label2: {:?}", continue_statement.label);
+          if let Some(label) = &continue_statement.label {
+            println!("label: {:?}", label);
+            let label_exists = self.cur_scope.borrow_mut().labels.contains(&label.literal);
+            if !label_exists {
+              // TODO: throw error label not exists
+            }
+            (*interrupt) = Value::Interrupt(Token::Continue,Expression::Identifier(IdentifierLiteral {literal: label.literal.clone()}));
+          } else {
+            (*interrupt) = Value::Interrupt(Token::Continue, Expression::Unknown);
+          }
         },
         _ => {
           println!("unknown statement {:?}", statement);
@@ -194,7 +241,34 @@ impl Context {
     // 执行基础四则运算
     fn execute_binary_expression(&mut self, expression: &BinaryExpression) -> Value {
       let left = self.execute_expression(expression.left.as_ref());
+
+      
+      // 逻辑运算 左值
+      if expression.operator == Token::LogicalAnd {
+        // false &&
+        if !left.to_boolean() {
+          return Value::Boolean(false);
+        }
+      } else if expression.operator == Token::LogicalOr {
+        // true ||
+        if left.to_boolean() {
+          return Value::Boolean(true);
+        }
+      }
+
       let right = self.execute_expression(expression.right.as_ref());
+
+      // 逻辑运算 右值
+      if expression.operator == Token::LogicalAnd || expression.operator == Token::LogicalOr {
+        // true && false / false || false
+        if !right.to_boolean() {
+          return Value::Boolean(false);
+        } else {
+          // true && true / false || true
+          return Value::Boolean(true);
+        }
+      }
+
       match expression.operator {
         Token::Equal => {
           return Value::Boolean(left.is_equal_to(&right, false));
@@ -227,7 +301,10 @@ impl Context {
           self.execute_number_operator_expression(&left, &right, &expression.operator)
         },
         Token::Less | Token::Greater => self.execute_compare_operator_expression(&left, &right, &expression.operator),
-        _ =>  Value::Undefined
+        _ =>  {
+          println!("unsupport binary {:?}", expression);
+          Value::Undefined
+        }
       }
 
     }
@@ -327,23 +404,24 @@ impl Context {
     }
 
     // 执行循环
-    fn execute_for(&mut self, for_statment: &ForStatement) {
+    fn execute_for(&mut self, for_statment: &ForStatement, result_value: &mut Value, last_statement_value: &mut Value, interrupt: &mut Value) {
       let mut is_change_scope = false;
       let initializer = *for_statment.initializer.clone();
-      let mut result = Value::Undefined;
-      let mut last_statment_value = Value::Undefined;
+      let mut for_result = Value::Undefined;
+      let mut for_last_statement_value = Value::Undefined;
+      let mut for_interrupt = Value::Undefined;
       if let Statement::Var(var) = &initializer  {
         if var.flag == VariableFlag::Var {
-          self.call_statement(&initializer, &mut result, &mut last_statment_value)
+          self.call_statement(&initializer, &mut for_result, &mut for_last_statement_value, &mut for_interrupt)
         } else if var.flag == VariableFlag::Let {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
           is_change_scope = true;
-          self.call_statement(&initializer, &mut result, &mut last_statment_value)
+          self.call_statement(&initializer, &mut for_result, &mut for_last_statement_value, &mut for_interrupt)
         }
       } else if let Statement::Unknown = &initializer {
         // nothing to do
       } else {
-        self.call_statement(&initializer, &mut result, &mut last_statment_value)
+        self.call_statement(&initializer, &mut for_result, &mut for_last_statement_value, &mut for_interrupt)
       }
 
       if !is_change_scope {
@@ -363,8 +441,30 @@ impl Context {
 
         // TODO: expression
         if let Statement::Block(block) = for_statment.statement.as_ref() {
-          // TODO: break, break label, continue, continue label
-          self.call_block(&vec![], &block.statements);
+          let result = self.call_block(&vec![], &block.statements);
+          let interrupt = result.2;
+          if let Value::Interrupt(token, expr) = interrupt {
+            if token == Token::Break {
+              if let Expression::Identifier(identifier) = expr {
+                println!("for break label {:?}", identifier);
+                // TODO: break label
+              } else {
+                break;
+              }
+            } else if token == Token::Continue {
+              if let Expression::Identifier(identifier) = expr {
+                // TODO: continue label
+               let last = self.cur_scope.borrow().labels.last();
+               if let Some(last_label) = last {
+                // if *last_label == identifier.literal {
+
+                // }
+               }
+
+                println!("index: {:?} {:?}", identifier, self.cur_scope.borrow().labels);
+              }
+            }
+          }
         }
 
         let incrementor = &for_statment.incrementor;
@@ -477,6 +577,12 @@ impl Context {
     fn switch_scope(&mut self, define_scope: Option<Rc<RefCell<Scope>>>) {
       let mut new_scope = Scope::new();
       new_scope.parent = define_scope;
+      if let Some(scope) = &new_scope.parent {
+        let rc = Rc::clone(scope);
+        let scope = rc.borrow();
+        new_scope.labels = scope.labels.clone();
+        new_scope.labels.push(String::from(""));
+      }
       new_scope.from = Some(Rc::clone(&self.cur_scope));
       let scope_rc = Rc::new(RefCell::new(new_scope));
       let rc = Rc::clone(&scope_rc);

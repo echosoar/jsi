@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Weak, Rc};
-use crate::ast_node::{Statement, IdentifierLiteral, ClassType, CallContext};
+use crate::ast_node::{Statement, IdentifierLiteral, ClassType, CallContext, Expression};
+use crate::ast_token::Token;
 use crate::builtins::boolean::create_boolean;
 use crate::builtins::number::create_number;
 use crate::builtins::object::{Object, Property};
@@ -69,6 +70,8 @@ pub enum Value {
   RefObject(Weak<RefCell<Object>>),
   Scope(Weak<RefCell<Scope>>),
   FunctionNeedToCall(Rc<RefCell<Object>>,Vec<Value>),
+  // 中断
+  Interrupt(Token,Expression)
 }
 
 #[derive(PartialEq)]
