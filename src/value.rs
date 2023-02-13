@@ -134,6 +134,9 @@ impl Clone for Value {
       Value::Scope(obj) => {
         return Value::Scope(obj.clone());
       },
+      Value::Interrupt(token, expr) => {
+        return Value::Interrupt(token.clone(), expr.clone());
+      },
       _ => Value::Undefined,
     }
   }
@@ -350,4 +353,8 @@ impl Value {
     }
   }
 
+}
+
+pub struct CallStatementOptions {
+  pub label: Option<String>,
 }

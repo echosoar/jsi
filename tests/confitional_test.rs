@@ -29,7 +29,7 @@ fn run_for() {
 }
 
 #[test]
-fn run_for_break_continue() {
+fn run_for_break_continue_label() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   let a = [];
