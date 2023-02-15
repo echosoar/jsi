@@ -61,7 +61,6 @@ impl Context {
           label: None,
         };
         self.call_statement(statement, &mut result_value, &mut last_statement_value, &mut interrupt, call_options);
-        // println!("interrupt {:?} {:?} {:?}", statement, interrupt, interrupt != Value::Undefined);
         if interrupt != Value::Undefined {
           break;
         }
@@ -121,6 +120,9 @@ impl Context {
           self.cur_scope.borrow_mut().labels.pop();
         },
         Statement::For(for_statment) => {
+          self.execute_for(for_statment, result_value, last_statement_value, interrupt, call_options)
+        },
+        Statement::While(for_statment) => {
           self.execute_for(for_statment, result_value, last_statement_value, interrupt, call_options)
         },
         Statement::Block(block) => {
@@ -206,6 +208,7 @@ impl Context {
         Expression::Identifier(identifier) => {
           let name = identifier.literal.clone();
           let (value, scope) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
+          // println!("Identifier value: {:?} {:?}", name, value);
           if let Some(val) = value {
             ValueInfo{ value: val, name: Some(name.clone()), reference: Some(Value::Scope(Rc::downgrade(&scope))) }
           } else {
@@ -439,6 +442,7 @@ impl Context {
 
       loop {
         let condition = &for_statment.codition;
+        
         if let Expression::Unknown = condition {
           // nothing to do
         } else {
@@ -447,7 +451,6 @@ impl Context {
             break;
           }
         }
-
         // TODO: expression
         if let Statement::Block(block) = for_statment.statement.as_ref() {
           let result = self.call_block(&vec![], &block.statements);
@@ -462,6 +465,9 @@ impl Context {
                     // 向上走，让上层循环继续处理
                     (*interrupt) = result.2;
                   }
+                } else {
+                  // 向上走，让上层循环继续处理
+                  (*interrupt) = result.2;
                 }
               }
               break;
@@ -486,7 +492,7 @@ impl Context {
         }
 
         let incrementor = &for_statment.incrementor;
-        if let Expression::Unknown = condition {
+        if let Expression::Unknown = incrementor {
           // nothing to do
         } else {
           self.execute_expression(incrementor);

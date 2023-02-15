@@ -18,6 +18,7 @@ pub enum Statement {
   Return(ReturnStatement),
   Unknown, // 未知
   Var(VariableDeclarationStatement),
+  While(ForStatement),
 }
 
 impl PartialEq for Statement {
@@ -50,6 +51,7 @@ impl fmt::Debug for Statement {
       Statement::Label(_) => { stype = "label"},
       Statement::Return(_) => { stype = "return"},
       Statement::Var(_) => { stype = "var"},
+      Statement::While(_) => { stype = "while"},
       _ => {
         stype = "other"
       },
@@ -133,7 +135,6 @@ pub struct ForStatement {
   pub incrementor: Expression,
   pub statement: Box<Statement>,
 }
-
 
 
 #[derive(Debug, Clone, PartialEq)]

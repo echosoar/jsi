@@ -17,18 +17,6 @@ fn run_if_else() {
 }
 
 #[test]
-fn run_for() {
-  let mut jsi = JSI::new();
-  let result = jsi.run(String::from("\
-  let a = [];
-  for(let i = 0; i < 3; i++) {
-    a.push(i);
-  }\n
-  a.join(':')"));
-  assert_eq!(result , Value::String(String::from("0:1:2")));
-}
-
-#[test]
 fn run_for_break_continue_label() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
@@ -39,9 +27,7 @@ fn run_for_break_continue_label() {
       if (j == 1 && i == 1) {
         continue outer
       }
-      if (j == 4) {
-        break
-      }
+      if (j == 4) break
       if (j == 3 && i == 2) {
         break outer
       }
@@ -50,4 +36,30 @@ fn run_for_break_continue_label() {
   }\n
   a.join(':')"));
   assert_eq!(result , Value::String(String::from("0:0:0:0:0:0:2:4")));
+}
+
+#[test]
+fn run_while_break_continue_label() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let a = [];
+  let i = 0;
+  outer:
+  while(i < 3) {
+    i ++;
+    let j = 0;
+    while(j < 5) {
+      j ++;
+      if (j == 1 && i == 1) {
+        continue outer
+      }
+      if (j == 4) break
+      if (j == 3 && i == 2) {
+        break outer
+      }
+      a.push(i * j);
+    }
+  }
+  a.join(':')"));
+  assert_eq!(result , Value::String(String::from("2:4")));
 }

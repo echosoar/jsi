@@ -109,6 +109,7 @@ impl AST{
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
         Token::For => self.parse_for_statement(),
+        Token::While => self.parse_while_statement(),
         Token::Break => self.parse_break_statement(),
         Token::Continue => self.parse_continue_statement(),
         Token::Function => {
@@ -238,11 +239,9 @@ impl AST{
     }
     // TODO: self.check_token_and_next(Token::Semicolon);
     let codition = self.parse_expression();
-    println!("codition: {:?} {:?}", codition, self.token);
     self.check_token_and_next(Token::Semicolon);
     let incrementor = self.parse_expression();
     self.check_token_and_next(Token::RightParenthesis);
-    println!("incrementor: {:?} {:?}", incrementor , self.token);
 
     let block = self.parse_block_statement();
     let statement = ForStatement {
@@ -254,6 +253,24 @@ impl AST{
     return  Statement::For(statement);
   }
 
+  // 解析 while 循环
+  fn parse_while_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::While);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let codition = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+
+    let block = self.parse_block_statement();
+    let statement = ForStatement {
+      initializer: Box::new(Statement::Unknown),
+      codition: codition,
+      incrementor: Expression::Unknown,
+      statement: Box::new(block),
+    };
+    return  Statement::For(statement);
+  }
+
+
   fn parse_break_statement(&mut self) -> Statement {
     self.check_token_and_next(Token::Break);
     let mut semicolon = false;
@@ -264,7 +281,7 @@ impl AST{
     }
 
     // for() { break }
-    if semicolon || self.token == Token::RightBrace {
+    if semicolon || self.auto_semicolon_when_new_line || self.token == Token::RightBrace {
       /*
       TODO:
       if self.scope.in_iteration || self.scope.in_switch {
