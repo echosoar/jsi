@@ -16,6 +16,7 @@ pub enum Statement {
   If(IfStatement),
   Label(LabeledStatement),
   Return(ReturnStatement),
+  Switch(SwitchStatement),
   Unknown, // 未知
   Var(VariableDeclarationStatement),
   While(ForStatement),
@@ -50,6 +51,7 @@ impl fmt::Debug for Statement {
       Statement::If(_) => { stype = "if"},
       Statement::Label(_) => { stype = "label"},
       Statement::Return(_) => { stype = "return"},
+      Statement::Switch(_) => { stype = "switch"},
       Statement::Var(_) => { stype = "var"},
       Statement::While(_) => { stype = "while"},
       _ => {
@@ -120,6 +122,25 @@ pub struct IfStatement {
   pub then_statement: Box<Statement>,
   pub else_statement: Box<Statement>,
 }
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SwitchStatement {
+  pub condition: Expression,
+  pub blocks: CaseBlocks
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CaseBlocks {
+  pub clauses: Vec<CaseClause>,
+  pub default: Option<CaseClause>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CaseClause {
+  pub statements: Vec<Statement>
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LabeledStatement {

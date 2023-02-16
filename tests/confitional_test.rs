@@ -17,6 +17,24 @@ fn run_if_else() {
 }
 
 #[test]
+fn run_switch_case() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  switch('a') {
+    case 'a':
+      1;
+      break;
+    case 'b':
+      2;
+      break;
+    default:
+      3;
+      break;
+   }"));
+  assert_eq!(result , Value::Number(2f64));
+}
+
+#[test]
 fn run_for_break_continue_label() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\

@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseBlocks};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -108,6 +108,7 @@ impl AST{
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
+        Token::Switch => self.parse_switch_statement(),
         Token::For => self.parse_for_statement(),
         Token::While => self.parse_while_statement(),
         Token::Break => self.parse_break_statement(),
@@ -222,6 +223,23 @@ impl AST{
       statement.else_statement = Box::new(self.parse_statement());
     }
     return Statement::If(statement)
+  }
+
+
+  // 解析 switch case
+  fn parse_switch_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::Switch);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let condition = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+    println!("condition: {:?}", condition);
+    Statement::Switch(SwitchStatement {
+      condition,
+      blocks: CaseBlocks {
+        clauses: vec![],
+        default: None
+      }
+    })
   }
 
   // 解析 for 循环
