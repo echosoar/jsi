@@ -138,6 +138,7 @@ pub struct CaseBlocks {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaseClause {
+  pub condition: Option<Expression>,
   pub statements: Vec<Statement>
 }
 

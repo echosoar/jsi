@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseBlocks};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseBlocks, CaseClause};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -233,11 +233,53 @@ impl AST{
     let condition = self.parse_expression();
     self.check_token_and_next(Token::RightParenthesis);
     println!("condition: {:?}", condition);
+    self.check_token_and_next(Token::LeftBrace);
+    let mut default = None;
+    let mut clauses: Vec<CaseClause> = vec![];
+    loop {
+      if self.token == Token::EOF {
+        break;
+      }
+      let mut is_default = false;
+      let mut clause = CaseClause {
+        condition: None,
+        statements: vec![],
+      };
+      // parse case
+      if self.token == Token::Default {
+        if let Some(_) = default {
+          // TODO: throw new error
+        } else {
+          is_default = true;
+        }
+      } else {
+        self.check_token_and_next(Token::Case);
+        clause.condition = Some(self.parse_expression());
+      }
+      self.check_token_and_next(Token::Colon);
+      loop {
+        if self.token == Token::EOF || self.token == Token::RightBrace || self.token == Token::Case || self.token == Token::Default {
+          break;
+        }
+        let statement = self.parse_statement();
+        clause.statements.push(statement);
+      }
+
+      if is_default {
+        default = Some(clause);
+      } else {
+        clauses.push(clause);
+      }
+    }
+
+    println!("clauses {:?}", clauses);
+
+    self.check_token_and_next(Token::RightBrace);
     Statement::Switch(SwitchStatement {
       condition,
       blocks: CaseBlocks {
-        clauses: vec![],
-        default: None
+        clauses,
+        default
       }
     })
   }
