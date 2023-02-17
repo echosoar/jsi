@@ -20,18 +20,20 @@ fn run_if_else() {
 fn run_switch_case() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
+  let res;
   switch('a') {
     case 'a':
-      1;
+      res = 1;
       break;
     case 'b':
-      2;
+      res = 2;
       break;
     default:
-      3;
+      res = 3;
       break;
-   }"));
-  assert_eq!(result , Value::Number(2f64));
+   }
+   res"));
+  assert_eq!(result , Value::Number(1f64));
 }
 
 #[test]
@@ -40,10 +42,10 @@ fn run_for() {
   let result = jsi.run(String::from("\
   let a = [];
   let i;
-  // for(i = 0; i < 3; i++) {
-  //     a.push(++i);
-  // }
-  // a.join(':')"));
+  for(i = 0; i < 3; i++) {
+      a.push(++i);
+  }
+  a.join(':')"));
   assert_eq!(result , Value::String(String::from("1:3")));
 }
 

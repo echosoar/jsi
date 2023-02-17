@@ -127,13 +127,8 @@ pub struct IfStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchStatement {
   pub condition: Expression,
-  pub blocks: CaseBlocks
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CaseBlocks {
-  pub clauses: Vec<CaseClause>,
-  pub default: Option<CaseClause>
+   pub clauses: Vec<CaseClause>,
+   pub default_index: i32
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell, ops::Index};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement, CaseClause}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
 
 use super::ast::AST;
 pub struct Context {
@@ -87,7 +87,8 @@ impl Context {
         },
         Statement::Return(return_statement) => {
           (*result_value) = self.execute_expression(&return_statement.expression);
-          (*last_statement_value) = result_value.clone()
+          (*last_statement_value) = result_value.clone();
+          (*interrupt) = Value::Interrupt(Token::Return, Expression::Unknown);
         },
         Statement::Function(_) => {
           // skip, 因为函数声明前置了
@@ -124,6 +125,9 @@ impl Context {
         },
         Statement::While(for_statment) => {
           self.execute_for(for_statment, result_value, last_statement_value, interrupt, call_options)
+        },
+        Statement::Switch(switch_statement) => {
+          self.execute_switch(switch_statement, result_value, last_statement_value, interrupt, call_options)
         },
         Statement::Block(block) => {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
@@ -410,7 +414,6 @@ impl Context {
           },
           _ => {}
       }
-      println!("new_value2: {:?}", new_value);
       let value = Value::Number(new_value);
       operand_info.set_value(value.clone());
       value
@@ -522,6 +525,37 @@ impl Context {
       }
 
       self.close_scope();
+    }
+
+
+    // 执行循环
+    fn execute_switch(&mut self, switch_statment: &SwitchStatement, result_value: &mut Value, last_statement_value: &mut Value, interrupt: &mut Value, call_options: CallStatementOptions) {
+      let value = self.execute_expression(&switch_statment.condition);
+      
+      let mut matched: i32 = switch_statment.default_index;
+      let clause_len = switch_statment.clauses.len();
+      for case_index in 0..clause_len {
+        if case_index as i32 == switch_statment.default_index {
+          continue;
+        }
+        let case = &switch_statment.clauses[case_index];
+        if let Some(condition) = &case.condition {
+          let case_value = self.execute_expression(condition);
+          if case_value.is_equal_to(&value, true) {
+            matched = case_index as i32;
+          }
+        }
+      }
+
+      for case_index in (matched as usize)..clause_len {
+        let case = &switch_statment.clauses[case_index];
+        let result = self.call_block(&vec![], &case.statements);
+        if let Value::Interrupt(token, _) = result.2 {
+          if token == Token::Break {
+            break;
+          }
+        }
+      }
     }
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> Value {

@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseBlocks, CaseClause};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -232,9 +232,8 @@ impl AST{
     self.check_token_and_next(Token::LeftParenthesis);
     let condition = self.parse_expression();
     self.check_token_and_next(Token::RightParenthesis);
-    println!("condition: {:?}", condition);
     self.check_token_and_next(Token::LeftBrace);
-    let mut default = None;
+    let mut default_index: i32 = -1;
     let mut clauses: Vec<CaseClause> = vec![];
     loop {
       if self.token == Token::EOF || self.token == Token::RightBrace {
@@ -247,10 +246,10 @@ impl AST{
       };
       // parse case
       if self.token == Token::Default {
-        if let Some(_) = default {
+        if default_index != -1 {
           // TODO: throw new error
         } else {
-          is_default = true;
+          default_index = clauses.len() as i32;
           self.next();
         }
       } else {
@@ -265,23 +264,15 @@ impl AST{
         let statement = self.parse_statement();
         clause.statements.push(statement);
       }
-
-      if is_default {
-        default = Some(clause);
-      } else {
-        clauses.push(clause);
-      }
+      clauses.push(clause);
     }
 
-    println!("clauses {:?}", clauses);
 
     self.check_token_and_next(Token::RightBrace);
     Statement::Switch(SwitchStatement {
       condition,
-      blocks: CaseBlocks {
-        clauses,
-        default
-      }
+      clauses,
+      default_index
     })
   }
 
@@ -296,10 +287,9 @@ impl AST{
     if self.token == Token::Var || self.token == Token::Let {
         initializer = self.parse_variable_statement();
     } else if self.token != Token::Semicolon {
-      initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression() })
+      initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression() });
       self.check_token_and_next(Token::Semicolon);
     }
-    println!("xxx");
     let codition = self.parse_expression();
     self.check_token_and_next(Token::Semicolon);
     let incrementor = self.parse_expression();
@@ -729,7 +719,12 @@ impl AST{
                   self.read();
                   break;
                 },
-                _ => {}
+                _ => {
+                  // EOF
+                  if self.cur_char_index >= self.length  {
+                    break;
+                  }
+                }
               };
             }
             continue;
