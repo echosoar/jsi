@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell, ops::Index};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
 
 use super::ast::AST;
 pub struct Context {
@@ -168,6 +168,9 @@ impl Context {
       match expression {
         Expression::Binary(binary) => {
           ValueInfo { value: self.execute_binary_expression(binary), name: None, reference: None }
+        },
+        Expression::PrefixUnary(expr) => {
+          ValueInfo { value: self.execute_prefix_unary_expression(expr), name: None, reference: None }
         },
         Expression::PostfixUnary(expr) => {
           ValueInfo { value: self.execute_postfix_unary_expression(expr), name: None, reference: None }
@@ -392,6 +395,25 @@ impl Context {
       } else {
         Value::Undefined
       }
+    }
+
+    // 执行 ++i --i
+    fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> Value {
+      let mut operand_info = self.execute_expression_info(&expression.operand);
+      let mut new_value = operand_info.value.to_number().unwrap();
+      match &expression.operator {
+          Token::Increment => {
+            new_value = new_value + 1f64;
+          },
+          Token::Decrement => {
+            new_value = new_value - 1f64;
+          },
+          _ => {}
+      }
+      println!("new_value2: {:?}", new_value);
+      let value = Value::Number(new_value);
+      operand_info.set_value(value.clone());
+      value
     }
 
     // 执行 i++ i--

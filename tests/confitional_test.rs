@@ -35,6 +35,20 @@ fn run_switch_case() {
 }
 
 #[test]
+fn run_for() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let a = [];
+  let i;
+  // for(i = 0; i < 3; i++) {
+  //     a.push(++i);
+  // }
+  // a.join(':')"));
+  assert_eq!(result , Value::String(String::from("1:3")));
+}
+
+
+#[test]
 fn run_for_break_continue_label() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\

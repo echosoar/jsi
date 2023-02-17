@@ -237,7 +237,7 @@ impl AST{
     let mut default = None;
     let mut clauses: Vec<CaseClause> = vec![];
     loop {
-      if self.token == Token::EOF {
+      if self.token == Token::EOF || self.token == Token::RightBrace {
         break;
       }
       let mut is_default = false;
@@ -251,6 +251,7 @@ impl AST{
           // TODO: throw new error
         } else {
           is_default = true;
+          self.next();
         }
       } else {
         self.check_token_and_next(Token::Case);
@@ -296,8 +297,9 @@ impl AST{
         initializer = self.parse_variable_statement();
     } else if self.token != Token::Semicolon {
       initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression() })
+      self.check_token_and_next(Token::Semicolon);
     }
-    // TODO: self.check_token_and_next(Token::Semicolon);
+    println!("xxx");
     let codition = self.parse_expression();
     self.check_token_and_next(Token::Semicolon);
     let incrementor = self.parse_expression();
