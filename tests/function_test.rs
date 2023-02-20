@@ -17,11 +17,12 @@ fn run_function_name_and_length() {
   function abc(a, b, c) { } ;\n
   let foo = function(x, y) {};\n
   let obj = { x: function() {}};\n
-  {\n
+  let res = {\n
     abc: { name: abc.name, length: abc.length},\n
     foo: { name: foo.name, length: foo.length},\n
     obj: { name: obj.x.name, length: obj.x.length},\n
-  };"));
+  };\n
+  res"));
   let global_tmp = Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
   match value {
     Value::Object(obj) => {

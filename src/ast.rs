@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 pub struct AST {
   // 当前字符
@@ -107,18 +107,44 @@ impl AST{
   fn parse_statement(&mut self) -> Statement {
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
+        Token::If => self.parse_if_statement(),
+        Token::Switch => self.parse_switch_statement(),
+        Token::For => self.parse_for_statement(),
+        Token::While => self.parse_while_statement(),
+        Token::Do => self.parse_do_while_statement(),
+        Token::Break => self.parse_break_statement(),
+        Token::Continue => self.parse_continue_statement(),
         Token::Function => {
           Statement::Function(self.parse_function(true))
         },
+        Token::Return => self.parse_return_statement(),
         Token::Class => {
           // class (ES2015)
           Statement::Class(self.parse_class())
         },
-        Token::Return => self.parse_return_statement(),
+        Token::LeftBrace => {
+          // block
+          self.parse_block_statement()
+        },
         _ => {
           let expression = self.parse_expression();
+
+          // label:
+          if self.token == Token::Colon {
+            if let Expression::Identifier(identifier) = expression {
+              // TODO: 检测当前的作用域是否已经存在这个 lable，如果存在，则报错
+              //  let label = identifier.literal;
+              self.next();
+               let statement = self.parse_statement();
+               return Statement::Label(LabeledStatement {
+                label: identifier,
+                statement: Box::new(statement),
+               });
+            }
+          }
+          
           match  expression {
-              Expression::Unknown => {
+              Expression::Unknown => {      
                 Statement::Unknown
               },
               _ => {
@@ -142,23 +168,27 @@ impl AST{
       self.check_token_and_next(Token::Var);
     }
     
-    let mut var_statement = VariableDeclarationStatement {
-      list: vec![],
+    let var_statement = VariableDeclarationStatement {
+      list: self.parse_variable_declarations(),
       flag: variable_flag,
     };
+    self.semicolon();
+    return Statement::Var(var_statement);
+  }
+
+  fn parse_variable_declarations(&mut self) -> Vec<Expression> {
+    let mut list: Vec<Expression> = vec![];
     loop {
       let expression = self.parse_variable_declaration();
-      var_statement.list.push(expression);
+      list.push(expression);
       // let a= 1, b = 2;
       if self.token != Token::Comma {
         break;
       }
       self.next();
     }
-    self.semicolon();
-    return Statement::Var(var_statement);
+    list
   }
-
 
 
   // 解析 block statement
@@ -170,6 +200,200 @@ impl AST{
     return Statement::Block(BlockStatement{
       statements,
     })
+  }
+
+  // 解析 if/else/else if
+  fn parse_if_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::If);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let mut statement = IfStatement {
+      condition: self.parse_expression(),
+      then_statement: Box::new(Statement::Unknown),
+      else_statement: Box::new(Statement::Unknown),
+    };
+    self.check_token_and_next(Token::RightParenthesis);
+    // 判断是否是 单行if
+    if self.token == Token::LeftBrace {
+      statement.then_statement = Box::new(self.parse_block_statement());
+    } else {
+      statement.then_statement = Box::new(self.parse_statement());
+    }
+
+    if self.token == Token::Else {
+      self.next();
+      statement.else_statement = Box::new(self.parse_statement());
+    }
+    return Statement::If(statement)
+  }
+
+
+  // 解析 switch case
+  fn parse_switch_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::Switch);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let condition = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+    self.check_token_and_next(Token::LeftBrace);
+    let mut default_index: i32 = -1;
+    let mut clauses: Vec<CaseClause> = vec![];
+    loop {
+      if self.token == Token::EOF || self.token == Token::RightBrace {
+        break;
+      }
+      let mut clause = CaseClause {
+        condition: None,
+        statements: vec![],
+      };
+      // parse case
+      if self.token == Token::Default {
+        if default_index != -1 {
+          // TODO: throw new error
+        } else {
+          default_index = clauses.len() as i32;
+          self.next();
+        }
+      } else {
+        self.check_token_and_next(Token::Case);
+        clause.condition = Some(self.parse_expression());
+      }
+      self.check_token_and_next(Token::Colon);
+      loop {
+        if self.token == Token::EOF || self.token == Token::RightBrace || self.token == Token::Case || self.token == Token::Default {
+          break;
+        }
+        let statement = self.parse_statement();
+        clause.statements.push(statement);
+      }
+      clauses.push(clause);
+    }
+
+
+    self.check_token_and_next(Token::RightBrace);
+    Statement::Switch(SwitchStatement {
+      condition,
+      clauses,
+      default_index
+    })
+  }
+
+  // 解析 for 循环
+  // TODO: for in/ of
+  fn parse_for_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::For);
+    self.check_token_and_next(Token::LeftParenthesis);
+    // 解析 initializer
+    // 需要额外处理 var 的情况
+    let mut initializer = Statement::Unknown;
+    if self.token == Token::Var || self.token == Token::Let {
+        initializer = self.parse_variable_statement();
+    } else if self.token != Token::Semicolon {
+      initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression() });
+      self.check_token_and_next(Token::Semicolon);
+    }
+    let condition = self.parse_expression();
+    self.check_token_and_next(Token::Semicolon);
+    let incrementor = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+
+    let block = self.parse_block_statement();
+    let statement = ForStatement {
+      initializer: Box::new(initializer),
+      condition: condition,
+      incrementor: incrementor,
+      statement: Box::new(block),
+      post_judgment: false,
+    };
+    return  Statement::For(statement);
+  }
+
+  // 解析 while 循环
+  fn parse_while_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::While);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let condition = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+
+    let block = self.parse_block_statement();
+    let statement = ForStatement {
+      initializer: Box::new(Statement::Unknown),
+      condition: condition,
+      incrementor: Expression::Unknown,
+      statement: Box::new(block),
+      post_judgment: false,
+    };
+    return  Statement::For(statement);
+  }
+
+
+  // 解析 do while 循环
+  fn parse_do_while_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::Do);
+    let block = self.parse_block_statement();
+    self.check_token_and_next(Token::While);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let condition = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+    let statement = ForStatement {
+      initializer: Box::new(Statement::Unknown),
+      condition: condition,
+      incrementor: Expression::Unknown,
+      statement: Box::new(block),
+      post_judgment: true,
+    };
+    return  Statement::For(statement);
+  }
+
+
+  fn parse_break_statement(&mut self) -> Statement {
+    self.check_token_and_next(Token::Break);
+    let mut semicolon = false;
+    // break;
+    if self.token == Token::Semicolon {
+      self.next();
+      semicolon = true;
+    }
+
+    // for() { break }
+    if semicolon || self.auto_semicolon_when_new_line || self.token == Token::RightBrace {
+      /*
+      TODO:
+      if self.scope.in_iteration || self.scope.in_switch {
+
+      } else {
+        // need label, throw error Illegal break statement
+      }
+      */
+      return Statement::Break(BreakStatement {
+        label: None
+      });
+    }
+
+    self.check_token(Token::Identifier);
+    return  Statement::Break(BreakStatement {
+      label: Some(IdentifierLiteral { literal: self.literal.clone() })
+    });
+  }
+
+  fn parse_continue_statement(&mut self) -> Statement {
+    self.check_token_and_next(Token::Continue);
+    let mut semicolon = false;
+    // continue;
+    if self.token == Token::Semicolon {
+      self.next();
+      semicolon = true;
+    }
+
+    // for() { continue }
+    if semicolon || self.token == Token::RightBrace {
+      return Statement::Continue(ContinueStatement {
+        label: None
+      });
+    }
+
+    self.check_token(Token::Identifier);
+    return  Statement::Continue(ContinueStatement {
+      label: Some(IdentifierLiteral { literal: self.literal.clone() })
+    });
   }
 
   // 解析 function statement
@@ -516,7 +740,12 @@ impl AST{
                   self.read();
                   break;
                 },
-                _ => {}
+                _ => {
+                  // EOF
+                  if self.cur_char_index >= self.length  {
+                    break;
+                  }
+                }
               };
             }
             continue;
@@ -1359,7 +1588,7 @@ impl AST{
         self.next();
         let key = self.parse_expression();
         self.check_token_and_next(Token::RightBracket);
-        key
+        Expression::ComputedPropertyName(ComputedPropertyName { expression: Box::new(key) })
       },
       _ => Expression::Unknown
     }

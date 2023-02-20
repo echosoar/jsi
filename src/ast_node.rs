@@ -4,14 +4,22 @@ use crate::{ast_token::Token, value::Value, builtins::{object::Object}};
 
 #[derive(Clone)]
 pub enum Statement {
-  Var(VariableDeclarationStatement),
-  Function(FunctionDeclaration),
-  Class(ClassDeclaration),
+  // A -> Z
   Block(BlockStatement),
-  Return(ReturnStatement),
-  Expression(ExpressionStatement),
+  Break(BreakStatement),
   BuiltinFunction(BuiltinFunction),
-  Unknown,
+  Class(ClassDeclaration),
+  Continue(ContinueStatement),
+  Expression(ExpressionStatement),
+  For(ForStatement),
+  Function(FunctionDeclaration),
+  If(IfStatement),
+  Label(LabeledStatement),
+  Return(ReturnStatement),
+  Switch(SwitchStatement),
+  Unknown, // 未知
+  Var(VariableDeclarationStatement),
+  While(ForStatement),
 }
 
 impl PartialEq for Statement {
@@ -30,7 +38,27 @@ impl PartialEq for Statement {
 
 impl fmt::Debug for Statement {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "statement")
+    let mut stype = "unknown";
+    match self {
+      Statement::Block(_) => { stype = "block"},
+      Statement::Break(_) => { stype = "break"},
+      Statement::BuiltinFunction(_) => { stype = "builtin function"},
+      Statement::Class(_) => { stype = "class"},
+      Statement::Continue(_) => { stype = "continue"},
+      Statement::Expression(_) => { stype = "expression"},
+      Statement::For(_) => { stype = "for"},
+      Statement::Function(_) => { stype = "function"},
+      Statement::If(_) => { stype = "if"},
+      Statement::Label(_) => { stype = "label"},
+      Statement::Return(_) => { stype = "return"},
+      Statement::Switch(_) => { stype = "switch"},
+      Statement::Var(_) => { stype = "var"},
+      Statement::While(_) => { stype = "while"},
+      _ => {
+        stype = "other"
+      },
+    }
+    write!(f, "{}", stype)
   }
 }
 
@@ -53,6 +81,8 @@ pub enum Expression {
   Object(ObjectLiteral),
   Array(ArrayLiteral),
   Function(FunctionDeclaration),
+  // {[a]: 12}
+  ComputedPropertyName(ComputedPropertyName),
   // for class
   Class(ClassDeclaration),
   Constructor(FunctionDeclaration),
@@ -86,6 +116,43 @@ pub struct VariableDeclarationStatement {
   pub flag: VariableFlag,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfStatement {
+  pub condition: Expression,
+  pub then_statement: Box<Statement>,
+  pub else_statement: Box<Statement>,
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SwitchStatement {
+  pub condition: Expression,
+   pub clauses: Vec<CaseClause>,
+   pub default_index: i32
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CaseClause {
+  pub condition: Option<Expression>,
+  pub statements: Vec<Statement>
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LabeledStatement {
+  pub label: IdentifierLiteral,
+  pub statement: Box<Statement>,
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForStatement {
+  pub initializer: Box<Statement>,
+  pub condition: Expression,
+  pub incrementor: Expression,
+  pub statement: Box<Statement>,
+  pub post_judgment: bool,
+}
 
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,6 +162,12 @@ pub struct FunctionDeclaration {
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
   pub declarations: Vec<Declaration>,
+}
+
+// ES2015 Computed Property Name
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComputedPropertyName {
+  pub expression: Box<Expression>
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -120,6 +193,16 @@ pub struct BlockStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStatement {
   pub expression: Expression
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BreakStatement {
+  pub label: Option<IdentifierLiteral>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContinueStatement {
+  pub label: Option<IdentifierLiteral>
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -8,3 +8,4 @@ fn run_boolean_to_string() {
   bool1.toString() + bool2.toString()"));
   assert_eq!(result , Value::String(String::from("falsetrue")));
 }
+
