@@ -466,16 +466,19 @@ impl Context {
       }
 
       loop {
-        let condition = &for_statment.codition;
+        if !for_statment.post_judgment {
+          let condition = &for_statment.condition;
         
-        if let Expression::Unknown = condition {
-          // nothing to do
-        } else {
-          let value = self.execute_expression(condition);
-          if !value.to_boolean() {
-            break;
+          if let Expression::Unknown = condition {
+            // nothing to do
+          } else {
+            let value = self.execute_expression(condition);
+            if !value.to_boolean() {
+              break;
+            }
           }
         }
+        
         // TODO: expression
         if let Statement::Block(block) = for_statment.statement.as_ref() {
           let result = self.call_block(&vec![], &block.statements);
@@ -521,6 +524,20 @@ impl Context {
           // nothing to do
         } else {
           self.execute_expression(incrementor);
+        }
+
+        // post judegment: for do while
+        if for_statment.post_judgment {
+          let condition = &for_statment.condition;
+        
+          if let Expression::Unknown = condition {
+            // nothing to do
+          } else {
+            let value = self.execute_expression(condition);
+            if !value.to_boolean() {
+              break;
+            }
+          }
         }
       }
 

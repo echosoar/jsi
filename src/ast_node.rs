@@ -148,9 +148,10 @@ pub struct LabeledStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ForStatement {
   pub initializer: Box<Statement>,
-  pub codition: Expression,
+  pub condition: Expression,
   pub incrementor: Expression,
   pub statement: Box<Statement>,
+  pub post_judgment: bool,
 }
 
 

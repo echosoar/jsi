@@ -97,3 +97,29 @@ fn run_while_break_continue_label() {
   a.join(':')"));
   assert_eq!(result , Value::String(String::from("2:4")));
 }
+
+#[test]
+fn run_dowhile_break_continue_label() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let a = [];
+  let i = 0;
+  outer:
+  do {
+    i ++;
+    let j = 0
+    do {
+      j ++;
+      if (j == 1 && i == 1) {
+        continue outer
+      }
+      if (j == 4) break
+      if (j == 3 && i == 2) {
+        break outer
+      }
+      a.push(i * j);
+    } while (j < 5);
+  } while (i < 3);
+  a.join(':')"));
+  assert_eq!(result , Value::String(String::from("2:4")));
+}

@@ -111,6 +111,7 @@ impl AST{
         Token::Switch => self.parse_switch_statement(),
         Token::For => self.parse_for_statement(),
         Token::While => self.parse_while_statement(),
+        Token::Do => self.parse_do_while_statement(),
         Token::Break => self.parse_break_statement(),
         Token::Continue => self.parse_continue_statement(),
         Token::Function => {
@@ -239,7 +240,6 @@ impl AST{
       if self.token == Token::EOF || self.token == Token::RightBrace {
         break;
       }
-      let mut is_default = false;
       let mut clause = CaseClause {
         condition: None,
         statements: vec![],
@@ -290,7 +290,7 @@ impl AST{
       initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression() });
       self.check_token_and_next(Token::Semicolon);
     }
-    let codition = self.parse_expression();
+    let condition = self.parse_expression();
     self.check_token_and_next(Token::Semicolon);
     let incrementor = self.parse_expression();
     self.check_token_and_next(Token::RightParenthesis);
@@ -298,9 +298,10 @@ impl AST{
     let block = self.parse_block_statement();
     let statement = ForStatement {
       initializer: Box::new(initializer),
-      codition: codition,
+      condition: condition,
       incrementor: incrementor,
       statement: Box::new(block),
+      post_judgment: false,
     };
     return  Statement::For(statement);
   }
@@ -309,15 +310,35 @@ impl AST{
   fn parse_while_statement(&mut self)  -> Statement {
     self.check_token_and_next(Token::While);
     self.check_token_and_next(Token::LeftParenthesis);
-    let codition = self.parse_expression();
+    let condition = self.parse_expression();
     self.check_token_and_next(Token::RightParenthesis);
 
     let block = self.parse_block_statement();
     let statement = ForStatement {
       initializer: Box::new(Statement::Unknown),
-      codition: codition,
+      condition: condition,
       incrementor: Expression::Unknown,
       statement: Box::new(block),
+      post_judgment: false,
+    };
+    return  Statement::For(statement);
+  }
+
+
+  // 解析 do while 循环
+  fn parse_do_while_statement(&mut self)  -> Statement {
+    self.check_token_and_next(Token::Do);
+    let block = self.parse_block_statement();
+    self.check_token_and_next(Token::While);
+    self.check_token_and_next(Token::LeftParenthesis);
+    let condition = self.parse_expression();
+    self.check_token_and_next(Token::RightParenthesis);
+    let statement = ForStatement {
+      initializer: Box::new(Statement::Unknown),
+      condition: condition,
+      incrementor: Expression::Unknown,
+      statement: Box::new(block),
+      post_judgment: true,
     };
     return  Statement::For(statement);
   }
