@@ -5,7 +5,7 @@ use jsi::{JSI,ast_node::{Statement, ExpressionStatement, Expression, IdentifierL
 fn asi_increment_after_identifier() {
   let mut jsi_vm = JSI::new();
   let program = jsi_vm.parse(String::from("a = b\n
-  ++c"));
+  ++c")).unwrap();
   assert_eq!(program.body, vec![
     Statement::Expression(ExpressionStatement { // a + b
       expression: Expression::Assign(AssignExpression {
@@ -30,7 +30,7 @@ fn asi_after_keyword_return() {
   let program = jsi_vm.parse(String::from("function test(){\n
     return\n
     a+b\n
-  }"));
+  }")).unwrap();
   assert_eq!(program.body, vec![
     Statement::Function(FunctionDeclaration { // a + b
       is_anonymous: false,
@@ -68,6 +68,6 @@ fn asi_not_insert_after_identifier() {
   var a=1,b=2,d=4,e=5;
   
   a=b+c
-  (d+e)"));
+  (d+e)")).unwrap();
   assert_eq!(value,Value::Number(20f64));
 }

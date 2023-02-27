@@ -1,6 +1,7 @@
-use std::{rc::{Rc, Weak}, cell::RefCell, ops::Index};
+use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement, CaseClause}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement, CaseClause}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}, error::JSIResult};
+
 
 use super::ast::AST;
 pub struct Context {
@@ -24,15 +25,15 @@ impl Context {
     }
     
     // 运行一段 JS 代码
-    pub fn run(&mut self, code: String) -> Value {
-      let program = self.parse(code);
-      self.call(program)
+    pub fn run(&mut self, code: String) -> JSIResult<Value> {
+      let program = self.parse(code)?;
+      Ok(self.call(program))
     }
 
     // 运行一段 JS 代码
-    pub fn parse(&mut self, code: String) -> Program {
+    pub fn parse(&mut self, code: String) -> JSIResult<Program> {
       let mut ast = AST::new(code);
-      ast.parse()
+      Ok(ast.parse())
     }
 
     fn call(&mut self, program: Program) -> Value {
