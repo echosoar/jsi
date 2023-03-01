@@ -1,7 +1,7 @@
 use std::result;
 
-pub type JSIResult<T> = result::Result<T, Error>;
+pub type JSIResult<T> = result::Result<T, JSIError>;
 #[derive(Debug, Clone)]
-pub struct Error {
+pub struct JSIError {
     
 }

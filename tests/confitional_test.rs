@@ -12,7 +12,7 @@ fn run_if_else() {
   } else {
     b = 2;
   }\n
-  b"));
+  b")).unwrap();
   assert_eq!(result , Value::Number(2f64));
 }
 
@@ -32,7 +32,7 @@ fn run_switch_case() {
       res = 3;
       break;
    }
-   res"));
+   res")).unwrap();
   assert_eq!(result , Value::Number(1f64));
 }
 
@@ -45,7 +45,7 @@ fn run_for() {
   for(i = 0; i < 3; i++) {
       a.push(++i);
   }
-  a.join(':')"));
+  a.join(':')")).unwrap();
   assert_eq!(result , Value::String(String::from("1:3")));
 }
 
@@ -68,7 +68,7 @@ fn run_for_break_continue_label() {
       a.push(i * j);
     }\n
   }\n
-  a.join(':')"));
+  a.join(':')")).unwrap();
   assert_eq!(result , Value::String(String::from("0:0:0:0:0:0:2:4")));
 }
 
@@ -94,7 +94,7 @@ fn run_while_break_continue_label() {
       a.push(i * j);
     }
   }
-  a.join(':')"));
+  a.join(':')")).unwrap();
   assert_eq!(result , Value::String(String::from("2:4")));
 }
 
@@ -120,6 +120,6 @@ fn run_dowhile_break_continue_label() {
       a.push(i * j);
     } while (j < 5);
   } while (i < 3);
-  a.join(':')"));
+  a.join(':')")).unwrap();
   assert_eq!(result , Value::String(String::from("2:4")));
 }

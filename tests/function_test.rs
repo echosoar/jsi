@@ -22,7 +22,7 @@ fn run_function_name_and_length() {
     foo: { name: foo.name, length: foo.length},\n
     obj: { name: obj.x.name, length: obj.x.length},\n
   };\n
-  res"));
+  res")).unwrap();
   let global_tmp = Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
   match value {
     Value::Object(obj) => {
@@ -63,7 +63,7 @@ fn run_function_scope1() {
   let fun2 = function() {
     return a;
   };\n
-  fun1()"));
+  fun1()")).unwrap();
   assert_eq!(value , Value::Undefined);
 }
 
@@ -75,7 +75,7 @@ fn run_function_scope2() {
   let fun = function() {
     return a;
   };\n
-  fun()"));
+  fun()")).unwrap();
   assert_eq!(value , Value::Number(123f64));
 }
 
@@ -84,6 +84,6 @@ fn run_function_instances_has_class() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   function func() {}\n
-  Object.prototype.toString.call(func)"));
+  Object.prototype.toString.call(func)")).unwrap();
   assert_eq!(result , Value::String(String::from("[object Function]")));
 }
