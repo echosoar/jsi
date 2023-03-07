@@ -715,4 +715,9 @@ impl Context {
       let function = get_global_object(&self.global, String::from("Function"));
       global_scope.set_value(String::from("Function"), Value::RefObject(Rc::downgrade(&function)));
     }
+
+    // 获取当前调用栈
+    fn get_current_stack() {
+      
+    }
 } 

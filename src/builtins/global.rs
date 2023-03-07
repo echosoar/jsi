@@ -6,6 +6,7 @@ use crate::value::Value;
 
 use super::array::bind_global_array;
 use super::boolean::bind_global_boolean;
+use super::error::bind_global_error;
 use super::function::bind_global_function;
 use super::object::{Object, Property, bind_global_object};
 use super::string::bind_global_string;
@@ -36,6 +37,7 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
   let global_string = new_global_object();
   let global_number = new_global_object();
   let global_boolean = new_global_object();
+  let global_error = new_global_object();
   let global_clone = Rc::clone(&global);
   {
     let mut global_obj = global_clone.borrow_mut();
@@ -45,6 +47,7 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
     global_obj.property.insert(String::from("String"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_string))});
     global_obj.property.insert(String::from("Number"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_number))});
     global_obj.property.insert(String::from("Boolean"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_boolean))});
+    global_obj.property.insert(String::from("Error"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_error))});
   }
 
   // let global = Global{
@@ -62,6 +65,8 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
   bind_global_string(&global_clone);
   // 绑定  Boolean 的 静态方法 和 原型链方法
   bind_global_boolean(&global_clone);
+  // 绑定  Error 的 静态方法 和 原型链方法
+  bind_global_error(&global_clone);
   return global;
 }
 

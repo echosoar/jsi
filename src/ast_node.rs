@@ -342,6 +342,8 @@ pub enum ClassType {
   Boolean,
   Number,
   Null,
+  //
+  Error,
 }
 
 impl  ClassType {
@@ -354,6 +356,7 @@ impl  ClassType {
       Self::Boolean => String::from("Boolean"),
       Self::Number => String::from("Number"),
       Self::Null => String::from("Null"),
+      Self::Error => String::from("Error"),
     }
   }
 }

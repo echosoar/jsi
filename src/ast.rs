@@ -1,11 +1,11 @@
 // AST
 // mod super::token::TokenKeywords;
-use std::io;
+use std::{io, fmt};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
 use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
-use crate::error::{JSIResult, JSIError};
+use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
   // 当前字符
   char: char,
@@ -106,6 +106,7 @@ impl AST{
 
   // 解析生成 statement
   fn parse_statement(&mut self) -> JSIResult<Statement> {
+    println!("parse_statement: {:?} {:?}", self.token,  self.literal);
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
@@ -528,8 +529,7 @@ impl AST{
   // 解析变量定义 a = 123,b,c = true 
   fn parse_variable_declaration(&mut self) -> JSIResult<Expression> {
     if Token::Identifier != self.token {
-      // TODO: throw error 需要一个identifier
-      return Err(JSIError {  });
+      return Err(self.error_unexpected());
     }
     let literal = self.literal.clone();
     self.next();
@@ -551,12 +551,8 @@ impl AST{
     return Ok(true);
   }
   fn check_token(&mut self, token: Token) -> JSIResult<bool> {
-    // TODO: 类型不匹配，需要报错
     if token != self.token {
-      return Err(JSIError{
-        // TODO: 抛出错误，未预期的标识符 unexpected_token
-      });
-      // self.error_unexpected_token(token)
+      return Err(self.error_unexpected());
     }
     return Ok(true);
   }
@@ -1166,7 +1162,6 @@ impl AST{
         when_false: Box::new(when_false),
       }));
     }
-  
     return Ok(left)
   }
 
@@ -1369,6 +1364,7 @@ impl AST{
         Token::Period => self.parse_property_access_expression()?,
         Token::LeftBracket => self.parse_element_access_expression()?,
         Token::LeftParenthesis => self.parse_call_expression()?,
+        Token::New => self.parse_new_expression()?,
         // TODO: new
         // TODO: optional chaining
         _ => Expression::Unknown,
@@ -1377,6 +1373,9 @@ impl AST{
         break;
       }
       left = new_left;
+    }
+    if let Expression::Unknown = left {
+      return Err(self.error_unexpected());
     }
     return Ok(left);
   }
@@ -1415,6 +1414,13 @@ impl AST{
       expression,
       arguments
     }));
+  }
+
+  // 解析 new 语法 优先级 18
+  fn parse_new_expression(&mut self) -> JSIResult<Expression> {
+    println!("left: {:?} {:?}", self.token,  self.literal);
+    // TODO:
+    return Err(self.error_unexpected())
   }
 
   // 解析分组表达式 优先级 19
@@ -1484,9 +1490,7 @@ impl AST{
         Ok(Expression::Function(self.parse_function(true)?))
       },
       _ => {
-        self.next();
-        // TODO: Err
-        Ok(Expression::Unknown)
+        Err(self.error_unexpected())
       },
     }
   }
@@ -1660,6 +1664,19 @@ impl AST{
           }
       }
     }
+  }
+
+  fn error_unexpected(&self) -> JSIError {
+    // TODO: more unexpected error
+    let message = match self.token {
+      Token::Identifier => String::from("Unexpected identifier"),
+      Token::Number => String::from("Unexpected number"),
+      Token::String => String::from("Unexpected string"),
+      _ => format!("Unexpected token {:?}", self.token),
+    };
+    println!("token:{:?}", self.literal);
+    // TODO: line column
+    JSIError::new(JSIErrorType::SyntaxError, message, 0, 0)
   }
 
   fn error_common(&mut self, error_msg: &str) {
