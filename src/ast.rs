@@ -3,7 +3,7 @@
 use std::{io, fmt};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -106,7 +106,7 @@ impl AST{
 
   // 解析生成 statement
   fn parse_statement(&mut self) -> JSIResult<Statement> {
-    println!("parse_statement: {:?} {:?}", self.token,  self.literal);
+    // println!("parse_statement: {:?} {:?}", self.token,  self.literal);
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
@@ -1418,9 +1418,17 @@ impl AST{
 
   // 解析 new 语法 优先级 18
   fn parse_new_expression(&mut self) -> JSIResult<Expression> {
-    println!("left: {:?} {:?}", self.token,  self.literal);
-    // TODO:
-    return Err(self.error_unexpected())
+    self.next();
+    let mut expression = self.parse_expression()?;
+    let mut args: Vec<Expression> = vec![];
+    if let Expression::Call(call_expr) = expression {
+      expression = *call_expr.expression;
+      args = call_expr.arguments.clone();
+    }
+    return Ok(Expression::New(NewExpression {
+      expression: Box::new(expression),
+      arguments: args
+    }))
   }
 
   // 解析分组表达式 优先级 19
@@ -1490,7 +1498,7 @@ impl AST{
         Ok(Expression::Function(self.parse_function(true)?))
       },
       _ => {
-        Err(self.error_unexpected())
+        Ok(Expression::Unknown)
       },
     }
   }
@@ -1656,7 +1664,9 @@ impl AST{
       match self.char {
         //  跳过空格
           ' '| '\t' => {
-            self.read();
+            if !self.read() {
+              break;
+            }
           },
           // 这里不处理换行，换行在 scan 的时候处理，因为要处理是否自动添加分号
           _ => {
@@ -1669,7 +1679,7 @@ impl AST{
   fn error_unexpected(&self) -> JSIError {
     // TODO: more unexpected error
     let message = match self.token {
-      Token::Identifier => String::from("Unexpected identifier"),
+      Token::Identifier => format!("Unexpected identifier '{}'", self.literal),
       Token::Number => String::from("Unexpected number"),
       Token::String => String::from("Unexpected string"),
       _ => format!("Unexpected token {:?}", self.token),

@@ -27,6 +27,7 @@ impl Context {
     // 运行一段 JS 代码
     pub fn run(&mut self, code: String) -> JSIResult<Value> {
       let program = self.parse(code)?;
+      // print!("program: {:?}", program);
       Ok(self.call(program))
     }
 
@@ -718,6 +719,6 @@ impl Context {
 
     // 获取当前调用栈
     fn get_current_stack() {
-      
+
     }
 } 

@@ -81,6 +81,7 @@ pub enum Expression {
   Object(ObjectLiteral),
   Array(ArrayLiteral),
   Function(FunctionDeclaration),
+  New(NewExpression),
   // {[a]: 12}
   ComputedPropertyName(ComputedPropertyName),
   // for class
@@ -168,6 +169,12 @@ pub struct FunctionDeclaration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedPropertyName {
   pub expression: Box<Expression>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewExpression {
+  pub expression: Box<Expression>,
+  pub arguments: Vec<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

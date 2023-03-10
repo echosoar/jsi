@@ -4,10 +4,10 @@ use jsi::{JSI, value::Value};
 fn run_throw_new_error() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
-  let errA = new Error();
-  // let errB = new Error(123);
-  // let errC = new Error('abc');
-  // let errD = Error('def');
+  let errA = new Error;
+  let errB = new Error(123);
+  let errC = new Error('abc');
+  let errD = Error('def');
   let result = {
     errA,
     errB,
