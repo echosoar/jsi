@@ -6,6 +6,7 @@ use crate::builtins::boolean::create_boolean;
 use crate::builtins::number::create_number;
 use crate::builtins::object::{Object, Property};
 use crate::builtins::string::create_string;
+use crate::error::{JSIResult, JSIError};
 use crate::scope::Scope;
 
 
@@ -147,6 +148,9 @@ impl Value {
     if let Value::String(_) = self {
       return true
     }
+    if let Value::StringObj(_) = self {
+      return true
+    }
     return false
   }
   pub fn to_string(&self, global: &Rc<RefCell<Object>>) -> String {
@@ -178,6 +182,9 @@ impl Value {
     if let Value::Number(_) = self {
       return true
     }
+    if let Value::NumberObj(_) = self {
+      return true
+    }
     return false
   }
 
@@ -197,7 +204,7 @@ impl Value {
 
 
 
-  pub fn to_number(&self) -> Option<f64> {
+  pub fn to_number(&self, global: &Rc<RefCell<Object>>) -> Option<f64> {
     match self {
       Value::String(str) => {
         match str.parse::<f64>() {
@@ -214,12 +221,27 @@ impl Value {
         }
       },
       _ => {
+        let base_type_obj: Option<&Rc<RefCell<Object>>> = match self {
+          Value::StringObj(obj) => Some(obj),
+          Value::NumberObj(obj) => Some(obj),
+          Value::BooleanObj(obj) => Some(obj),
+          _ => None
+        };
+        if let Some(obj) = base_type_obj {
+          let mut ctx = CallContext{
+            global:  Rc::downgrade(global),
+            this: Rc::downgrade(&obj),
+            reference: None,
+          };
+          let value = Object::call(&mut ctx, String::from("valueOf"), vec![]);
+          return value.to_number(global);
+        }
         // TODO: throw error
-       None
+        None
       }
     }
   }
-  pub fn to_boolean(&self) -> bool {
+  pub fn to_boolean(&self, global: &Rc<RefCell<Object>>) -> bool {
     match self {
         Value::Undefined | Value::Null => false,
         Value::String(str) => {
@@ -231,33 +253,68 @@ impl Value {
         Value::Boolean(boolean) => {
           return boolean.to_owned();
         },
-        _ => true
+        _ => {
+          let base_type_obj: Option<&Rc<RefCell<Object>>> = match self {
+            Value::StringObj(obj) => Some(obj),
+            Value::NumberObj(obj) => Some(obj),
+            Value::BooleanObj(obj) => Some(obj),
+            _ => None
+          };
+          if let Some(obj) = base_type_obj {
+            let mut ctx = CallContext{
+              global:  Rc::downgrade(global),
+              this: Rc::downgrade(&obj),
+              reference: None,
+            };
+            let value = Object::call(&mut ctx, String::from("valueOf"), vec![]);
+            return value.to_boolean(global);
+          }
+          true
+        }
     }
   }
 
+  // 实例化对象
+  pub fn instantiate_object(&self, global: &Rc<RefCell<Object>>, args: Vec<Value>) -> Option<Value> {
+    let rc_obj = self.to_weak_rc_object();
+    if let Some(wrc) = rc_obj {
+      let rc = wrc.upgrade();
+      if let Some(obj)= &rc {
+        let obj = Rc::clone(obj);
+        let create_method = obj.borrow().get_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string());
+        if let Some(create_method) = &create_method {
+          if let Value::Function(function_define) = create_method {
+            // 获取 function 定义
+            let fun_clone = Rc::clone(function_define);
+            let fun_obj = (*fun_clone).borrow_mut();
+            let function_define_value = fun_obj.get_initializer().unwrap();
+            // 内置方法
+            if let Statement::BuiltinFunction(builtin_function) = function_define_value.as_ref() {
+              let mut ctx = CallContext{
+                global:  Rc::downgrade(global),
+                this: Rc::downgrade(&function_define),
+                reference: None,
+              };
+              return Some((builtin_function)(&mut ctx, args));
+            }
+          }
+        }
+      }
+    }
+    None
+  }
+
   pub fn to_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {
-    let default = Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
-    match self {
-      Value::String(string) => {
-        let obj = create_string(global, Value::String(string.to_owned()));
-        if let Value::StringObj(obj) = obj {
-          return obj;
-        }
-        return default;
+    let obj_value = self.to_object_value(global);
+    match obj_value {
+      Value::StringObj(obj) => {
+        return obj;
       },
-      Value::Number(number) => {
-        let obj = create_number(global, Value::Number(number.to_owned()));
-        if let Value::NumberObj(obj) = obj {
-          return obj;
-        }
-        return default;
+      Value::NumberObj(obj) => {
+        return obj;
       },
-      Value::Boolean(boolean) => {
-        let obj = create_boolean(global, Value::Boolean(boolean.to_owned()));
-        if let Value::BooleanObj(obj) = obj {
-          return obj;
-        }
-        return default;
+      Value::BooleanObj(obj) => {
+        return obj;
       },
       _ => {
         let rc_obj = self.to_weak_rc_object();
@@ -267,10 +324,27 @@ impl Value {
             return Rc::clone(obj);
           }
         }
-        return default;
+        Rc::new(RefCell::new(Object::new(ClassType::Object,None)))
       }
     }
     
+  }
+
+  pub fn to_object_value(&self, global: &Rc<RefCell<Object>>) -> Value {
+    match self {
+      Value::String(string) => {
+        create_string(global, Value::String(string.to_owned()))
+      },
+      Value::Number(number) => {
+        create_number(global, Value::Number(number.to_owned()))
+      },
+      Value::Boolean(boolean) => {
+        create_boolean(global, Value::Boolean(boolean.to_owned()))
+      },
+      _ => {
+        self.clone()
+      }
+    }
   }
 
 
@@ -304,7 +378,7 @@ impl Value {
     }
   }
 
-  pub fn is_equal_to(&self, other_value: &Value, is_check_type: bool) -> bool {
+  pub fn is_equal_to(&self, global: &Rc<RefCell<Object>>, other_value: &Value, is_check_type: bool) -> bool {
     let self_type = self.get_value_type();
     let other_type = other_value.get_value_type();
     let is_same_type = self_type == other_type;
@@ -325,7 +399,7 @@ impl Value {
       // TODO: to primary value Number(123) => 123
       return false;
     }
-    return self.to_number() == other_value.to_number();
+    return self.to_number(global) == other_value.to_number(global);
   }
 
   // 匿名方法，需要绑定name
@@ -358,3 +432,5 @@ impl Value {
 pub struct CallStatementOptions {
   pub label: Option<String>,
 }
+
+pub const INSTANTIATE_OBJECT_METHOD_NAME: &str = "instantiate_object_method";

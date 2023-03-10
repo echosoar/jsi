@@ -6,6 +6,8 @@ pub type JSIResult<T> = result::Result<T, JSIError>;
 pub enum JSIErrorType {
   // 语法错误,遇到了不符合语法规范的标记（token）或标记顺序
   SyntaxError,
+  // 类型错误
+  TypeError,
 }
 
 #[derive(Debug, Clone)]

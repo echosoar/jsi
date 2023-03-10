@@ -7,7 +7,10 @@ use super::array::create_array;
 use super::function::builtin_function;
 use super::global::get_global_object;
 use crate::ast_node::{Statement, CallContext, ClassType};
-use crate::value::Value;
+use crate::value::{Value, INSTANTIATE_OBJECT_METHOD_NAME};
+
+pub const GLOBAL_OBJECT_NAME: &str = "Object";
+
 #[derive(Debug,Clone)]
 // 对象
 pub struct Object {
@@ -179,7 +182,7 @@ pub fn create_object(global: &Rc<RefCell<Object>>, obj_type: ClassType, value: O
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
   // 绑定 obj.constructor = global.Object
-  let global_object = get_global_object(global, String::from("Object"));
+  let global_object = get_global_object(global, GLOBAL_OBJECT_NAME.to_string());
   object_mut.constructor = Some(Rc::downgrade(&global_object));
   object
 }
@@ -187,8 +190,10 @@ pub fn create_object(global: &Rc<RefCell<Object>>, obj_type: ClassType, value: O
 
 
 pub fn bind_global_object(global: &Rc<RefCell<Object>>) {
-  let obj_rc = get_global_object(global, String::from("Object"));
+  let obj_rc = get_global_object(global, GLOBAL_OBJECT_NAME.to_string());
   let mut obj = (*obj_rc).borrow_mut();
+  let create_function = builtin_function(global, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
+  obj.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
   let property = obj.property.borrow_mut();
   // Object.keys
   let name = String::from("keys");
@@ -247,4 +252,19 @@ fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
   obj_type.push_str(this.class_type.to_string().as_str());
   obj_type.push(']');
   Value::String(obj_type)
+}
+
+fn create(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+  
+  let global = ctx.global.upgrade();
+  if let Some(global) = &global {
+    if args.len() > 0 {
+      let obj = args[0].to_object_value(global);
+      println!("args: {:?}", obj);
+      return obj
+    }
+    Value::Object(create_object(global, ClassType::Object, None))
+  } else {
+    Value::Undefined
+  }
 }

@@ -9,10 +9,10 @@ fn run_throw_new_error() {
   let errC = new Error('abc');
   let errD = Error('def');
   let result = {
-    errA,
-    errB,
-    errC,
-    errD
+    errA: errA.message,
+    errB: errB.message,
+    errC: errC.message,
+    errD: errD.message
   }
   "));
   println!("result: {:?}", result);

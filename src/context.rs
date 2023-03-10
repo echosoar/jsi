@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object}, array::create_array}, error::JSIResult};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, get_global_object_by_name}, array::create_array, error::GLOBAL_ERROR_NAME}, error::{JSIResult, JSIError, JSIErrorType}};
 
 
 use super::ast::AST;
@@ -100,7 +100,7 @@ impl Context {
           let call_options = CallStatementOptions {
             label: None,
           };
-          if condition.to_boolean() {
+          if condition.to_boolean(&self.global) {
             if let Statement::Unknown = *if_statement.then_statement {
               // no then
             } else {
@@ -233,6 +233,9 @@ impl Context {
         Expression::Number(number) => {
           return ValueInfo {value: Value::Number(number.value), name: None, reference: None }
         },
+        Expression::New(new_object) => {
+          ValueInfo { value: self.execute_new_expression(new_object).unwrap(), name: None, reference: None }
+        },
         Expression::Keyword(keyword) => {
           ValueInfo {
             value: match *keyword {
@@ -264,12 +267,12 @@ impl Context {
       // 逻辑运算 左值
       if expression.operator == Token::LogicalAnd {
         // false &&
-        if !left.to_boolean() {
+        if !left.to_boolean(&self.global) {
           return Value::Boolean(false);
         }
       } else if expression.operator == Token::LogicalOr {
         // true ||
-        if left.to_boolean() {
+        if left.to_boolean(&self.global) {
           return Value::Boolean(true);
         }
       }
@@ -279,7 +282,7 @@ impl Context {
       // 逻辑运算 右值
       if expression.operator == Token::LogicalAnd || expression.operator == Token::LogicalOr {
         // true && false / false || false
-        if !right.to_boolean() {
+        if !right.to_boolean(&self.global) {
           return Value::Boolean(false);
         } else {
           // true && true / false || true
@@ -289,10 +292,10 @@ impl Context {
 
       match expression.operator {
         Token::Equal => {
-          return Value::Boolean(left.is_equal_to(&right, false));
+          return Value::Boolean(left.is_equal_to(&self.global, &right, false));
         },
         Token::StrictEqual => {
-          return Value::Boolean(left.is_equal_to(&right, true));
+          return Value::Boolean(left.is_equal_to(&self.global, &right, true));
         },
         Token::Plus | Token::Subtract | Token::Multiply | Token::Slash |Token::Remainder => {
           // 数字处理
@@ -331,12 +334,12 @@ impl Context {
     fn execute_number_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
       let left_number: f64;
       let right_number: f64;
-      if let Some(num) = left.to_number() {
+      if let Some(num) = left.to_number(&self.global) {
         left_number = num;
       } else {
         return Value::NAN;
       }
-      if let Some(num) = right.to_number() {
+      if let Some(num) = right.to_number(&self.global) {
         right_number = num;
       } else {
         return Value::NAN;
@@ -355,12 +358,12 @@ impl Context {
     fn execute_compare_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
       let left_number: f64;
       let right_number: f64;
-      if let Some(num) = left.to_number() {
+      if let Some(num) = left.to_number(&self.global) {
         left_number = num;
       } else {
         return Value::NAN;
       }
-      if let Some(num) = right.to_number() {
+      if let Some(num) = right.to_number(&self.global) {
         right_number = num;
       } else {
         return Value::NAN;
@@ -406,7 +409,7 @@ impl Context {
     // 执行 ++i --i
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> Value {
       let mut operand_info = self.execute_expression_info(&expression.operand);
-      let mut new_value = operand_info.value.to_number().unwrap();
+      let mut new_value = operand_info.value.to_number(&self.global).unwrap();
       match &expression.operator {
           Token::Increment => {
             new_value = new_value + 1f64;
@@ -425,7 +428,7 @@ impl Context {
     fn execute_postfix_unary_expression(&mut self, expression: &PostfixUnaryExpression) -> Value {
       let mut operand_info = self.execute_expression_info(&expression.operand);
       let origin_value = operand_info.value.clone();
-      let mut new_value = origin_value.to_number().unwrap();
+      let mut new_value = origin_value.to_number(&self.global).unwrap();
       match &expression.operator {
           Token::Increment => {
             new_value = new_value + 1f64;
@@ -475,7 +478,7 @@ impl Context {
             // nothing to do
           } else {
             let value = self.execute_expression(condition);
-            if !value.to_boolean() {
+            if !value.to_boolean(&self.global) {
               break;
             }
           }
@@ -536,7 +539,7 @@ impl Context {
             // nothing to do
           } else {
             let value = self.execute_expression(condition);
-            if !value.to_boolean() {
+            if !value.to_boolean(&self.global) {
               break;
             }
           }
@@ -560,7 +563,7 @@ impl Context {
         let case = &switch_statment.clauses[case_index];
         if let Some(condition) = &case.condition {
           let case_value = self.execute_expression(condition);
-          if case_value.is_equal_to(&value, true) {
+          if case_value.is_equal_to(&self.global, &value, true) {
             matched = case_index as i32;
           }
         }
@@ -574,6 +577,21 @@ impl Context {
             break;
           }
         }
+      }
+    }
+
+    fn execute_new_expression(&mut self, new_object: &NewExpression) -> JSIResult<Value> {
+      let constructor = self.execute_expression(new_object.expression.as_ref());
+      let mut arguments: Vec<Value> = vec![];
+        for element in &new_object.arguments {
+          arguments.push(self.execute_expression(element));
+        }
+      let obj = constructor.instantiate_object(&self.global, arguments);
+      if let Some(obj) = obj {
+        Ok(obj)
+      } else {
+        // TODO: constructor name get ast literal
+        Err(JSIError::new(JSIErrorType::SyntaxError, format!("{} is not a constructor", constructor.to_string(&self.global)), 0, 0))
       }
     }
 
@@ -715,6 +733,8 @@ impl Context {
       global_scope.set_value(String::from("Array"), Value::RefObject(Rc::downgrade(&array)));
       let function = get_global_object(&self.global, String::from("Function"));
       global_scope.set_value(String::from("Function"), Value::RefObject(Rc::downgrade(&function)));
+      let error = get_global_object_by_name(&self.global, GLOBAL_ERROR_NAME);
+      global_scope.set_value(GLOBAL_ERROR_NAME.to_string(), Value::RefObject(Rc::downgrade(&error)));
     }
 
     // 获取当前调用栈

@@ -85,9 +85,10 @@ fn array_iter_mut<F: FnMut(i32, &Value)>(ctx: &mut CallContext, mut callback: F)
 // Array.prototype.push
 fn array_push(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   // 插入值
+  let global = ctx.global.upgrade().unwrap();
   let this_rc = ctx.this.upgrade().unwrap();
   let mut this = this_rc.borrow_mut();
-  let mut len = this.get_property_value(String::from("length")).to_number().unwrap() as usize;
+  let mut len = this.get_property_value(String::from("length")).to_number(&global).unwrap() as usize;
   for value in args.iter() { 
     this.define_property(len.to_string(), Property { enumerable: true, value: value.clone() });
     len += 1

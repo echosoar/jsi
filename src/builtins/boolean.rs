@@ -24,24 +24,25 @@ pub fn bind_global_boolean(global:  &Rc<RefCell<Object>>) {
     let name = String::from("toString");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 0f64, boolean_to_string) });
     let name = String::from("valueOf");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, boolean_value_of) });
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, value_of) });
   }
 }
 
 // Boolean.prototype.toString
 fn boolean_to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
-  let value = boolean_value_of(ctx, vec![]);
+  let value = value_of(ctx, vec![]);
   let global = ctx.global.upgrade().unwrap();
   Value::String(value.to_string(&global))
 }
 
 // Boolean.prototype.valueOf
-fn boolean_value_of(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+fn value_of(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+  let global = ctx.global.upgrade().unwrap();
   let this_origin = ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
   let init = this_rc.borrow().get_inner_property_value(String::from("value"));
   if let Some(value) = init {
-    return Value::Boolean(value.to_boolean())
+    return Value::Boolean(value.to_boolean(&global))
   }
   Value::Boolean(false)
 }

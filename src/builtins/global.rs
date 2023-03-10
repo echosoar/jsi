@@ -6,8 +6,9 @@ use crate::value::Value;
 
 use super::array::bind_global_array;
 use super::boolean::bind_global_boolean;
-use super::error::bind_global_error;
+use super::error::{bind_global_error, GLOBAL_ERROR_NAME};
 use super::function::bind_global_function;
+use super::number::bind_global_number;
 use super::object::{Object, Property, bind_global_object};
 use super::string::bind_global_string;
 pub fn new_global_object() -> Rc<RefCell<Object>> {
@@ -47,7 +48,7 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
     global_obj.property.insert(String::from("String"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_string))});
     global_obj.property.insert(String::from("Number"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_number))});
     global_obj.property.insert(String::from("Boolean"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_boolean))});
-    global_obj.property.insert(String::from("Error"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_error))});
+    global_obj.property.insert(GLOBAL_ERROR_NAME.to_string(), Property { enumerable: true, value: Value::Object(Rc::clone(&global_error))});
   }
 
   // let global = Global{
@@ -65,6 +66,8 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
   bind_global_string(&global_clone);
   // 绑定  Boolean 的 静态方法 和 原型链方法
   bind_global_boolean(&global_clone);
+   // 绑定  Number 的 静态方法 和 原型链方法
+   bind_global_number(&global_clone);
   // 绑定  Error 的 静态方法 和 原型链方法
   bind_global_error(&global_clone);
   return global;
@@ -73,5 +76,11 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
 pub fn get_global_object(global: &Rc<RefCell<Object>>, name: String) -> Rc<RefCell<Object>> {
   let clone_global_mut = (*global).borrow_mut();
   let obj = clone_global_mut.get_value(name.clone()).to_object(global);
+  return obj;
+}
+
+pub fn get_global_object_by_name(global: &Rc<RefCell<Object>>, name: &str) -> Rc<RefCell<Object>> {
+  let clone_global_mut = (*global).borrow_mut();
+  let obj = clone_global_mut.get_value(name.to_string().clone()).to_object(global);
   return obj;
 }

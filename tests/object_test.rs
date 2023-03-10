@@ -126,3 +126,13 @@ fn run_object_with_array_key() {
   Object.keys(b).toString()")).unwrap();
   assert_eq!(result , Value::String(String::from("1,2")));
 }
+
+#[test]
+fn run_new_object() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let num = new Object(1);\n
+  let num2 = num + 2;
+  num2.toString()")).unwrap();
+  assert_eq!(result , Value::String(String::from("3")));
+}
