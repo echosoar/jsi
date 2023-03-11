@@ -7,6 +7,7 @@ pub mod value;
 pub mod scope;
 pub mod error;
 pub mod builtins;
+pub mod constants;
 
 use ast::Program;
 use context::Context;

@@ -1,10 +1,9 @@
 use std::{rc::Rc, cell::RefCell};
 
-use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}};
+use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}, constants::GLOBAL_ERROR_NAME};
 
 use super::{object::{create_object, Object, Property}, global::get_global_object, function::builtin_function};
 
-pub const GLOBAL_ERROR_NAME: &str = "Error";
  // ref:https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-error-objects
  pub fn create_error(global: &Rc<RefCell<Object>>, init: Value) -> Value {
   let global_error = get_global_object(global, GLOBAL_ERROR_NAME.to_string());

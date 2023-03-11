@@ -2,15 +2,19 @@ use std::cell::{RefCell};
 use std::rc::{Rc};
 
 use crate::ast_node::ClassType;
+use crate::constants::{GLOBAL_BOOLEAN_NAME, GLOBAL_ERROR_NAME};
 use crate::value::Value;
 
 use super::array::bind_global_array;
-use super::boolean::bind_global_boolean;
-use super::error::{bind_global_error, GLOBAL_ERROR_NAME};
+use super::boolean::{bind_global_boolean};
+use super::error::{bind_global_error};
 use super::function::bind_global_function;
 use super::number::bind_global_number;
 use super::object::{Object, Property, bind_global_object};
 use super::string::bind_global_string;
+
+pub const IS_GLOABL_OBJECT: &str = "isGlobal";
+
 pub fn new_global_object() -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
   let object_clone = Rc::clone(&object);
@@ -31,31 +35,28 @@ pub fn new_global_object() -> Rc<RefCell<Object>> {
 pub fn new_global_this() -> Rc<RefCell<Object>> {
   // Global
   let global = new_global_object();
-  // Object
-  let object = new_global_object();
-  let array = new_global_object();
-  let function = new_global_object();
-  let global_string = new_global_object();
-  let global_number = new_global_object();
-  let global_boolean = new_global_object();
-  let global_error = new_global_object();
   let global_clone = Rc::clone(&global);
+  // Object
+  let global_object_name_list = vec![
+    String::from("Object"),
+    String::from("Array"),
+    String::from("Function"),
+    String::from("String"),
+    String::from("Number"),
+    GLOBAL_BOOLEAN_NAME.to_string(),
+    GLOBAL_ERROR_NAME.to_string(),
+  ];
   {
     let mut global_obj = global_clone.borrow_mut();
-    global_obj.property.insert(String::from("Object"), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
-    global_obj.property.insert(String::from("Array"), Property { enumerable: true, value: Value::Object(Rc::clone(&array))});
-    global_obj.property.insert(String::from("Function"), Property { enumerable: true, value: Value::Object(Rc::clone(&function))});
-    global_obj.property.insert(String::from("String"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_string))});
-    global_obj.property.insert(String::from("Number"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_number))});
-    global_obj.property.insert(String::from("Boolean"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_boolean))});
-    global_obj.property.insert(GLOBAL_ERROR_NAME.to_string(), Property { enumerable: true, value: Value::Object(Rc::clone(&global_error))});
+    for name in global_object_name_list.iter() {
+      let object = new_global_object();
+      let object_rc = Rc::clone(&object);
+      let mut object_borrow = object_rc.borrow_mut();
+      object_borrow.set_inner_property_value(IS_GLOABL_OBJECT.to_string(), Value::Boolean(true));
+      global_obj.property.insert(name.clone(), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
+    }
   }
 
-  // let global = Global{
-  //   object,
-  //   array,
-  //   function,
-  // };
   // 绑定 Object 的 静态方法 和 原型链方法
   bind_global_object(&global_clone);
   // 绑定 Function 的 静态方法 和 原型链方法

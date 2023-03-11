@@ -248,7 +248,7 @@ impl Value {
           return str.to_owned() == String::from("");
         },
         Value::Number(num) => {
-          return num.to_owned() == 0f64;
+          return num.to_owned() != 0f64;
         },
         Value::Boolean(boolean) => {
           return boolean.to_owned();

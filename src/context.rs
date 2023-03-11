@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, get_global_object_by_name}, array::create_array, error::GLOBAL_ERROR_NAME}, error::{JSIResult, JSIError, JSIErrorType}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, get_global_object_by_name, IS_GLOABL_OBJECT}, array::create_array}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_ERROR_NAME, GLOBAL_BOOLEAN_NAME}};
 
 
 use super::ast::AST;
@@ -382,15 +382,54 @@ impl Context {
       for arg in expression.arguments.iter() {
         arguments.push(self.execute_expression(arg));
       }
-      if let Value::Function(function_object) = callee.value {
-        let mut reference = None;
-        if let Some(call_ref) = &callee.reference {
-          reference = call_ref.to_weak_rc_object();
+
+      match &callee.value {
+        Value::Function(function_object) => {
+          let mut reference = None;
+          if let Some(call_ref) = &callee.reference {
+            reference = call_ref.to_weak_rc_object();
+          }
+          return self.call_function_object(function_object.to_owned(), callee.reference, reference, arguments);
+        },
+        Value::RefObject(obj_ref) => {
+          let obj = obj_ref.upgrade();
+          if let Some(obj_rc) = obj {
+            let is_global_object = {
+              let function_mut = obj_rc.borrow_mut();
+              function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
+            };
+            if let Some(_) = is_global_object {
+              return callee.value.instantiate_object(&self.global, arguments).unwrap();
+            }
+          }
+          // TODO: 非函数，报错
+          Value::Undefined
+        },
+        _ => {
+          // TODO: 非函数 报错
+          Value::Undefined
         }
-        return self.call_function_object(function_object, callee.reference, reference, arguments);
       }
-      // TODO: throw error,非函数
-      Value::Undefined
+
+      // if let Value::Function(function_object) = callee.value.clone() {
+      //   // 判断是否是全局对象，如果是的话则走实例化
+      //   let is_global_object = {
+      //     let function_rc = Rc::clone(&function_object);
+      //     let function_mut = function_rc.borrow_mut();
+      //     function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
+      //   };
+      //   println!("is_global_object {:?}", is_global_object);
+      //   if let Some(_) = is_global_object {
+      //     return callee.value.instantiate_object(&self.global, arguments).unwrap();
+      //   }
+      //   let mut reference = None;
+      //   if let Some(call_ref) = &callee.reference {
+      //     reference = call_ref.to_weak_rc_object();
+      //   }
+      //   return self.call_function_object(function_object, callee.reference, reference, arguments);
+      // }
+      // // TODO: throw error,非函数
+      // Value::Undefined
     }
 
     // 执行赋值表达式
@@ -733,6 +772,8 @@ impl Context {
       global_scope.set_value(String::from("Array"), Value::RefObject(Rc::downgrade(&array)));
       let function = get_global_object(&self.global, String::from("Function"));
       global_scope.set_value(String::from("Function"), Value::RefObject(Rc::downgrade(&function)));
+      let boolean = get_global_object_by_name(&self.global, GLOBAL_BOOLEAN_NAME);
+      global_scope.set_value(GLOBAL_BOOLEAN_NAME.to_string(), Value::RefObject(Rc::downgrade(&boolean)));
       let error = get_global_object_by_name(&self.global, GLOBAL_ERROR_NAME);
       global_scope.set_value(GLOBAL_ERROR_NAME.to_string(), Value::RefObject(Rc::downgrade(&error)));
     }

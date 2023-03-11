@@ -132,7 +132,8 @@ fn run_new_object() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   let num = new Object(1);\n
-  let num2 = num + 2;
-  num2.toString()")).unwrap();
-  assert_eq!(result , Value::String(String::from("3")));
+  let num2 = Object(2);\n
+  let numRes = num + num2 + 2;
+  numRes.toString()")).unwrap();
+  assert_eq!(result , Value::String(String::from("5")));
 }

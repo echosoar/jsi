@@ -7,9 +7,9 @@ use super::array::create_array;
 use super::function::builtin_function;
 use super::global::get_global_object;
 use crate::ast_node::{Statement, CallContext, ClassType};
+use crate::constants::GLOBAL_OBJECT_NAME;
 use crate::value::{Value, INSTANTIATE_OBJECT_METHOD_NAME};
 
-pub const GLOBAL_OBJECT_NAME: &str = "Object";
 
 #[derive(Debug,Clone)]
 // 对象
@@ -175,7 +175,6 @@ pub struct Property {
   // TODO: 属性的描述符 descriptor writable ，是否可枚举等
 }
 
-
 // 实例化对象
 pub fn create_object(global: &Rc<RefCell<Object>>, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(obj_type, value)));
@@ -186,8 +185,6 @@ pub fn create_object(global: &Rc<RefCell<Object>>, obj_type: ClassType, value: O
   object_mut.constructor = Some(Rc::downgrade(&global_object));
   object
 }
-
-
 
 pub fn bind_global_object(global: &Rc<RefCell<Object>>) {
   let obj_rc = get_global_object(global, GLOBAL_OBJECT_NAME.to_string());
@@ -255,12 +252,10 @@ fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
 }
 
 fn create(ctx: &mut CallContext, args: Vec<Value>) -> Value {
-  
   let global = ctx.global.upgrade();
   if let Some(global) = &global {
     if args.len() > 0 {
       let obj = args[0].to_object_value(global);
-      println!("args: {:?}", obj);
       return obj
     }
     Value::Object(create_object(global, ClassType::Object, None))
