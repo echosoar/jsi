@@ -12,8 +12,12 @@ use crate::scope::Scope;
 
 #[derive(Debug)]
 pub struct ValueInfo {
+  // 变量名
   pub name: Option<String>,
+  // 值
   pub value: Value,
+  // 访问的路径
+  pub access_path: String,
   pub reference: Option<Value>
 }
 
@@ -72,7 +76,7 @@ pub enum Value {
   Scope(Weak<RefCell<Scope>>),
   FunctionNeedToCall(Rc<RefCell<Object>>,Vec<Value>),
   // 中断
-  Interrupt(Token,Expression)
+  Interrupt(Token,Expression),
 }
 
 #[derive(PartialEq)]
@@ -153,31 +157,7 @@ impl Value {
     }
     return false
   }
-  pub fn to_string(&self, global: &Rc<RefCell<Object>>) -> String {
-    match self {
-      Value::String(str) => str.clone(),
-      Value::Number(number) => number.to_string(),
-      Value::Boolean(bool) => {
-        if *bool {
-          String::from("true")
-        } else {
-          String::from("false")
-        }
-      },
-      Value::NAN => String::from("NaN"),
-      Value::Array(obj) => {
-        let weak = Rc::downgrade(obj);
-        let call_ctx = &mut CallContext {
-          global: Rc::downgrade(global),
-          this: weak,
-          reference: None,
-        };
-        let value = Object::call(call_ctx, String::from("toString"), vec![]);
-        return value.to_string(global)
-      },
-      _ => String::from(""),
-    }
-  }
+  
   pub fn is_number(&self) -> bool {
     if let Value::Number(_) = self {
       return true
@@ -202,7 +182,55 @@ impl Value {
     return false
   }
 
-
+  pub fn to_string(&self, global: &Rc<RefCell<Object>>) -> String {
+    match self {
+      Value::String(str) => str.clone(),
+      Value::Number(number) => number.to_string(),
+      Value::Boolean(bool) => {
+        if *bool {
+          String::from("true")
+        } else {
+          String::from("false")
+        }
+      },
+      Value::NAN => String::from("NaN"),
+      _ => {
+        let base_type_obj: Option<&Rc<RefCell<Object>>> = match self {
+          Value::StringObj(obj) => Some(obj),
+          Value::NumberObj(obj) => Some(obj),
+          Value::BooleanObj(obj) => Some(obj),
+          _ => None
+        };
+        if let Some(obj) = base_type_obj {
+          let mut ctx = CallContext{
+            global:  Rc::downgrade(global),
+            this: Rc::downgrade(&obj),
+            reference: None,
+          };
+          let value = Object::call(&mut ctx, String::from("valueOf"), vec![]);
+          return value.to_string(global);
+        }
+        // object
+        let object: Option<&Rc<RefCell<Object>>> = match self {
+          Value::Array(obj) => Some(obj),
+          Value::Function(obj) => Some(obj),
+          Value::Object(obj) => Some(obj),
+          _ => None
+        };
+        if let Some(obj) = object {
+          let weak = Rc::downgrade(obj);
+          let call_ctx = &mut CallContext {
+            global: Rc::downgrade(global),
+            this: weak,
+            reference: None,
+          };
+          let value = Object::call(call_ctx, String::from("toString"), vec![]);
+          return value.to_string(global)
+        }
+        return String::from("");
+      },
+    }
+  }
 
   pub fn to_number(&self, global: &Rc<RefCell<Object>>) -> Option<f64> {
     match self {

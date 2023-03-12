@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 
-use crate::{value::Value, ast_node::{ClassType, CallContext}};
+use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}};
 
 use super::{object::{create_object, Object, Property}, global::get_global_object, function::builtin_function};
 
@@ -16,8 +16,10 @@ use super::{object::{create_object, Object, Property}, global::get_global_object
 
 pub fn bind_global_number(global:  &Rc<RefCell<Object>>) {
   let number_rc = get_global_object(global, String::from("Number"));
-  let bool = (*number_rc).borrow_mut();
-  if let Some(prop)= &bool.prototype {
+  let mut number = (*number_rc).borrow_mut();
+  let create_function = builtin_function(global, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
+  number.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
+  if let Some(prop)= &number.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = (*prototype_rc).borrow_mut();
     let name = String::from("toString");
@@ -45,4 +47,17 @@ fn value_of(ctx: &mut CallContext, _: Vec<Value>) -> Value {
     return Value::Number(value.to_number(&global).unwrap())
   }
   Value::Number(0f64)
+}
+
+fn create(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+  let mut param = Value::Undefined;
+  if args.len() > 0 {
+    param = args[0].clone();
+  }
+  let global = ctx.global.upgrade();
+  if let Some(global) = &global {
+    create_number(global, param)
+  } else {
+    Value::Undefined
+  }
 }

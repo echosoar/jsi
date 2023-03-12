@@ -1,14 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use jsi::{JSI, value::Value, builtins::object::Object, ast_node::ClassType};
-
-#[test]
-fn run_function() {
-  let mut jsi_vm = JSI::new();
-  let value = jsi_vm.parse(String::from("function abc(a, b, c) { return a +b - c;} abc(123, 456, 789);"));
-  println!("{:?}", value)
-  // assert_eq!(value, Value::Number(-210f64)) // 123 + 456 - 789 = -210
-}
+use jsi::{JSI, value::Value, builtins::object::Object, ast_node::ClassType, error::JSIErrorType};
 
 #[test]
 fn run_function_name_and_length() {
@@ -63,8 +55,13 @@ fn run_function_scope1() {
   let fun2 = function() {
     return a;
   };\n
-  fun1()")).unwrap();
-  assert_eq!(value , Value::Undefined);
+  fun1()"));
+  if let Err(jsi_error) = value {
+    assert_eq!(jsi_error.error_type, JSIErrorType::ReferenceError);
+    assert_eq!(jsi_error.message , String::from("a is not defined"));
+  } else {
+    assert!(false , "need TypeError");
+  }
 }
 
 #[test]

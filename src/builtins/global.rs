@@ -2,7 +2,7 @@ use std::cell::{RefCell};
 use std::rc::{Rc};
 
 use crate::ast_node::ClassType;
-use crate::constants::{GLOBAL_BOOLEAN_NAME, GLOBAL_ERROR_NAME};
+use crate::constants::{GLOBAL_BOOLEAN_NAME, GLOBAL_ERROR_NAME, GLOBAL_OBJECT_NAME_LIST};
 use crate::value::Value;
 
 use super::array::bind_global_array;
@@ -36,24 +36,15 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
   // Global
   let global = new_global_object();
   let global_clone = Rc::clone(&global);
-  // Object
-  let global_object_name_list = vec![
-    String::from("Object"),
-    String::from("Array"),
-    String::from("Function"),
-    String::from("String"),
-    String::from("Number"),
-    GLOBAL_BOOLEAN_NAME.to_string(),
-    GLOBAL_ERROR_NAME.to_string(),
-  ];
   {
     let mut global_obj = global_clone.borrow_mut();
-    for name in global_object_name_list.iter() {
+    // 绑定全局对象
+    for name in GLOBAL_OBJECT_NAME_LIST.iter() {
       let object = new_global_object();
       let object_rc = Rc::clone(&object);
       let mut object_borrow = object_rc.borrow_mut();
       object_borrow.set_inner_property_value(IS_GLOABL_OBJECT.to_string(), Value::Boolean(true));
-      global_obj.property.insert(name.clone(), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
+      global_obj.property.insert(name.to_string(), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
     }
   }
 

@@ -1,4 +1,6 @@
-use std::result;
+use std::{result, rc::Rc, cell::RefCell};
+
+use crate::{builtins::{object::Object, error::create_error}, value::Value};
 
 pub type JSIResult<T> = result::Result<T, JSIError>;
 
@@ -8,6 +10,8 @@ pub enum JSIErrorType {
   SyntaxError,
   // 类型错误
   TypeError,
+  // 引用错误，不存在的变量
+  ReferenceError,
 }
 
 #[derive(Debug, Clone)]
@@ -24,7 +28,18 @@ impl JSIError {
         error_type,
         message,
         line,
-        column
+        column,
       }
+    }
+
+    pub fn to_error_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {
+      let new_error = create_error(global, Value::String(self.message.clone()));
+      // TODO: set error line/stack
+      let obj = if let Value::Object(obj) = new_error {
+        Some(obj)
+      } else {
+        None
+      }.unwrap();
+      return obj;
     }
 }

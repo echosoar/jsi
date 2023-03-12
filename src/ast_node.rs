@@ -17,6 +17,7 @@ pub enum Statement {
   Label(LabeledStatement),
   Return(ReturnStatement),
   Switch(SwitchStatement),
+  Try(TryCatchStatement),
   Unknown, // 未知
   Var(VariableDeclarationStatement),
   While(ForStatement),
@@ -52,6 +53,7 @@ impl fmt::Debug for Statement {
       Statement::Label(_) => { stype = "label"},
       Statement::Return(_) => { stype = "return"},
       Statement::Switch(_) => { stype = "switch"},
+      Statement::Try(_) => { stype = "try"},
       Statement::Var(_) => { stype = "var"},
       Statement::While(_) => { stype = "while"},
       _ => {
@@ -97,7 +99,17 @@ pub enum Keywords {
   True,
   Null,
   Undefined,
-  X,
+}
+
+impl Keywords {
+    pub fn to_string(&self) -> String {
+      match &self {
+        Keywords::False => String::from("false"),
+        Keywords::True => String::from("true"),
+        Keywords::Null => String::from("null"),
+        Keywords::Undefined => String::from("undefined"),
+      }
+    }
 }
 
 #[derive(Debug,Clone, PartialEq)]
@@ -154,6 +166,21 @@ pub struct ForStatement {
   pub statement: Box<Statement>,
   pub post_judgment: bool,
 }
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TryCatchStatement {
+  pub body: BlockStatement,
+  pub catch: Option<CatchClause>,
+  pub finally: Option<BlockStatement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+  pub declaration: Option<IdentifierLiteral>,
+  pub body: BlockStatement
+}
+
 
 
 #[derive(Debug, Clone, PartialEq)]

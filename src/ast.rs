@@ -3,7 +3,7 @@
 use std::{io, fmt};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -123,6 +123,9 @@ impl AST{
         Token::Class => {
           // class (ES2015)
           Ok(Statement::Class(self.parse_class()?))
+        },
+        Token::Try => {
+          self.parse_try_catch_statment()
         },
         Token::LeftBrace => {
           // block
@@ -512,6 +515,45 @@ impl AST{
       members,
       heritage: None,
     })
+  }
+
+  fn parse_try_catch_statment(&mut self) -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Try)?;
+
+    let body_statement = self.parse_block_statement()?;
+    let body = match body_statement {
+      Statement::Block(block) => block,
+      _ => BlockStatement { statements: vec![] }
+    };
+
+    let mut try_statment = TryCatchStatement {
+      body,
+      catch: None,
+      finally: None
+    };
+
+    if self.token == Token::Catch {
+      self.check_token_and_next(Token::Catch)?;
+      let mut identifier = None;
+      if self.token == Token::LeftParenthesis {
+        self.check_token_and_next(Token::LeftParenthesis)?;
+        let expression = self.parse_expression()?;
+        if let Expression::Identifier(idti) = expression {
+          identifier = Some(idti);
+        }
+        self.check_token_and_next(Token::RightParenthesis)?;
+      }
+      
+      let body_statement = self.parse_block_statement()?;
+      let body = match body_statement {
+        Statement::Block(block) => block,
+        _ => BlockStatement { statements: vec![] }
+      };
+      try_statment.catch = Some(CatchClause { declaration: identifier, body })
+    }
+
+    // TODO: finally
+    Ok(Statement::Try(try_statment))
   }
 
   fn parse_return_statement(&mut self) -> JSIResult<Statement> {
@@ -1382,6 +1424,9 @@ impl AST{
   // 解析属性访问(.)语法 优先级 18
   fn parse_property_access_expression(&mut self) -> JSIResult<Expression> {
     self.next();
+    if self.token == Token::Number {
+      return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Unexpected number"), 0, 0))
+    }
     let literal = self.literal.clone();
     self.next();
     return Ok(Expression::PropertyAccess(PropertyAccessExpression{
