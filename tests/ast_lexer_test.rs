@@ -39,7 +39,7 @@ fn ast_lexer_binary_token() {
     let mut code = String::from("1 ");
     code.push_str(token.oper.as_str());
     code.push_str(" 1;");
-    let program = jsi_vm.parse(code);
+    let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::Binary(BinaryExpression {
         left: Box::new(Expression::Number(NumberLiteral{ literal: String::from("1"), value: 1f64 })),
@@ -76,7 +76,7 @@ fn ast_lexer_assign_token() {
     let mut code = String::from("1");
     code.push_str(token.oper.as_str());
     code.push_str("1;");
-    let program = jsi_vm.parse(code);
+    let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::Assign(AssignExpression {
         left: Box::new(Expression::Number(NumberLiteral{ literal: String::from("1"), value: 1f64 })),
@@ -106,7 +106,7 @@ fn ast_lexer_prefix_unary_token() {
     let mut code = String::from("");
     code.push_str(token.oper.as_str());
     code.push_str(" i;");
-    let program = jsi_vm.parse(code);
+    let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::PrefixUnary(PrefixUnaryExpression {
         operand: Box::new(Expression::Identifier(IdentifierLiteral{ literal: String::from("i") })),
@@ -128,7 +128,7 @@ fn ast_lexer_postfix_unary_token() {
     let mut code = String::from("i");
     code.push_str(token.oper.as_str());
     code.push_str(";");
-    let program = jsi_vm.parse(code);
+    let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::PostfixUnary(PostfixUnaryExpression {
         operand: Box::new(Expression::Identifier(IdentifierLiteral{ literal: String::from("i") })),
@@ -151,7 +151,7 @@ fn ast_lexer_associativity_right_exponentiation() {
     code.push_str(" 3 ");
     code.push_str(token.oper.as_str());
     code.push_str(" 2;");
-    let program = jsi_vm.parse(code);
+    let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::Binary(BinaryExpression { // 向右结合 2 op (3 op 2)
         left: Box::new(Expression::Number(NumberLiteral {  literal: String::from("2"), value: 2f64 })), // 2,
@@ -189,7 +189,7 @@ fn ast_lexer_associativity_right_exponentiation() {
     code.push_str(" 3 ");
     code.push_str(token.oper.as_str());
     code.push_str(" 2;");
-    let program = jsi_vm.parse(code);
+    let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::Assign(AssignExpression { // 向右结合 2 op (3 op 2)
         left: Box::new(Expression::Number(NumberLiteral {  literal: String::from("2"), value: 2f64 })), // 2,
@@ -204,7 +204,7 @@ fn ast_lexer_associativity_right_exponentiation() {
   }
   // TODO: single oper
   // 三目运算符
-  let program = jsi_vm.parse(String::from("1 ? 2 ? 3: 4: 5;"));
+  let program = jsi_vm.parse(String::from("1 ? 2 ? 3: 4: 5;")).unwrap();
   assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
     expression: Expression::Conditional(ConditionalExpression {
       condition: Box::new(Expression::Number(NumberLiteral {  literal: String::from("1"), value: 1f64 })),
@@ -250,7 +250,7 @@ fn ast_lexer_associativity_left_exponentiation() {
     code.push_str(" 3 ");
     code.push_str(token.oper.as_str());
     code.push_str(" 2;");
-    let program = jsi_vm.parse(code);
+    let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::Binary(BinaryExpression { // 向左结合 (2 op 3) op 2
         left: Box::new(Expression::Binary(BinaryExpression { // 2 op 3
@@ -269,7 +269,7 @@ fn ast_lexer_associativity_left_exponentiation() {
 #[test]
 fn ast_lexer_priority_between_exponentiation_shift() {
   let mut jsi_vm = JSI::new();
-  let program = jsi_vm.parse(String::from("2 ** 3 >> 1;"));
+  let program = jsi_vm.parse(String::from("2 ** 3 >> 1;")).unwrap();
   assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
     expression: Expression::Binary(BinaryExpression {
       left: Box::new(Expression::Binary(BinaryExpression { // 2 ** 3
@@ -287,7 +287,7 @@ fn ast_lexer_priority_between_exponentiation_shift() {
 #[test]
 fn ast_lexer_complex() {
   let mut jsi_vm = JSI::new();
-  let program = jsi_vm.parse(String::from("(1 + 2) * 3 - 4 ** 2 >> (1 * 4 -3 + 1 == 2 ? 1 : 2);")); // return value is 4
+  let program = jsi_vm.parse(String::from("(1 + 2) * 3 - 4 ** 2 >> (1 * 4 -3 + 1 == 2 ? 1 : 2);")).unwrap(); // return value is 4
   assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
     expression: Expression::Binary(BinaryExpression {
       left: Box::new(Expression::Binary(BinaryExpression { // (1 + 2) * 3 - 4 ** 2

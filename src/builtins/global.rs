@@ -2,13 +2,19 @@ use std::cell::{RefCell};
 use std::rc::{Rc};
 
 use crate::ast_node::ClassType;
+use crate::constants::{GLOBAL_BOOLEAN_NAME, GLOBAL_ERROR_NAME, GLOBAL_OBJECT_NAME_LIST};
 use crate::value::Value;
 
 use super::array::bind_global_array;
-use super::boolean::bind_global_boolean;
+use super::boolean::{bind_global_boolean};
+use super::error::{bind_global_error};
 use super::function::bind_global_function;
+use super::number::bind_global_number;
 use super::object::{Object, Property, bind_global_object};
 use super::string::bind_global_string;
+
+pub const IS_GLOABL_OBJECT: &str = "isGlobal";
+
 pub fn new_global_object() -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
   let object_clone = Rc::clone(&object);
@@ -29,29 +35,19 @@ pub fn new_global_object() -> Rc<RefCell<Object>> {
 pub fn new_global_this() -> Rc<RefCell<Object>> {
   // Global
   let global = new_global_object();
-  // Object
-  let object = new_global_object();
-  let array = new_global_object();
-  let function = new_global_object();
-  let global_string = new_global_object();
-  let global_number = new_global_object();
-  let global_boolean = new_global_object();
   let global_clone = Rc::clone(&global);
   {
     let mut global_obj = global_clone.borrow_mut();
-    global_obj.property.insert(String::from("Object"), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
-    global_obj.property.insert(String::from("Array"), Property { enumerable: true, value: Value::Object(Rc::clone(&array))});
-    global_obj.property.insert(String::from("Function"), Property { enumerable: true, value: Value::Object(Rc::clone(&function))});
-    global_obj.property.insert(String::from("String"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_string))});
-    global_obj.property.insert(String::from("Number"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_number))});
-    global_obj.property.insert(String::from("Boolean"), Property { enumerable: true, value: Value::Object(Rc::clone(&global_boolean))});
+    // 绑定全局对象
+    for name in GLOBAL_OBJECT_NAME_LIST.iter() {
+      let object = new_global_object();
+      let object_rc = Rc::clone(&object);
+      let mut object_borrow = object_rc.borrow_mut();
+      object_borrow.set_inner_property_value(IS_GLOABL_OBJECT.to_string(), Value::Boolean(true));
+      global_obj.property.insert(name.to_string(), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
+    }
   }
 
-  // let global = Global{
-  //   object,
-  //   array,
-  //   function,
-  // };
   // 绑定 Object 的 静态方法 和 原型链方法
   bind_global_object(&global_clone);
   // 绑定 Function 的 静态方法 和 原型链方法
@@ -62,11 +58,21 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
   bind_global_string(&global_clone);
   // 绑定  Boolean 的 静态方法 和 原型链方法
   bind_global_boolean(&global_clone);
+   // 绑定  Number 的 静态方法 和 原型链方法
+   bind_global_number(&global_clone);
+  // 绑定  Error 的 静态方法 和 原型链方法
+  bind_global_error(&global_clone);
   return global;
 }
 
 pub fn get_global_object(global: &Rc<RefCell<Object>>, name: String) -> Rc<RefCell<Object>> {
   let clone_global_mut = (*global).borrow_mut();
   let obj = clone_global_mut.get_value(name.clone()).to_object(global);
+  return obj;
+}
+
+pub fn get_global_object_by_name(global: &Rc<RefCell<Object>>, name: &str) -> Rc<RefCell<Object>> {
+  let clone_global_mut = (*global).borrow_mut();
+  let obj = clone_global_mut.get_value(name.to_string().clone()).to_object(global);
   return obj;
 }

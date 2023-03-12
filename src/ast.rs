@@ -1,10 +1,11 @@
 // AST
 // mod super::token::TokenKeywords;
-use std::io;
+use std::{io, fmt};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
+use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
   // 当前字符
   char: char,
@@ -50,21 +51,21 @@ impl AST{
   }
 
   // 解析生成 Program
-  pub fn parse(&mut self) -> Program {
+  pub fn parse(&mut self) -> JSIResult<Program> {
     self.next();
     return self.parse_program()
   }
 
   // 解析生成 program
-  fn parse_program(&mut self) -> Program {
+  fn parse_program(&mut self) -> JSIResult<Program> {
     self.new_scope();
-    let body = self.parse_statements();
+    let body = self.parse_statements()?;
     let declarations = self.scope.declarations.clone();
     self.close_scope();
-    Program {
+    Ok(Program {
       body,
       declarations,
-    }
+    })
   }
 
   // 创建新的上下文环境，用于存储当前上下文环境中声明的方法和变量
@@ -80,7 +81,7 @@ impl AST{
     }
   }
 
-  fn parse_statements(&mut self) -> Vec<Statement> {
+  fn parse_statements(&mut self) -> JSIResult<Vec<Statement>> {
     let mut statements: Vec<Statement> = vec![];
     loop {
       if self.token == Token::EOF || self.token == Token::RightBrace {
@@ -92,7 +93,7 @@ impl AST{
         self.next();
         continue;
       }
-      let statement = self.parse_statement();
+      let statement = self.parse_statement()?;
       if let Statement::Unknown = statement  {
         // TODO: unknown statement
         println!("statement: {:?}", statement);
@@ -100,11 +101,12 @@ impl AST{
       }
       statements.push(statement);
     }
-    return statements;
+    return Ok(statements);
   }
 
   // 解析生成 statement
-  fn parse_statement(&mut self) -> Statement {
+  fn parse_statement(&mut self) -> JSIResult<Statement> {
+    // println!("parse_statement: {:?} {:?}", self.token,  self.literal);
     match self.token {
         Token::Var | Token::Let => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
@@ -115,19 +117,22 @@ impl AST{
         Token::Break => self.parse_break_statement(),
         Token::Continue => self.parse_continue_statement(),
         Token::Function => {
-          Statement::Function(self.parse_function(true))
+          Ok(Statement::Function(self.parse_function(true)?))
         },
         Token::Return => self.parse_return_statement(),
         Token::Class => {
           // class (ES2015)
-          Statement::Class(self.parse_class())
+          Ok(Statement::Class(self.parse_class()?))
+        },
+        Token::Try => {
+          self.parse_try_catch_statment()
         },
         Token::LeftBrace => {
           // block
           self.parse_block_statement()
         },
         _ => {
-          let expression = self.parse_expression();
+          let expression = self.parse_expression()?;
 
           // label:
           if self.token == Token::Colon {
@@ -135,51 +140,50 @@ impl AST{
               // TODO: 检测当前的作用域是否已经存在这个 lable，如果存在，则报错
               //  let label = identifier.literal;
               self.next();
-               let statement = self.parse_statement();
-               return Statement::Label(LabeledStatement {
+               let statement = self.parse_statement()?;
+               return Ok(Statement::Label(LabeledStatement {
                 label: identifier,
                 statement: Box::new(statement),
-               });
+               }));
             }
           }
           
           match  expression {
               Expression::Unknown => {      
-                Statement::Unknown
+                Ok(Statement::Unknown)
               },
               _ => {
-                Statement::Expression(ExpressionStatement{
+                Ok(Statement::Expression(ExpressionStatement{
                   expression
-                })
+                }))
               }
           }
-          
         },
     }
   }
 
   // 解析 let / var
-  fn parse_variable_statement(&mut self) -> Statement {
+  fn parse_variable_statement(&mut self) -> JSIResult<Statement> {
     let mut variable_flag = VariableFlag::Var;
     if self.token == Token::Let {
-      self.check_token_and_next(Token::Let);
+      self.check_token_and_next(Token::Let)?;
       variable_flag = VariableFlag::Let;
     } else {
-      self.check_token_and_next(Token::Var);
+      self.check_token_and_next(Token::Var)?;
     }
     
     let var_statement = VariableDeclarationStatement {
-      list: self.parse_variable_declarations(),
+      list: self.parse_variable_declarations()?,
       flag: variable_flag,
     };
-    self.semicolon();
-    return Statement::Var(var_statement);
+    self.semicolon()?;
+    return Ok(Statement::Var(var_statement));
   }
 
-  fn parse_variable_declarations(&mut self) -> Vec<Expression> {
+  fn parse_variable_declarations(&mut self) -> JSIResult<Vec<Expression>> {
     let mut list: Vec<Expression> = vec![];
     loop {
-      let expression = self.parse_variable_declaration();
+      let expression = self.parse_variable_declaration()?;
       list.push(expression);
       // let a= 1, b = 2;
       if self.token != Token::Comma {
@@ -187,53 +191,53 @@ impl AST{
       }
       self.next();
     }
-    list
+    Ok(list)
   }
 
 
   // 解析 block statement
-  fn parse_block_statement(&mut self) -> Statement {
+  fn parse_block_statement(&mut self) -> JSIResult<Statement> {
     // 以左花括号开始
-    self.check_token_and_next(Token::LeftBrace);
-    let statements = self.parse_statements();
-    self.check_token_and_next(Token::RightBrace);
-    return Statement::Block(BlockStatement{
+    self.check_token_and_next(Token::LeftBrace)?;
+    let statements = self.parse_statements()?;
+    self.check_token_and_next(Token::RightBrace)?;
+    return Ok(Statement::Block(BlockStatement{
       statements,
-    })
+    }))
   }
 
   // 解析 if/else/else if
-  fn parse_if_statement(&mut self)  -> Statement {
-    self.check_token_and_next(Token::If);
-    self.check_token_and_next(Token::LeftParenthesis);
+  fn parse_if_statement(&mut self)  -> JSIResult<Statement> {
+    self.check_token_and_next(Token::If)?;
+    self.check_token_and_next(Token::LeftParenthesis)?;
     let mut statement = IfStatement {
-      condition: self.parse_expression(),
+      condition: self.parse_expression()?,
       then_statement: Box::new(Statement::Unknown),
       else_statement: Box::new(Statement::Unknown),
     };
-    self.check_token_and_next(Token::RightParenthesis);
+    self.check_token_and_next(Token::RightParenthesis)?;
     // 判断是否是 单行if
     if self.token == Token::LeftBrace {
-      statement.then_statement = Box::new(self.parse_block_statement());
+      statement.then_statement = Box::new(self.parse_block_statement()?);
     } else {
-      statement.then_statement = Box::new(self.parse_statement());
+      statement.then_statement = Box::new(self.parse_statement()?);
     }
 
     if self.token == Token::Else {
       self.next();
-      statement.else_statement = Box::new(self.parse_statement());
+      statement.else_statement = Box::new(self.parse_statement()?);
     }
-    return Statement::If(statement)
+    return Ok(Statement::If(statement))
   }
 
 
   // 解析 switch case
-  fn parse_switch_statement(&mut self)  -> Statement {
-    self.check_token_and_next(Token::Switch);
-    self.check_token_and_next(Token::LeftParenthesis);
-    let condition = self.parse_expression();
-    self.check_token_and_next(Token::RightParenthesis);
-    self.check_token_and_next(Token::LeftBrace);
+  fn parse_switch_statement(&mut self)  -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Switch)?;
+    self.check_token_and_next(Token::LeftParenthesis)?;
+    let condition = self.parse_expression()?;
+    self.check_token_and_next(Token::RightParenthesis)?;
+    self.check_token_and_next(Token::LeftBrace)?;
     let mut default_index: i32 = -1;
     let mut clauses: Vec<CaseClause> = vec![];
     loop {
@@ -253,49 +257,49 @@ impl AST{
           self.next();
         }
       } else {
-        self.check_token_and_next(Token::Case);
-        clause.condition = Some(self.parse_expression());
+        self.check_token_and_next(Token::Case)?;
+        clause.condition = Some(self.parse_expression()?);
       }
-      self.check_token_and_next(Token::Colon);
+      self.check_token_and_next(Token::Colon)?;
       loop {
         if self.token == Token::EOF || self.token == Token::RightBrace || self.token == Token::Case || self.token == Token::Default {
           break;
         }
-        let statement = self.parse_statement();
+        let statement = self.parse_statement()?;
         clause.statements.push(statement);
       }
       clauses.push(clause);
     }
 
 
-    self.check_token_and_next(Token::RightBrace);
-    Statement::Switch(SwitchStatement {
+    self.check_token_and_next(Token::RightBrace)?;
+    Ok(Statement::Switch(SwitchStatement {
       condition,
       clauses,
       default_index
-    })
+    }))
   }
 
   // 解析 for 循环
   // TODO: for in/ of
-  fn parse_for_statement(&mut self)  -> Statement {
-    self.check_token_and_next(Token::For);
-    self.check_token_and_next(Token::LeftParenthesis);
+  fn parse_for_statement(&mut self)  -> JSIResult<Statement> {
+    self.check_token_and_next(Token::For)?;
+    self.check_token_and_next(Token::LeftParenthesis)?;
     // 解析 initializer
     // 需要额外处理 var 的情况
     let mut initializer = Statement::Unknown;
     if self.token == Token::Var || self.token == Token::Let {
-        initializer = self.parse_variable_statement();
+        initializer = self.parse_variable_statement()?;
     } else if self.token != Token::Semicolon {
-      initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression() });
-      self.check_token_and_next(Token::Semicolon);
+      initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
+      self.check_token_and_next(Token::Semicolon)?;
     }
-    let condition = self.parse_expression();
-    self.check_token_and_next(Token::Semicolon);
-    let incrementor = self.parse_expression();
-    self.check_token_and_next(Token::RightParenthesis);
+    let condition = self.parse_expression()?;
+    self.check_token_and_next(Token::Semicolon)?;
+    let incrementor = self.parse_expression()?;
+    self.check_token_and_next(Token::RightParenthesis)?;
 
-    let block = self.parse_block_statement();
+    let block = self.parse_block_statement()?;
     let statement = ForStatement {
       initializer: Box::new(initializer),
       condition: condition,
@@ -303,17 +307,17 @@ impl AST{
       statement: Box::new(block),
       post_judgment: false,
     };
-    return  Statement::For(statement);
+    return  Ok(Statement::For(statement));
   }
 
   // 解析 while 循环
-  fn parse_while_statement(&mut self)  -> Statement {
-    self.check_token_and_next(Token::While);
-    self.check_token_and_next(Token::LeftParenthesis);
-    let condition = self.parse_expression();
-    self.check_token_and_next(Token::RightParenthesis);
+  fn parse_while_statement(&mut self)  -> JSIResult<Statement> {
+    self.check_token_and_next(Token::While)?;
+    self.check_token_and_next(Token::LeftParenthesis)?;
+    let condition = self.parse_expression()?;
+    self.check_token_and_next(Token::RightParenthesis)?;
 
-    let block = self.parse_block_statement();
+    let block = self.parse_block_statement()?;
     let statement = ForStatement {
       initializer: Box::new(Statement::Unknown),
       condition: condition,
@@ -321,18 +325,18 @@ impl AST{
       statement: Box::new(block),
       post_judgment: false,
     };
-    return  Statement::For(statement);
+    return  Ok(Statement::For(statement));
   }
 
 
   // 解析 do while 循环
-  fn parse_do_while_statement(&mut self)  -> Statement {
-    self.check_token_and_next(Token::Do);
-    let block = self.parse_block_statement();
-    self.check_token_and_next(Token::While);
-    self.check_token_and_next(Token::LeftParenthesis);
-    let condition = self.parse_expression();
-    self.check_token_and_next(Token::RightParenthesis);
+  fn parse_do_while_statement(&mut self)  -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Do)?;
+    let block = self.parse_block_statement()?;
+    self.check_token_and_next(Token::While)?;
+    self.check_token_and_next(Token::LeftParenthesis)?;
+    let condition = self.parse_expression()?;
+    self.check_token_and_next(Token::RightParenthesis)?;
     let statement = ForStatement {
       initializer: Box::new(Statement::Unknown),
       condition: condition,
@@ -340,12 +344,12 @@ impl AST{
       statement: Box::new(block),
       post_judgment: true,
     };
-    return  Statement::For(statement);
+    return  Ok(Statement::For(statement));
   }
 
 
-  fn parse_break_statement(&mut self) -> Statement {
-    self.check_token_and_next(Token::Break);
+  fn parse_break_statement(&mut self) -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Break)?;
     let mut semicolon = false;
     // break;
     if self.token == Token::Semicolon {
@@ -363,19 +367,19 @@ impl AST{
         // need label, throw error Illegal break statement
       }
       */
-      return Statement::Break(BreakStatement {
+      return Ok(Statement::Break(BreakStatement {
         label: None
-      });
+      }));
     }
 
-    self.check_token(Token::Identifier);
-    return  Statement::Break(BreakStatement {
+    self.check_token(Token::Identifier)?;
+    return  Ok(Statement::Break(BreakStatement {
       label: Some(IdentifierLiteral { literal: self.literal.clone() })
-    });
+    }));
   }
 
-  fn parse_continue_statement(&mut self) -> Statement {
-    self.check_token_and_next(Token::Continue);
+  fn parse_continue_statement(&mut self) -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Continue)?;
     let mut semicolon = false;
     // continue;
     if self.token == Token::Semicolon {
@@ -385,19 +389,19 @@ impl AST{
 
     // for() { continue }
     if semicolon || self.token == Token::RightBrace {
-      return Statement::Continue(ContinueStatement {
+      return Ok(Statement::Continue(ContinueStatement {
         label: None
-      });
+      }));
     }
 
-    self.check_token(Token::Identifier);
-    return  Statement::Continue(ContinueStatement {
+    self.check_token(Token::Identifier)?;
+    return  Ok(Statement::Continue(ContinueStatement {
       label: Some(IdentifierLiteral { literal: self.literal.clone() })
-    });
+    }));
   }
 
   // 解析 function statement
-  fn parse_function(&mut self, variable_lifting: bool) -> FunctionDeclaration {
+  fn parse_function(&mut self, variable_lifting: bool) -> JSIResult<FunctionDeclaration> {
     // 如果是 function 关键字，则跳过
     if self.token == Token::Function {
       self.next();
@@ -414,7 +418,7 @@ impl AST{
     // 解析参数
     // 左括号
     let mut parameters: Vec<Parameter> = vec![];
-    self.check_token_and_next(Token::LeftParenthesis);
+    self.check_token_and_next(Token::LeftParenthesis)?;
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
       if self.token == Token::Identifier {
         parameters.push(Parameter{
@@ -423,18 +427,19 @@ impl AST{
         });
         self.next()
       } else {
-        self.check_token(Token::Identifier);
+        self.check_token(Token::Identifier)?;
       }
       if self.token != Token::RightParenthesis {
-        self.check_token_and_next(Token::Comma);
+        self.check_token_and_next(Token::Comma)?;
       }
     }
 
-    self.check_token_and_next(Token::RightParenthesis);
+    self.check_token_and_next(Token::RightParenthesis)?;
     // 需要开启一个新的作用域，用来记录 block 里面的 方法定义 和 变量定义，因为方法定义是要提升到作用域最开始的
     self.new_scope();
     // 解析方法体
-    let body = match self.parse_block_statement() {
+    let body_statement = self.parse_block_statement()?;
+    let body = match body_statement {
       Statement::Block(block) => block,
       _ => BlockStatement { statements: vec![] }
     };
@@ -450,21 +455,21 @@ impl AST{
     if variable_lifting && !is_anonymous {
       self.scope.declare(Declaration::Function(func.clone()));
     }
-    return func;
+    return Ok(func);
   }
 
   // 解析 class(ES2015)
-  fn parse_class(&mut self) -> ClassDeclaration {
-    self.check_token_and_next(Token::Class);
+  fn parse_class(&mut self) -> JSIResult<ClassDeclaration> {
+    self.check_token_and_next(Token::Class)?;
     // class name
-    self.check_token(Token::Identifier);
+    self.check_token(Token::Identifier)?;
     let name = self.literal.clone();
     self.next();
     // extends
     if self.token == Token::Extends {
       // TODO: 解析 extends
     }
-    self.check_token_and_next(Token::LeftBrace);
+    self.check_token_and_next(Token::LeftBrace)?;
     let mut members:  Vec<Expression>= vec![];
     while self.token != Token::RightBrace && self.token != Token::EOF {
       let mut modifiers: Vec<Token> = vec![];
@@ -485,11 +490,11 @@ impl AST{
       if self.token == Token::Identifier {
         if self.literal == String::from("constructor") {
           // constructor
-          let constructor = self.parse_function(false);
+          let constructor = self.parse_function(false)?;
           members.push(Expression::Constructor(constructor));
         } else if self.next_is('(', true) {
           // method
-          let method = self.parse_function(false);
+          let method = self.parse_function(false)?;
           members.push(Expression::ClassMethod(ClassMethodDeclaration {
             name: method.name.clone(),
             modifiers,
@@ -505,30 +510,68 @@ impl AST{
         self.next()
       }
     }
-    ClassDeclaration {
+    Ok(ClassDeclaration {
       name: IdentifierLiteral { literal: name },
       members,
       heritage: None,
-    }
+    })
   }
 
-  fn parse_return_statement(&mut self) -> Statement {
-    self.check_token_and_next(Token::Return);
+  fn parse_try_catch_statment(&mut self) -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Try)?;
+
+    let body_statement = self.parse_block_statement()?;
+    let body = match body_statement {
+      Statement::Block(block) => block,
+      _ => BlockStatement { statements: vec![] }
+    };
+
+    let mut try_statment = TryCatchStatement {
+      body,
+      catch: None,
+      finally: None
+    };
+
+    if self.token == Token::Catch {
+      self.check_token_and_next(Token::Catch)?;
+      let mut identifier = None;
+      if self.token == Token::LeftParenthesis {
+        self.check_token_and_next(Token::LeftParenthesis)?;
+        let expression = self.parse_expression()?;
+        if let Expression::Identifier(idti) = expression {
+          identifier = Some(idti);
+        }
+        self.check_token_and_next(Token::RightParenthesis)?;
+      }
+      
+      let body_statement = self.parse_block_statement()?;
+      let body = match body_statement {
+        Statement::Block(block) => block,
+        _ => BlockStatement { statements: vec![] }
+      };
+      try_statment.catch = Some(CatchClause { declaration: identifier, body })
+    }
+
+    // TODO: finally
+    Ok(Statement::Try(try_statment))
+  }
+
+  fn parse_return_statement(&mut self) -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Return)?;
     let mut expression = Expression::Keyword(Keywords::Undefined);
     if  !self.auto_semicolon_when_new_line && self.token != Token::Semicolon && self.token != Token::RightBrace && self.token != Token::EOF {
-      expression = self.parse_expression()
+      expression = self.parse_expression()?
     }
-    self.semicolon();
-    return Statement::Return(ReturnStatement{
+    self.semicolon()?;
+    return Ok(Statement::Return(ReturnStatement{
       expression
-    });
+    }));
   }
 
   // 解析变量定义 a = 123,b,c = true 
-  fn parse_variable_declaration(&mut self) -> Expression {
+  fn parse_variable_declaration(&mut self) -> JSIResult<Expression> {
     if Token::Identifier != self.token {
-      // TODO: throw error 需要一个identifier
-      return Expression::Unknown;
+      return Err(self.error_unexpected());
     }
     let literal = self.literal.clone();
     self.next();
@@ -539,30 +582,31 @@ impl AST{
 
     if self.token == Token::Assign {
       self.next();
-      node.initializer = Box::new(self.parse_expression());
+      node.initializer = Box::new(self.parse_expression()?);
     }
-    return Expression::Var(node)
+    return Ok(Expression::Var(node))
   }
 
-  fn check_token_and_next(&mut self, token: Token) {
-    self.check_token(token);
+  fn check_token_and_next(&mut self, token: Token) -> JSIResult<bool> {
+    self.check_token(token)?;
     self.next();
+    return Ok(true);
   }
-  fn check_token(&mut self, token: Token) {
-    // TODO: 类型不匹配，需要报错
+  fn check_token(&mut self, token: Token) -> JSIResult<bool> {
     if token != self.token {
-      self.error_unexpected_token(token)
+      return Err(self.error_unexpected());
     }
-    
+    return Ok(true);
   }
 
-  fn semicolon(&mut self) {
+  fn semicolon(&mut self) -> JSIResult<bool> {
     // 如果是自动添加的分号，则跳过
     if self.auto_semicolon_when_new_line {
       self.auto_semicolon_when_new_line = false;
     } else {
-      self.check_token_and_next(Token::Semicolon)
+      self.check_token_and_next(Token::Semicolon)?;
     }
+    Ok(true)
   }
 
   // 获取下一个符号
@@ -1114,58 +1158,57 @@ impl AST{
     return false;
   }
   // 解析表达式
-  fn parse_expression(&mut self) -> Expression  {
+  fn parse_expression(&mut self) -> JSIResult<Expression>  {
     let res = self.parse_assignment_expression();
     res
   }
 
   // 解析赋值运算符，优先级 2，从右到左
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-assignment-operators
-  fn parse_assignment_expression(&mut self) -> Expression {
-    let left = self.parse_conditional_expression();
+  fn parse_assignment_expression(&mut self) -> JSIResult<Expression> {
+    let left = self.parse_conditional_expression()?;
     match self.token {
       Token::Assign | Token::AddAssign | Token::SubtractAssign | Token::MultiplyAssign | Token::SlashAssign | Token::RemainderAssign | Token::ShiftLeftAssign | Token::ShiftRightAssign | Token::UnsignedShiftRightAssign | Token::OrAssign | Token::AndAssign | Token::ExclusiveOrAssign | Token::LogicalAndAssign | Token::LogicalOrAssign | Token::ExponentiationAssign | Token::NullishCoalescingAssign =>  {
         // 跳过各种赋值运算符
         let oper = self.token.clone();
         self.next();
         // from right to left
-        let right = self.parse_expression();
-        return Expression::Assign(AssignExpression {
+        let right = self.parse_expression()?;
+        return Ok(Expression::Assign(AssignExpression {
           left: Box::new(left),
           operator: oper,
           right: Box::new(right),
-        });
+        }));
       },
-      _ => left
+      _ => Ok(left)
       
     }
   }
 
   // 解析三目运算符，优先级 3，从右到左
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-conditional-operator
-  fn parse_conditional_expression(&mut self) -> Expression {
-    let left = self.parse_binary_logical_expression();
+  fn parse_conditional_expression(&mut self) -> JSIResult<Expression> {
+    let left = self.parse_binary_logical_expression()?;
     if self.token == Token::QuestionMark {
       // 跳过 ?
       self.next();
 
-      let when_true = self.parse_expression();
+      let when_true = self.parse_expression()?;
       // 期待是 :
-      self.check_token_and_next(Token::Colon);
-      let when_false = self.parse_expression();
+      self.check_token_and_next(Token::Colon)?;
+      let when_false = self.parse_expression()?;
       
-      return Expression::Conditional(ConditionalExpression{
+      return Ok(Expression::Conditional(ConditionalExpression{
         condition: Box::new(left),
         when_true: Box::new(when_true),
         when_false: Box::new(when_false),
-      });
+      }));
     }
-  
-    return left
+    return Ok(left)
   }
 
   // 逻辑或 || 运算符表达式 和 空值合并表达式 ?? 优先级 4，从左到右
-  fn parse_binary_logical_expression(&mut self) -> Expression {
+  fn parse_binary_logical_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_logical_and_expression()
     };
@@ -1176,7 +1219,7 @@ impl AST{
   }
 
   // 逻辑与 && 运算符表达式 优先级 5，从左到右
-  fn parse_logical_and_expression(&mut self) -> Expression {
+  fn parse_logical_and_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_binary_or_expression()
     };
@@ -1186,7 +1229,7 @@ impl AST{
   }
 
   // 按位或 | 运算符表达式 优先级 6，从左到右
-  fn parse_binary_or_expression(&mut self) -> Expression {
+  fn parse_binary_or_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_binary_exclusive_or_expression()
     };
@@ -1196,7 +1239,7 @@ impl AST{
   }
 
   // 按位异或 (^) 运算符表达式 优先级 7，从左到右
-  fn parse_binary_exclusive_or_expression(&mut self) -> Expression {
+  fn parse_binary_exclusive_or_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_binary_and_expression()
     };
@@ -1206,7 +1249,7 @@ impl AST{
   }
 
   // 按位与 (&) 运算符表达式 优先级 8，从左到右
-  fn parse_binary_and_expression(&mut self) -> Expression {
+  fn parse_binary_and_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_equality_expression()
     };
@@ -1216,7 +1259,7 @@ impl AST{
   }
 
   // 相等表达式 优先级 9，从左到右
-  fn parse_equality_expression(&mut self) -> Expression {
+  fn parse_equality_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_relationship_expression()
     };
@@ -1230,7 +1273,7 @@ impl AST{
 
   // 解析关系运算符 > 、< 、>=、<= 优先级 10，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
-  fn parse_relationship_expression(&mut self) -> Expression {
+  fn parse_relationship_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_shift_expression()
     };
@@ -1246,7 +1289,7 @@ impl AST{
 
   // 解析位运算符 优先级 11，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-bitwise-shift-operators
-  fn parse_shift_expression(&mut self) -> Expression {
+  fn parse_shift_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_additive_expression()
     };
@@ -1260,7 +1303,7 @@ impl AST{
 
   // 解析 + - 语法 优先级 12，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
-  fn parse_additive_expression(&mut self) -> Expression {
+  fn parse_additive_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_multiplicative_expression()
     };
@@ -1272,7 +1315,7 @@ impl AST{
 
   // 解析 * / % 语法 优先级 13，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-additive-operators
-  fn parse_multiplicative_expression(&mut self) -> Expression {
+  fn parse_multiplicative_expression(&mut self) -> JSIResult<Expression> {
     let next = |tst: &mut AST| {
       tst.parse_exponentiation_expression()
     };
@@ -1285,50 +1328,50 @@ impl AST{
 
   // 幂运算 1**2 -- 优先级 14，从右到左
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
-  fn parse_exponentiation_expression(&mut self) -> Expression {
-    let left = self.parse_prefix_unary_expression();
+  fn parse_exponentiation_expression(&mut self) -> JSIResult<Expression> {
+    let left = self.parse_prefix_unary_expression()?;
     if self.token == Token::Exponentiation {
       let operator = self.token.clone();
       self.next();
-      let right = self.parse_exponentiation_expression();
-      Expression::Binary(BinaryExpression {
+      let right = self.parse_exponentiation_expression()?;
+      Ok(Expression::Binary(BinaryExpression {
         left: Box::new(left),
         operator,
         right: Box::new(right),
-      })
+      }))
     } else {
-      left
+      Ok(left)
     }
   }
   // 前置一元运算符  -- 优先级 15，从右到左
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
-  fn parse_prefix_unary_expression(&mut self) -> Expression {
+  fn parse_prefix_unary_expression(&mut self) -> JSIResult<Expression> {
     match self.token {
       Token::Not | Token::BitwiseNot | Token::Plus | Token::Subtract => {
         let operator = self.token.clone();
         self.next();
-        Expression::PrefixUnary(PrefixUnaryExpression {
+        Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
-          operand: Box::new(self.parse_postfix_unary_expression()),
-        })
+          operand: Box::new(self.parse_postfix_unary_expression()?),
+        }))
       },
       Token::Typeof | Token::Void | Token::Delete | Token::Await => {
         let operator = self.token.clone();
         self.next();
-        Expression::PrefixUnary(PrefixUnaryExpression {
+        Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
-          operand: Box::new(self.parse_postfix_unary_expression()),
-        })
+          operand: Box::new(self.parse_postfix_unary_expression()?),
+        }))
       },
       Token::Increment | Token::Decrement => {
         let operator = self.token.clone();
         self.next();
-        let operand = self.parse_postfix_unary_expression();
+        let operand = self.parse_postfix_unary_expression()?;
         // TODO: check operand is Identifier/Property access
-        Expression::PrefixUnary(PrefixUnaryExpression {
+        Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
           operand: Box::new(operand),
-        })
+        }))
       },
       _ => self.parse_postfix_unary_expression()
     }
@@ -1336,33 +1379,34 @@ impl AST{
 
   // 后置一元运算符 ++ -- 优先级 16
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-update-expressions
-  fn parse_postfix_unary_expression(&mut self) -> Expression {
-    let left = self.parse_left_hand_side_expression();
+  fn parse_postfix_unary_expression(&mut self) -> JSIResult<Expression> {
+    let left = self.parse_left_hand_side_expression()?;
     if self.token == Token::Increment || self.token == Token::Decrement {
       if self.auto_semicolon_when_new_line {
-        return left
+        return Ok(left)
       }
       let expr = Expression::PostfixUnary(PostfixUnaryExpression {
         operator: self.token.clone(),
         operand: Box::new(left),
       });
       self.next();
-      expr
+      Ok(expr)
     } else {
-      left
+      Ok(left)
     }
   }
 
   // 解析访问(.、[])语法 优先级 18，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
-  fn parse_left_hand_side_expression(&mut self) -> Expression {
-    let mut left = self.parse_group_expression();
+  fn parse_left_hand_side_expression(&mut self) -> JSIResult<Expression> {
+    let mut left = self.parse_group_expression()?;
     loop {
       self.cur_expr = left.clone();
       let new_left = match self.token {
-        Token::Period => self.parse_property_access_expression(),
-        Token::LeftBracket => self.parse_element_access_expression(),
-        Token::LeftParenthesis => self.parse_call_expression(),
+        Token::Period => self.parse_property_access_expression()?,
+        Token::LeftBracket => self.parse_element_access_expression()?,
+        Token::LeftParenthesis => self.parse_call_expression()?,
+        Token::New => self.parse_new_expression()?,
         // TODO: new
         // TODO: optional chaining
         _ => Expression::Unknown,
@@ -1372,101 +1416,122 @@ impl AST{
       }
       left = new_left;
     }
-    return left;
+    if let Expression::Unknown = left {
+      return Err(self.error_unexpected());
+    }
+    return Ok(left);
   }
   // 解析属性访问(.)语法 优先级 18
-  fn parse_property_access_expression(&mut self) -> Expression {
+  fn parse_property_access_expression(&mut self) -> JSIResult<Expression> {
     self.next();
+    if self.token == Token::Number {
+      return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Unexpected number"), 0, 0))
+    }
     let literal = self.literal.clone();
     self.next();
-    return Expression::PropertyAccess(PropertyAccessExpression{
+    return Ok(Expression::PropertyAccess(PropertyAccessExpression{
       expression: Box::new(self.cur_expr.clone()),
       name: IdentifierLiteral { literal }
-    });
+    }));
   }
 
   // 解析属性访问([)语法 优先级 18
-  fn parse_element_access_expression(&mut self) -> Expression {
+  fn parse_element_access_expression(&mut self) -> JSIResult<Expression> {
     let expression = Box::new(self.cur_expr.clone());
-    self.check_token_and_next(Token::LeftBracket);
-    let expr = self.parse_expression();
-    self.check_token_and_next(Token::RightBracket);
-    return Expression::ElementAccess(ElementAccessExpression{
+    self.check_token_and_next(Token::LeftBracket)?;
+    let expr = self.parse_expression()?;
+    self.check_token_and_next(Token::RightBracket)?;
+    return Ok(Expression::ElementAccess(ElementAccessExpression{
       expression,
       argument: Box::new(expr),
-    });
+    }));
   }
 
   // 解析属方法调用语法 优先级 18
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-function-calls
-  fn parse_call_expression(&mut self) -> Expression {
+  fn parse_call_expression(&mut self) -> JSIResult<Expression> {
     // 1. 解析参数
     let expression = Box::new(self.cur_expr.clone());
-    let arguments = self.parse_arguments();
+    let arguments = self.parse_arguments()?;
     // CallExpression {}
-    self.check_token_and_next(Token::RightParenthesis);
-    return Expression::Call(CallExpression {
+    self.check_token_and_next(Token::RightParenthesis)?;
+    return Ok(Expression::Call(CallExpression {
       expression,
       arguments
-    });
+    }));
+  }
+
+  // 解析 new 语法 优先级 18
+  fn parse_new_expression(&mut self) -> JSIResult<Expression> {
+    self.next();
+    let mut expression = self.parse_expression()?;
+    let mut args: Vec<Expression> = vec![];
+    if let Expression::Call(call_expr) = expression {
+      expression = *call_expr.expression;
+      args = call_expr.arguments.clone();
+    }
+    return Ok(Expression::New(NewExpression {
+      expression: Box::new(expression),
+      arguments: args
+    }))
   }
 
   // 解析分组表达式 优先级 19
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-function-calls
-  fn parse_group_expression(&mut self) -> Expression {
+  fn parse_group_expression(&mut self) -> JSIResult<Expression> {
      if self.token == Token::LeftParenthesis {
       self.next();
-      let expr = self.parse_expression();
-      self.check_token_and_next(Token::RightParenthesis);
-      return Expression::Group(GroupExpression {
+      let expr = self.parse_expression()?;
+      self.check_token_and_next(Token::RightParenthesis)?;
+      return Ok(Expression::Group(GroupExpression {
         expression: Box::new(expr),
-      })
+      }))
      }
      self.parse_literal_expression()
   }
 
   // 解析字面量 优先级 20 最后处理
-  fn parse_literal_expression(&mut self) -> Expression {
+  fn parse_literal_expression(&mut self) -> JSIResult<Expression> {
     let literal = self.literal.clone();
     match self.token {
       Token::Identifier => {
         self.next();
-        Expression::Identifier(IdentifierLiteral{
+        Ok(Expression::Identifier(IdentifierLiteral{
           literal
-        })
+        }))
       },
       Token::Number => {
-        let value = self.parse_number_literal_expression();
+        let value = self.parse_number_literal_expression()?;
         self.next();
-        return Expression::Number(NumberLiteral {
+        Ok(Expression::Number(NumberLiteral {
           literal,
           value,
-        })
+        }))
       },
       Token::String => {
         let str_len = literal.len();
         let slice = String::from(&self.literal[1..str_len-1]);
         self.next();
-        Expression::String(StringLiteral{
+        Ok(Expression::String(StringLiteral{
           literal,
           value: slice
-        })
+        }))
       },
       Token::False => {
         self.next();
-        Expression::Keyword(Keywords::False)
+        Ok(Expression::Keyword(Keywords::False))
       },
       Token::True => {
         self.next();
-        Expression::Keyword(Keywords::True)
+        Ok(Expression::Keyword(Keywords::True))
       },
       Token::Null => {
         self.next();
-        Expression::Keyword(Keywords::Null)
+        Ok(Expression::Keyword(Keywords::Null))
       },
       Token::Undefined => {
         self.next();
-        Expression::Keyword(Keywords::Undefined)
+        Ok(Expression::Keyword(Keywords::Undefined))
       },
       Token::LeftBrace => {
         self.parse_object_literal()
@@ -1475,18 +1540,17 @@ impl AST{
         self.parse_array_literal()
       },
       Token::Function => {
-        Expression::Function(self.parse_function(true))
+        Ok(Expression::Function(self.parse_function(true)?))
       },
       _ => {
-        self.next();
-        Expression::Unknown
+        Ok(Expression::Unknown)
       },
     }
   }
 
   // 解析数组字面量
-  fn parse_array_literal(&mut self) -> Expression {
-    self.check_token_and_next(Token::LeftBracket);
+  fn parse_array_literal(&mut self) -> JSIResult<Expression> {
+    self.check_token_and_next(Token::LeftBracket)?;
     let mut elements: Vec<Expression>= vec![];
     while self.token != Token::RightBracket && self.token != Token::EOF {
       // [,,1]
@@ -1495,26 +1559,26 @@ impl AST{
         self.next();
         continue;
       }
-      let item = self.parse_expression();
+      let item = self.parse_expression()?;
       elements.push(item);
       if self.token != Token::RightBracket {
-        self.check_token_and_next(Token::Comma);
+        self.check_token_and_next(Token::Comma)?;
       }
     };
-    self.check_token_and_next(Token::RightBracket);
+    self.check_token_and_next(Token::RightBracket)?;
 
-    Expression::Array(ArrayLiteral {
+    Ok(Expression::Array(ArrayLiteral {
       elements
-    })
+    }))
   }
   // 解析对象字面量
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#prod-ObjectLiteral
-  fn parse_object_literal(&mut self) -> Expression {
-    self.check_token_and_next(Token::LeftBrace);
+  fn parse_object_literal(&mut self) -> JSIResult<Expression> {
+    self.check_token_and_next(Token::LeftBrace)?;
     let mut properties: Vec<PropertyAssignment>= vec![];
     while self.token != Token::RightBrace && self.token != Token::EOF {
       // 属性名
-      let mut property_name = self.parse_object_property_name();
+      let mut property_name = self.parse_object_property_name()?;
       if let Expression::Unknown = property_name {
         break;
       }
@@ -1524,7 +1588,7 @@ impl AST{
          // 如果是 :
         Token::Colon => {
           self.next();
-          self.parse_expression()
+          self.parse_expression()?
         },
         // TODO: Shorthand method names (ES2015)
         _ => {
@@ -1554,75 +1618,79 @@ impl AST{
         self.next();
       }
     }
-    self.check_token_and_next(Token::RightBrace);
-    Expression::Object(ObjectLiteral {
+    self.check_token_and_next(Token::RightBrace)?;
+    Ok(Expression::Object(ObjectLiteral {
       properties,
-    })
+    }))
   }
 
-  fn parse_object_property_name(&mut self) -> Expression {
+  fn parse_object_property_name(&mut self) -> JSIResult<Expression> {
     let property_name_literal = self.literal.clone();
     match self.token {
       Token::Identifier => {
         self.next();
-        Expression::Identifier(IdentifierLiteral {
+        Ok(Expression::Identifier(IdentifierLiteral {
           literal: property_name_literal,
-        })
+        }))
       },
       Token::String => {
         let str_len = property_name_literal.len();
         let slice = String::from(&self.literal[1..str_len-1]);
         self.next();
-        Expression::String(StringLiteral {
+        Ok(Expression::String(StringLiteral {
           literal: property_name_literal,
           value: slice,
-        })
+        }))
       },
       Token::Number => {
-        let number_value = self.parse_number_literal_expression();
+        let number_value = self.parse_number_literal_expression()?;
         self.next();
-        Expression::Number(NumberLiteral { literal: property_name_literal, value: number_value })
+        Ok(Expression::Number(NumberLiteral { literal: property_name_literal, value: number_value }))
       },
       // Computed property names (ES2015)
       Token::LeftBracket => {
         self.next();
-        let key = self.parse_expression();
-        self.check_token_and_next(Token::RightBracket);
-        Expression::ComputedPropertyName(ComputedPropertyName { expression: Box::new(key) })
+        let key = self.parse_expression()?;
+        self.check_token_and_next(Token::RightBracket)?;
+        Ok(Expression::ComputedPropertyName(ComputedPropertyName { expression: Box::new(key) }))
       },
-      _ => Expression::Unknown
+      _ => {
+        // TODO: Err
+        Ok(Expression::Unknown)
+      }
     }
   }
 
   // 解析参数
-  fn parse_arguments(&mut self) -> Vec<Expression> {
-    self.check_token_and_next(Token::LeftParenthesis);
+  fn parse_arguments(&mut self) -> JSIResult<Vec<Expression>> {
+    self.check_token_and_next(Token::LeftParenthesis)?;
     let mut arguments:Vec<Expression> = vec![];
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
-      arguments.push(self.parse_expression());
+      arguments.push(self.parse_expression()?);
       if self.token != Token::Comma {
 				break
 			}
       self.next()
     }
-    arguments
+    Ok(arguments)
   }
 
-  fn parse_number_literal_expression(&mut self) -> f64 {
+  fn parse_number_literal_expression(&mut self) -> JSIResult<f64> {
     // 检测是否是 float
-    self.literal.parse::<f64>().unwrap()
+    // TODO: format to JSIError
+    Ok(self.literal.parse::<f64>().unwrap())
   }
 
   // 解析左结合表达式
-  fn parse_left_associate_expression<F: Fn(&mut AST)-> Expression>(&mut self, tokens: Vec<Token>, next: F) -> Expression {
-    let mut left = next(self);
+  fn parse_left_associate_expression<F: Fn(&mut AST)-> JSIResult<Expression>>(&mut self, tokens: Vec<Token>, next: F) -> JSIResult<Expression> {
+    let mut left = next(self)?;
     loop {
       // 向左结合
       if tokens.contains(&self.token) {
         let operator = self.token.clone();
         // 跳过当前的运算符
         self.next();
-        let right = next(self);
+        let right = next(self)?;
         left = Expression::Binary(BinaryExpression{
           left: Box::new(left),
           operator,
@@ -1632,7 +1700,7 @@ impl AST{
         break;
       }
     }
-    return left;
+    return Ok(left);
   }
 
   // 跳过空白字符
@@ -1641,7 +1709,9 @@ impl AST{
       match self.char {
         //  跳过空格
           ' '| '\t' => {
-            self.read();
+            if !self.read() {
+              break;
+            }
           },
           // 这里不处理换行，换行在 scan 的时候处理，因为要处理是否自动添加分号
           _ => {
@@ -1651,9 +1721,17 @@ impl AST{
     }
   }
 
-  // TODO: 抛出错误，未预期的标识符
-  fn error_unexpected_token(&mut self, expected: Token) {
-    println!("unexpected_token {:?} {:?}", expected, self.token)
+  fn error_unexpected(&self) -> JSIError {
+    // TODO: more unexpected error
+    let message = match self.token {
+      Token::Identifier => format!("Unexpected identifier '{}'", self.literal),
+      Token::Number => String::from("Unexpected number"),
+      Token::String => String::from("Unexpected string"),
+      _ => format!("Unexpected token {:?}", self.token),
+    };
+    println!("token:{:?}", self.literal);
+    // TODO: line column
+    JSIError::new(JSIErrorType::SyntaxError, message, 0, 0)
   }
 
   fn error_common(&mut self, error_msg: &str) {

@@ -7,7 +7,7 @@ fn run_array_to_string() {
   let result = jsi.run(String::from("\
   let arr = [1,2,3]\n
   arr.push(4);
-  arr.toString()"));
+  arr.toString()")).unwrap();
   assert_eq!(result , Value::String(String::from("1,2,3,4")));
 }
 
@@ -16,7 +16,7 @@ fn run_array_join() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   let arr = [1,2,3]\n
-  arr.join(':')"));
+  arr.join(':')")).unwrap();
   assert_eq!(result , Value::String(String::from("1:2:3")));
 }
 
@@ -26,6 +26,6 @@ fn run_array_instances_has_class() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   let arr = []\n
-  Object.prototype.toString.call(arr)"));
+  Object.prototype.toString.call(arr)")).unwrap();
   assert_eq!(result , Value::String(String::from("[object Array]")));
 }

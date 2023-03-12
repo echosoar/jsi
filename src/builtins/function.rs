@@ -70,12 +70,14 @@ pub fn bind_global_function(global: &Rc<RefCell<Object>>) {
 // Function.prototype.call
 fn function_call(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   let mut this = Value::Undefined;
+  let mut new_args: Vec<Value> = vec![];
   if args.len() > 0 {
     this = args[0].clone();
+    new_args = args[1..].to_vec();
   }
   let new_fun = function_bind(ctx, vec![this]);
   let global = ctx.global.upgrade().unwrap();
-  Value::FunctionNeedToCall(new_fun.to_object(&global), args)
+  Value::FunctionNeedToCall(new_fun.to_object(&global), new_args)
 }
 
 // Function.prototype.bind

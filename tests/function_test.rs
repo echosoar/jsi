@@ -1,14 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use jsi::{JSI, value::Value, builtins::object::Object, ast_node::ClassType};
-
-#[test]
-fn run_function() {
-  let mut jsi_vm = JSI::new();
-  let value = jsi_vm.parse(String::from("function abc(a, b, c) { return a +b - c;} abc(123, 456, 789);"));
-  println!("{:?}", value)
-  // assert_eq!(value, Value::Number(-210f64)) // 123 + 456 - 789 = -210
-}
+use jsi::{JSI, value::Value, builtins::object::Object, ast_node::ClassType, error::JSIErrorType};
 
 #[test]
 fn run_function_name_and_length() {
@@ -22,7 +14,7 @@ fn run_function_name_and_length() {
     foo: { name: foo.name, length: foo.length},\n
     obj: { name: obj.x.name, length: obj.x.length},\n
   };\n
-  res"));
+  res")).unwrap();
   let global_tmp = Rc::new(RefCell::new(Object::new(ClassType::Object,None)));
   match value {
     Value::Object(obj) => {
@@ -64,7 +56,12 @@ fn run_function_scope1() {
     return a;
   };\n
   fun1()"));
-  assert_eq!(value , Value::Undefined);
+  if let Err(jsi_error) = value {
+    assert_eq!(jsi_error.error_type, JSIErrorType::ReferenceError);
+    assert_eq!(jsi_error.message , String::from("a is not defined"));
+  } else {
+    assert!(false , "need TypeError");
+  }
 }
 
 #[test]
@@ -75,7 +72,7 @@ fn run_function_scope2() {
   let fun = function() {
     return a;
   };\n
-  fun()"));
+  fun()")).unwrap();
   assert_eq!(value , Value::Number(123f64));
 }
 
@@ -84,6 +81,6 @@ fn run_function_instances_has_class() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   function func() {}\n
-  Object.prototype.toString.call(func)"));
+  Object.prototype.toString.call(func)")).unwrap();
   assert_eq!(result , Value::String(String::from("[object Function]")));
 }

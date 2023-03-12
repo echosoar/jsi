@@ -39,7 +39,7 @@ fn run_binary_equal() {
   ];
   let mut jsi = JSI::new();
   for check_item in check_list {
-    assert_eq!(jsi.run(String::from(check_item.0)), Value::Boolean(check_item.1), "expr: {:?}", check_item.0);
+    assert_eq!(jsi.run(String::from(check_item.0)).unwrap(), Value::Boolean(check_item.1), "expr: {:?}", check_item.0);
   }
   
 }
