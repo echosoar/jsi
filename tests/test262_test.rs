@@ -127,7 +127,7 @@ impl Test262DirResult {
 
 
 fn load_harness(path: &str) -> String {
-    let mut file = File::open(format!("tests/test262/{}", path)).unwrap();
+    let mut file = File::open(format!("test262/{}", path)).unwrap();
     let mut code = String::new();
     file.read_to_string(&mut code).unwrap();
     return code;
@@ -136,7 +136,7 @@ fn load_harness(path: &str) -> String {
 #[test]
 fn test_all_262() {
     let prelaod = format!("{}\n", load_harness("harness/assert.js"));
-    let mut test262 = Test262Dir::new(String::from("base"), String::from("tests/test262/test"));
+    let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str());
     let serialized_result = serde_json::to_string_pretty(&test262.result).unwrap();
     let file_name = "./262_result.json";
