@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope};
+use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope, error::JSIResult};
 
 use super::{object::{create_object, Property, Object}, global::{get_global_object}};
 
@@ -68,20 +68,20 @@ pub fn bind_global_function(global: &Rc<RefCell<Object>>) {
 
 
 // Function.prototype.call
-fn function_call(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn function_call(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut this = Value::Undefined;
   let mut new_args: Vec<Value> = vec![];
   if args.len() > 0 {
     this = args[0].clone();
     new_args = args[1..].to_vec();
   }
-  let new_fun = function_bind(ctx, vec![this]);
+  let new_fun = function_bind(ctx, vec![this])?;
   let global = ctx.global.upgrade().unwrap();
-  Value::FunctionNeedToCall(new_fun.to_object(&global), new_args)
+  Ok(Value::FunctionNeedToCall(new_fun.to_object(&global), new_args))
 }
 
 // Function.prototype.bind
-fn function_bind(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn function_bind(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut this = Value::Undefined;
   if args.len() > 0 {
     this = args[0].clone();
@@ -92,7 +92,7 @@ fn function_bind(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   let fun_obj = fun.borrow();
   let mut new_fun = fun_obj.force_copy();
   new_fun.set_inner_property_value(String::from("this"), this);
-  Value::Function(Rc::new(RefCell::new(new_fun)))
+  Ok(Value::Function(Rc::new(RefCell::new(new_fun))))
 }
 
 pub fn get_function_this(global: &Rc<RefCell<Object>>, func: Rc<RefCell<Object>>)-> Rc<RefCell<Object>> {

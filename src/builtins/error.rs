@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 
-use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}, constants::GLOBAL_ERROR_NAME};
+use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}, constants::GLOBAL_ERROR_NAME, error::JSIResult};
 
 use super::{object::{create_object, Object, Property}, global::get_global_object, function::builtin_function};
 
@@ -27,15 +27,11 @@ pub fn bind_global_error(global:  &Rc<RefCell<Object>>) {
   }
 }
 
-fn create(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn create(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut param = Value::Undefined;
   if args.len() > 0 {
     param = args[0].clone();
   }
-  let global = ctx.global.upgrade();
-  if let Some(global) = &global {
-    create_error(global, param)
-  } else {
-    Value::Undefined
-  }
+  let global = ctx.global.upgrade().unwrap();
+  Ok(create_error(&global, param))
 }

@@ -1,6 +1,6 @@
 use std::{fmt, cell::RefCell, rc::Weak};
 
-use crate::{ast_token::Token, value::Value, builtins::{object::Object}};
+use crate::{ast_token::Token, value::Value, builtins::{object::Object}, error::JSIResult};
 
 #[derive(Clone)]
 pub enum Statement {
@@ -356,7 +356,7 @@ pub struct VariableDeclaration {
 
 
 
-pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> Value;
+pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> JSIResult<Value>;
 pub struct CallContext {
   // 全局对象，globalThis
   pub global: Weak<RefCell<Object>>,

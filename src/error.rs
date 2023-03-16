@@ -12,6 +12,9 @@ pub enum JSIErrorType {
   TypeError,
   // 引用错误，不存在的变量
   ReferenceError,
+  // 范围错误，如设置 array 的length为非数字
+  RangeError,
+  Unknown,
 }
 
 #[derive(Debug, Clone)]
