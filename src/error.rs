@@ -23,6 +23,7 @@ pub struct JSIError {
     pub message: String,
     pub line: i32,
     pub column: i32,
+    pub value: Option<Value>
 }
 
 impl JSIError {
@@ -32,10 +33,14 @@ impl JSIError {
         message,
         line,
         column,
+        value: None
       }
     }
 
     pub fn to_error_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {
+      if let Some(value) = &self.value {
+        return value.to_object(global);
+      }
       let new_error = create_error(global, Value::String(self.message.clone()));
       // TODO: set error line/stack
       let obj = if let Value::Object(obj) = new_error {
@@ -44,5 +49,9 @@ impl JSIError {
         None
       }.unwrap();
       return obj;
+    }
+
+    pub fn set_value(&mut self, value: Value) {
+      self.value = Some(value);
     }
 }

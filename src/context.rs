@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, get_global_object_by_name, IS_GLOABL_OBJECT}, array::create_array}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_ERROR_NAME, GLOBAL_BOOLEAN_NAME, GLOBAL_STRING_NAME, GLOBAL_NUMBER_NAME, GLOBAL_OBJECT_NAME_LIST}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT}, array::create_array}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
 
 
 use super::ast::AST;
@@ -160,6 +160,12 @@ impl Context {
           // TODO: finaly
           
           Ok(true)
+        },
+        Statement::Throw(throw) => {
+          let throw_value = self.execute_expression(&throw.expression)?;
+          let mut err = JSIError::new(JSIErrorType::Unknown, format!(""), 0, 0);
+          err.set_value(throw_value);
+          Err(err)
         },
         Statement::Block(block) => {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
@@ -632,7 +638,7 @@ impl Context {
 
 
     // 执行循环
-    fn execute_switch(&mut self, switch_statment: &SwitchStatement, result_value: &mut Value, last_statement_value: &mut Value, interrupt: &mut Value, call_options: CallStatementOptions) -> JSIResult<bool> {
+    fn execute_switch(&mut self, switch_statment: &SwitchStatement, _: &mut Value, _: &mut Value, _: &mut Value, _: CallStatementOptions) -> JSIResult<bool> {
       let value = self.execute_expression(&switch_statment.condition).unwrap();
       
       let mut matched: i32 = switch_statment.default_index;
@@ -710,7 +716,7 @@ impl Context {
           this: weak,
           reference: None,
         };
-        Object::call(call_ctx, String::from("push"), arguments);
+        Object::call(call_ctx, String::from("push"), arguments)?;
       }
       Ok(array)
     }
@@ -818,7 +824,7 @@ impl Context {
     }
 
     // 获取当前调用栈
-    fn get_current_stack() {
+    // fn get_current_stack() {
 
-    }
+    // }
 } 

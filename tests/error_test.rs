@@ -99,3 +99,16 @@ fn run_read_properties_of_null_error_catch() {
   ")).unwrap();
   assert_eq!(result , Value::String(String::from("Cannot read properties of null (reading 'a')")));
 }
+
+#[test]
+fn run_throw_error_catch() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  try {
+    throw {a: 'abc'}
+  } catch (obj) {
+    obj.a
+  }
+  ")).unwrap();
+  assert_eq!(result , Value::String(String::from("abc")));
+}
