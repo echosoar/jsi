@@ -95,9 +95,7 @@ impl AST{
       }
       let statement = self.parse_statement()?;
       if let Statement::Unknown = statement  {
-        // TODO: unknown statement
-        println!("statement: {:?}", statement);
-        break;
+        return Err(JSIError::new(JSIErrorType::Unknown, format!("unknown statement ast: {:?}", statement), 0, 0));
       }
       statements.push(statement);
     }

@@ -199,8 +199,7 @@ impl Context {
           Ok(true)
         },
         _ => {
-          println!("unknown statement {:?}", statement);
-          Ok(true)
+          Err(JSIError::new(JSIErrorType::Unknown, format!("unknown statement: {:?}", statement), 0, 0))
         }
       }
     }

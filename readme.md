@@ -3,7 +3,7 @@
 JSI is a JavaScript Interpreter written in Rust.
 
 
-<img src="https://img.shields.io/badge/Test262-1316/48876-brightgreen.svg" alt="test262 passed" />
+<img src="https://img.shields.io/badge/Test262-344-brightgreen.svg" alt="test262 passed" />
 
 ---
 ### Usage

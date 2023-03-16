@@ -100,6 +100,7 @@ impl Test262File {
         let mut file = File::open(&path).unwrap();
         let mut code = String::new();
         file.read_to_string(&mut code).unwrap();
+        // TODO: negative in-statement-position-if-expression-statement.js
         return Test262File {
             name,
             code,
