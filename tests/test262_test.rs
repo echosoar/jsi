@@ -1,4 +1,4 @@
-use std::{path::{Path}, env, fs::{self, File}, io::{Write, Read}};
+use std::{path::{Path}, env, fs::{self, File}, io::{Write, Read}, panic};
 use std::fs::metadata;
 use std::collections::HashMap;
 use jsi::JSI;
@@ -13,7 +13,6 @@ struct Test262Dir {
     pub result: Test262DirResult,
 }
 
-
 impl Test262Dir {
     pub fn new(name: String, dir: String) -> Test262Dir {
         return Test262Dir {
@@ -24,18 +23,36 @@ impl Test262Dir {
             result: Test262DirResult::new(),
         }
     }
-    pub fn run(&mut self) {
+    pub fn run(&mut self, preload_code: &str) {
         let (dirs, files) = self.get_childs();
         self.cases += files.len();
         for file in files.iter() {
-            let mut jsi = JSI::new();
-            let result = jsi.run(file.code.clone());
-            println!("result: {:?}", result);
-            self.result.files.insert(file.name.clone(), false);
+            let mut passed = false;
+            let result = panic::catch_unwind(|| {
+                let mut jsi = JSI::new();
+                // println!("run: {:?}", code);
+                let result = jsi.run(format!("{};{}", preload_code, file.code));
+                // println!("result: {:?}", result);
+                if let Ok(_) = result {
+                    return true;
+                }
+                return false
+            });
+            if result.is_err() {
+                println!("panic: {:?} {:?}", file.name, file.code);
+            } else {
+                if let Ok(exec_passed) = result {
+                    passed = exec_passed;
+                }
+            }
+            if passed {
+                self.passed += 1;
+            }
+            self.result.files.insert(file.name.clone(), passed);
         }
         for dirs in dirs.iter() {
             let mut dirs_info = dirs.clone();
-            dirs_info.run();
+            dirs_info.run(preload_code);
             self.cases += dirs_info.cases;
             self.passed += dirs_info.passed;
             self.result.dirs.insert(dirs_info.name.clone(), dirs_info.result);
@@ -111,9 +128,9 @@ impl Test262DirResult {
 #[test]
 fn test_all_262() {
        let mut test262 = Test262Dir::new(String::from("base"), String::from("tests/test262/test"));
-       test262.run();
+       test262.run("");
        let serialized_result = serde_json::to_string_pretty(&test262.result).unwrap();
-       let file_name = ".262/result.json";
+       let file_name = ".test/262_result.json";
         let mut file = File::create(file_name).unwrap();
         file.write_all(serialized_result.as_bytes()).unwrap();
        println!("result: {:?}/{:?}", test262.passed, test262.cases)

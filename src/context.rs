@@ -220,10 +220,10 @@ impl Context {
           Ok(ValueInfo { value: self.execute_call_expression(call)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Object(object) => {
-          Ok(ValueInfo { value: self.new_object(object), name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { value: self.new_object(object)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Array(array) => {
-          Ok(ValueInfo { value: self.new_array(array), name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { value: self.new_array(array)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Function(function_declaration) => {
           let func = create_function(&self.global, function_declaration, Rc::downgrade(&self.cur_scope));
@@ -266,7 +266,7 @@ impl Context {
           }
         },
         Expression::Assign(assign) => {
-          Ok(ValueInfo{ value: self.execute_assign_expression(assign), name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo{ value: self.execute_assign_expression(assign)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::String(string) => {
           Ok(ValueInfo {value: Value::String(string.value.clone()), name: None, access_path:string.value.clone(), reference: None })
@@ -305,7 +305,6 @@ impl Context {
     // 执行基础四则运算
     fn execute_binary_expression(&mut self, expression: &BinaryExpression) -> JSIResult<Value> {
       let left = self.execute_expression(expression.left.as_ref())?;
-
       
       // 逻辑运算 左值
       if expression.operator == Token::LogicalAnd {
@@ -370,8 +369,7 @@ impl Context {
           Ok(self.execute_compare_operator_expression(&left, &right, &expression.operator))
         },
         _ =>  {
-          println!("unsupport binary {:?}", expression);
-          Ok(Value::Undefined)
+          Err(JSIError::new(JSIErrorType::Unknown, format!("unsupport binary {:?}", expression), 0, 0))
         }
       }
 
@@ -446,7 +444,7 @@ impl Context {
               function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
             };
             if let Some(_) = is_global_object {
-              return Ok(callee.value.instantiate_object(&self.global, arguments).unwrap());
+              return callee.value.instantiate_object(&self.global, arguments);
             }
           }
           Err(JSIError::new(JSIErrorType::TypeError, format!("{:?} is not a function", callee.access_path), 0, 0))
@@ -458,20 +456,21 @@ impl Context {
     }
 
     // 执行赋值表达式
-    fn execute_assign_expression(&mut self, expression: &AssignExpression) -> Value {
-      let mut left_info = self.execute_expression_info(&expression.left).unwrap();
-      let right_value = self.execute_expression(&expression.right).unwrap();
+    fn execute_assign_expression(&mut self, expression: &AssignExpression) -> JSIResult<Value> {
+      let mut left_info = self.execute_expression_info(&expression.left)?;
+      let right_value = self.execute_expression(&expression.right)?;
       // TODO: more operator
       if expression.operator == Token::Assign {
         left_info.set_value(right_value.clone());
-        right_value
+        Ok(right_value)
       } else {
-        Value::Undefined
+        Err(JSIError::new(JSIErrorType::SyntaxError, String::from("todo: unsupported operator"), 0, 0))
       }
     }
 
     // 执行 ++i --i
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> JSIResult<Value> {
+      
       let mut operand_info = self.execute_expression_info(&expression.operand)?;
       let value_number = operand_info.value.to_number(&self.global);
       let value = if let Some(new_value) = value_number {
@@ -483,6 +482,12 @@ impl Context {
           Token::Decrement => {
             new_value = new_value - 1f64;
           },
+          Token::Subtract => {
+            new_value = -new_value;
+          },
+          Token::Plus => {
+            new_value = new_value;
+          }
           _ => {}
         }
         Value::Number(new_value)
@@ -548,7 +553,7 @@ impl Context {
       loop {
         if !for_statment.post_judgment {
           let condition = &for_statment.condition;
-        
+          
           if let Expression::Unknown = condition {
             // nothing to do
           } else {
@@ -562,6 +567,7 @@ impl Context {
         // TODO: expression
         if let Statement::Block(block) = for_statment.statement.as_ref() {
           let result = self.call_block(&vec![], &block.statements)?;
+         
           let for_interrupt = result.2.clone();
           if let Value::Interrupt(token, expr) = for_interrupt {
             if token == Token::Break {
@@ -663,14 +669,14 @@ impl Context {
           arguments.push(self.execute_expression(element)?);
         }
       let obj = constructor.value.instantiate_object(&self.global, arguments);
-      if let Some(obj) = obj {
+      if let Ok(obj) = obj {
         Ok(obj)
       } else {
         Err(JSIError::new(JSIErrorType::TypeError, format!("{} is not a constructor", constructor.access_path), 0, 0))
       }
     }
 
-    fn new_object(&mut self, expression: &ObjectLiteral) -> Value {
+    fn new_object(&mut self, expression: &ObjectLiteral) -> JSIResult<Value> {
       // 获取 object 实例
       let object = create_object(&self.global,ClassType::Array, None);
       let object_clone = Rc::clone(&object);
@@ -680,23 +686,23 @@ impl Context {
       // 绑定属性
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
-        let name = self.execute_expression(&property.name).unwrap().to_string(&self.global);
-        let mut initializer = self.execute_expression(&property.initializer).unwrap();
+        let name = self.execute_expression(&property.name)?.to_string(&self.global);
+        let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
         object_mut.define_property(name, Property {
           enumerable: true,
           value: initializer,
         });
       }
-      Value::Object(object)
+      Ok(Value::Object(object))
     }
 
-    fn new_array(&mut self, expression: &ArrayLiteral) -> Value {
+    fn new_array(&mut self, expression: &ArrayLiteral) -> JSIResult<Value> {
       let array = create_array(&self.global, 0);
       if let Value::Array(arr_obj) = &array {
         let mut arguments: Vec<Value> = vec![];
         for element in &expression.elements {
-          arguments.push(self.execute_expression(element).unwrap());
+          arguments.push(self.execute_expression(element)?);
         }
         let weak = Rc::downgrade(arr_obj);
         let call_ctx = &mut CallContext {
@@ -706,7 +712,7 @@ impl Context {
         };
         Object::call(call_ctx, String::from("push"), arguments);
       }
-      array
+      Ok(array)
     }
 
     fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
@@ -730,7 +736,7 @@ impl Context {
           this: Rc::downgrade(&this_obj),
           reference: reference,
         };
-        let result = (builtin_function)(&mut ctx, arguments);
+        let result = (builtin_function)(&mut ctx, arguments)?;
         if let Value::FunctionNeedToCall(function_define, args) = result {
           return self.call_function_object(function_define.clone(), Some(Value::Function(function_define)), None, args);
         }

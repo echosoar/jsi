@@ -796,7 +796,9 @@ impl AST{
           } else if self.char == '*' {
             // 多行注释
             loop {
-              self.read();
+              if !self.read() {
+                break;
+              }
               if self.char == '*' {
                 self.read();
                 if self.char == '/' {

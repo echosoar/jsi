@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 
-use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}};
+use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}, error::JSIResult};
 
 use super::{object::{create_object, Object, Property}, global::get_global_object, function::builtin_function};
 
@@ -30,27 +30,27 @@ pub fn bind_global_string(global:  &Rc<RefCell<Object>>) {
 }
 
 
-fn create(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn create(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut param = Value::Undefined;
   if args.len() > 0 {
     param = args[0].clone();
   }
   let global = ctx.global.upgrade();
   if let Some(global) = &global {
-    create_string(global, param)
+    Ok(create_string(global, param))
   } else {
-    Value::Undefined
+    Ok(Value::Undefined)
   }
 }
 
 // String.prototype.toString
-fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   let global = ctx.global.upgrade().unwrap();
   let this_origin = ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
   let init = this_rc.borrow().get_inner_property_value(String::from("value"));
   if let Some(value) = init {
-    return Value::String(value.to_string(&global))
+    return Ok(Value::String(value.to_string(&global)))
   }
-  Value::String(String::from(""))
+  Ok(Value::String(String::from("")))
 }

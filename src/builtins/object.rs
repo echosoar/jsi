@@ -8,6 +8,7 @@ use super::function::builtin_function;
 use super::global::get_global_object;
 use crate::ast_node::{Statement, CallContext, ClassType};
 use crate::constants::GLOBAL_OBJECT_NAME;
+use crate::error::{JSIResult, JSIError};
 use crate::value::{Value, INSTANTIATE_OBJECT_METHOD_NAME};
 
 
@@ -143,12 +144,12 @@ impl Object {
     Value::Undefined
   }
 
-  pub fn call(ctx: &mut CallContext, name: String, arguments:Vec<Value>) -> Value {
+  pub fn call(ctx: &mut CallContext, name: String, arguments:Vec<Value>) -> JSIResult<Value> {
     let this = ctx.this.upgrade().unwrap();
     let fun = {
       //  处理临时借用
       let this_mut = (*this).borrow_mut();
-      this_mut.get_value(name)
+      this_mut.get_value(name.clone())
     };
    
     if let Value::Function(function_define) = &fun {
@@ -163,7 +164,7 @@ impl Object {
         return (builtin_function)( ctx, arguments);
       }
     }
-    Value::Undefined
+    Err(JSIError::new(crate::error::JSIErrorType::ReferenceError, format!("{:?} method not exists", name), 0, 0))
   }
 }
 
@@ -209,7 +210,7 @@ pub fn bind_global_object(global: &Rc<RefCell<Object>>) {
 
 
 // Object.keys()
-fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let hangle_global = ctx.global.upgrade().unwrap();
   let array = create_array(&hangle_global, 0);
   let array_obj = match array {
@@ -218,7 +219,7 @@ fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
   }.unwrap();
 
   if args.len() < 1 {
-    return Value::Array(array_obj);
+    return Ok(Value::Array(array_obj));
   }
   let weak = Rc::downgrade(&array_obj);
   let call_ctx = &mut CallContext {
@@ -236,30 +237,26 @@ fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> Value {
       }
     }
   }
-  return Value::Array(array_obj);
+  return Ok(Value::Array(array_obj));
 }
 
 
 // Object.keys()
-fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   let this_origin = ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
   let this = this_rc.borrow();
   let mut obj_type : String = "[object ".to_owned();
   obj_type.push_str(this.class_type.to_string().as_str());
   obj_type.push(']');
-  Value::String(obj_type)
+ Ok( Value::String(obj_type))
 }
 
-fn create(ctx: &mut CallContext, args: Vec<Value>) -> Value {
-  let global = ctx.global.upgrade();
-  if let Some(global) = &global {
-    if args.len() > 0 {
-      let obj = args[0].to_object_value(global);
-      return obj
-    }
-    Value::Object(create_object(global, ClassType::Object, None))
-  } else {
-    Value::Undefined
+fn create(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let global = ctx.global.upgrade().unwrap();
+  if args.len() > 0 {
+    let obj = args[0].to_object_value(&global);
+    return Ok(obj)
   }
+  Ok(Value::Object(create_object(&global, ClassType::Object, None)))
 }

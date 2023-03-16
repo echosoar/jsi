@@ -6,7 +6,7 @@ use crate::builtins::boolean::create_boolean;
 use crate::builtins::number::create_number;
 use crate::builtins::object::{Object, Property};
 use crate::builtins::string::create_string;
-use crate::error::{JSIResult, JSIError};
+use crate::error::{JSIResult, JSIError, JSIErrorType};
 use crate::scope::Scope;
 
 
@@ -207,7 +207,7 @@ impl Value {
             this: Rc::downgrade(&obj),
             reference: None,
           };
-          let value = Object::call(&mut ctx, String::from("valueOf"), vec![]);
+          let value = Object::call(&mut ctx, String::from("valueOf"), vec![]).unwrap();
           return value.to_string(global);
         }
         // object
@@ -224,7 +224,7 @@ impl Value {
             this: weak,
             reference: None,
           };
-          let value = Object::call(call_ctx, String::from("toString"), vec![]);
+          let value = Object::call(call_ctx, String::from("toString"), vec![]).unwrap();
           return value.to_string(global)
         }
         return String::from("");
@@ -262,7 +262,9 @@ impl Value {
             reference: None,
           };
           let value = Object::call(&mut ctx, String::from("valueOf"), vec![]);
-          return value.to_number(global);
+          if let Ok(res) = value {
+            return res.to_number(global);
+          }
         }
         // TODO: throw error
         None
@@ -294,7 +296,7 @@ impl Value {
               this: Rc::downgrade(&obj),
               reference: None,
             };
-            let value = Object::call(&mut ctx, String::from("valueOf"), vec![]);
+            let value = Object::call(&mut ctx, String::from("valueOf"), vec![]).unwrap();
             return value.to_boolean(global);
           }
           true
@@ -303,7 +305,7 @@ impl Value {
   }
 
   // 实例化对象
-  pub fn instantiate_object(&self, global: &Rc<RefCell<Object>>, args: Vec<Value>) -> Option<Value> {
+  pub fn instantiate_object(&self, global: &Rc<RefCell<Object>>, args: Vec<Value>) -> JSIResult<Value> {
     let rc_obj = self.to_weak_rc_object();
     if let Some(wrc) = rc_obj {
       let rc = wrc.upgrade();
@@ -323,13 +325,13 @@ impl Value {
                 this: Rc::downgrade(&function_define),
                 reference: None,
               };
-              return Some((builtin_function)(&mut ctx, args));
+              return (builtin_function)(&mut ctx, args);
             }
           }
         }
       }
     }
-    None
+    Err(JSIError::new(JSIErrorType::Unknown, format!("todo: unsupported global Type"), 0, 0))
   }
 
   pub fn to_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {

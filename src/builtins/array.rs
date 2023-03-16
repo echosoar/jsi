@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 
-use crate::{value::Value, ast_node::{CallContext, ClassType}};
+use crate::{value::Value, ast_node::{CallContext, ClassType}, error::{JSIResult, JSIError, JSIErrorType}};
 
 use super::{object::{create_object, Property, Object}, function::builtin_function, global::get_global_object};
 
@@ -36,25 +36,25 @@ pub fn bind_global_array(global:  &Rc<RefCell<Object>>) {
 }
 
 // Array.isArray
-fn array_static_is_array(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+fn array_static_is_array(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   let this_origin = ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
   let this = this_rc.borrow();
   if let ClassType::Array = this.class_type {
-    Value::Boolean(true)
+    Ok(Value::Boolean(true))
   } else {
-    Value::Boolean(false)
+    Ok(Value::Boolean(false))
   }
 }
 
 
 // Array.prototype.toString
-fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   array_join(ctx, vec![])
 }
 
 // Array.prototype.join
-fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut join = ",";
   if args.len() > 0 {
     if let Value::String(join_param) = &args[0] {
@@ -67,7 +67,7 @@ fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> Value {
     string_list.push(value.to_string(&global));
   };
   array_iter_mut(ctx, iter);
-  Value::String(string_list.join(join))
+  Ok(Value::String(string_list.join(join)))
 }
 
 fn array_iter_mut<F: FnMut(i32, &Value)>(ctx: &mut CallContext, mut callback: F) {
@@ -83,17 +83,21 @@ fn array_iter_mut<F: FnMut(i32, &Value)>(ctx: &mut CallContext, mut callback: F)
 }
 
 // Array.prototype.push
-fn array_push(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn array_push(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   // 插入值
   let global = ctx.global.upgrade().unwrap();
   let this_rc = ctx.this.upgrade().unwrap();
   let mut this = this_rc.borrow_mut();
-  let mut len = this.get_property_value(String::from("length")).to_number(&global).unwrap() as usize;
-  for value in args.iter() { 
-    this.define_property(len.to_string(), Property { enumerable: true, value: value.clone() });
-    len += 1
+  let mut len_opt = this.get_property_value(String::from("length")).to_number(&global);
+  if let Some(len) = len_opt {
+    let mut len = len as usize;
+    for value in args.iter() { 
+      this.define_property(len.to_string(), Property { enumerable: true, value: value.clone() });
+      len += 1
+    }
+    let new_length = Value::Number(len as f64);
+    this.define_property(String::from("length"),  Property { enumerable: false, value: new_length.clone() });
+    return Ok(new_length)
   }
-  let new_length = Value::Number(len as f64);
-  this.define_property(String::from("length"),  Property { enumerable: false, value: new_length.clone() });
-  return new_length
+  Err(JSIError::new(JSIErrorType::RangeError, format!("Invalid array length"), 0, 0))
 }

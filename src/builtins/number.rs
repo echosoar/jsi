@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 
-use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}};
+use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}, error::JSIResult};
 
 use super::{object::{create_object, Object, Property}, global::get_global_object, function::builtin_function};
 
@@ -30,34 +30,33 @@ pub fn bind_global_number(global:  &Rc<RefCell<Object>>) {
 }
 
 // Number.prototype.toString
-fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> Value {
-  let value = value_of(ctx, vec![]);
+fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
+  let value = value_of(ctx, vec![])?;
   let global = ctx.global.upgrade().unwrap();
-  Value::String(value.to_string(&global))
+  Ok(Value::String(value.to_string(&global)))
 }
 
 
 // Number.prototype.valueOf
-fn value_of(ctx: &mut CallContext, _: Vec<Value>) -> Value {
+fn value_of(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   let global = ctx.global.upgrade().unwrap();
   let this_origin = ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
   let init = this_rc.borrow().get_inner_property_value(String::from("value"));
   if let Some(value) = init {
-    return Value::Number(value.to_number(&global).unwrap())
+    let res = value.to_number(&global);
+    if let Some(num) = res {
+      return Ok(Value::Number(num))
+    }
   }
-  Value::Number(0f64)
+  Ok(Value::NAN)
 }
 
-fn create(ctx: &mut CallContext, args: Vec<Value>) -> Value {
+fn create(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut param = Value::Undefined;
   if args.len() > 0 {
     param = args[0].clone();
   }
-  let global = ctx.global.upgrade();
-  if let Some(global) = &global {
-    create_number(global, param)
-  } else {
-    Value::Undefined
-  }
+  let global = ctx.global.upgrade().unwrap();
+  Ok(create_number(&global, param))
 }
