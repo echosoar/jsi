@@ -1,9 +1,9 @@
 // AST
 // mod super::token::TokenKeywords;
-use std::{io, fmt};
+use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -126,6 +126,9 @@ impl AST{
         },
         Token::Try => {
           self.parse_try_catch_statment()
+        },
+        Token::Throw => {
+          self.parse_throw_statement()
         },
         Token::LeftBrace => {
           // block
@@ -515,6 +518,14 @@ impl AST{
       members,
       heritage: None,
     })
+  }
+
+  fn parse_throw_statement(&mut self) -> JSIResult<Statement> {
+    self.check_token_and_next(Token::Throw)?;
+    let expression = self.parse_expression()?;
+    Ok(Statement::Throw(ThrowStatement {
+      expression
+    }))
   }
 
   fn parse_try_catch_statment(&mut self) -> JSIResult<Statement> {

@@ -17,6 +17,7 @@ pub enum Statement {
   Label(LabeledStatement),
   Return(ReturnStatement),
   Switch(SwitchStatement),
+  Throw(ThrowStatement),
   Try(TryCatchStatement),
   Unknown, // 未知
   Var(VariableDeclarationStatement),
@@ -167,6 +168,11 @@ pub struct ForStatement {
   pub post_judgment: bool,
 }
 
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThrowStatement {
+  pub expression: Expression
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TryCatchStatement {

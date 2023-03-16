@@ -31,7 +31,7 @@ impl Test262Dir {
             let result = panic::catch_unwind(|| {
                 let mut jsi = JSI::new();
                 // println!("run: {:?}", code);
-                let result = jsi.run(format!("{};{}", preload_code, file.code));
+                let result = jsi.run(format!("{}\n{}", preload_code, file.code));
                 // println!("result: {:?}", result);
                 if let Ok(_) = result {
                     return true;
@@ -125,19 +125,22 @@ impl Test262DirResult {
     }
 }
 
+
+fn load_harness(path: &str) -> String {
+    let mut file = File::open(format!("test262/{}", path)).unwrap();
+    let mut code = String::new();
+    file.read_to_string(&mut code).unwrap();
+    return code;
+}
+
 #[test]
 fn test_all_262() {
-       let mut test262 = Test262Dir::new(String::from("base"), String::from("tests/test262/test"));
-       test262.run("");
-       let serialized_result = serde_json::to_string_pretty(&test262.result).unwrap();
-       let file_name = ".test/262_result.json";
-        let mut file = File::create(file_name).unwrap();
-        file.write_all(serialized_result.as_bytes()).unwrap();
-       println!("result: {:?}/{:?}", test262.passed, test262.cases)
+    let prelaod = format!("{}\n", load_harness("harness/assert.js"));
+    let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
+    test262.run(prelaod.as_str());
+    let serialized_result = serde_json::to_string_pretty(&test262.result).unwrap();
+    let file_name = "./262_result.json";
+    let mut file = File::create(file_name).unwrap();
+    file.write_all(serialized_result.as_bytes()).unwrap();
+    println!("result: {:?}/{:?}", test262.passed, test262.cases)
 }
-/*
-
-装载一些测试工具 harness
-+ harness/assert.js
-+ harness/sta.js
- */
