@@ -3,6 +3,7 @@ use std::fs::metadata;
 use std::collections::HashMap;
 use jsi::JSI;
 use serde::{Serialize, Deserialize};
+use yaml_rust::{YamlLoader, Yaml};
  
 #[derive(Clone)]
 struct Test262Dir {
@@ -42,7 +43,11 @@ impl Test262Dir {
                 println!("panic: {:?} {:?}", file.name, file.code);
             } else {
                 if let Ok(exec_passed) = result {
-                    passed = exec_passed;
+                    if file.negative {
+                        passed = !exec_passed;
+                    } else {
+                        passed = exec_passed;
+                    }
                 }
             }
             if passed {
@@ -93,6 +98,8 @@ impl Test262Dir {
 struct Test262File {
     pub name: String,
     pub code: String,
+    pub negative: bool,
+    pub negative_type: String,
     
 }
 impl Test262File {
@@ -100,11 +107,38 @@ impl Test262File {
         let mut file = File::open(&path).unwrap();
         let mut code = String::new();
         file.read_to_string(&mut code).unwrap();
-        // TODO: negative in-statement-position-if-expression-statement.js
+        let config = Test262File::parse(&code);
         return Test262File {
             name,
             code,
+            negative: config.0,
+            negative_type: config.1
         }
+    }
+
+    pub fn parse(code: &String) -> (bool, String) {
+        let mut negative = false;
+        let mut negative_type = String::from("");
+        let start = code.find("/*---");
+        if let Some(start) = start {
+            let end = code.find("---*/");
+            if let Some(end) = end {
+                let config = &code[start + 5..end];
+                let docs = YamlLoader::load_from_str(config);
+                if let Ok(docs) = docs {
+                    if let Yaml::BadValue = docs[0]["negative"] {
+                    
+                    } else {
+                        negative = true;
+                        let negative_type_value = docs[0]["negative"]["type"].as_str();
+                        if let Some(negative_type_item) = negative_type_value {
+                            negative_type = String::from(negative_type_item);
+                        }
+                    }
+                }
+            }
+        }
+        return (negative, negative_type);
     }
 }
 
