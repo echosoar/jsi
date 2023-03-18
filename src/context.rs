@@ -48,7 +48,7 @@ impl Context {
         match  declaration {
             Declaration::Function(function_statement) => {
               let function = create_function(&self.global, &function_statement, Rc::downgrade(&self.cur_scope));
-             (*self.cur_scope).borrow_mut().set_value(function_statement.name.literal.clone(), function)
+             (*self.cur_scope).borrow_mut().set_value(function_statement.name.literal.clone(), function, false)
             }
         };
       }
@@ -81,7 +81,7 @@ impl Context {
               let mut value = self.execute_expression(&let_var.initializer)?;
               value.bind_name(name.clone());
               (*last_statement_value) = value.clone();
-              (*self.cur_scope).borrow_mut().set_value(name, value);
+              (*self.cur_scope).borrow_mut().set_value(name, value, var_statement.flag == VariableFlag::Const);
             }
           }
           Ok(true)
@@ -149,7 +149,7 @@ impl Context {
             if let Some(catch) = &try_statement.catch {
               self.switch_scope(Some(Rc::clone(&self.cur_scope)));
               if let Some(error_decl) =&catch.declaration {
-                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err.to_error_object(&self.global)));
+                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err.to_error_object(&self.global)), false);
               }
               let result = self.call_block(&vec![], &catch.body.statements)?;
               (*interrupt) = result.2;
@@ -213,26 +213,26 @@ impl Context {
       // println!("expression: {:?}", expression);
       match expression {
         Expression::Binary(binary) => {
-          Ok(ValueInfo { value: self.execute_binary_expression(binary)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_binary_expression(binary)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PrefixUnary(expr) => {
-          Ok(ValueInfo { value: self.execute_prefix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_prefix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PostfixUnary(expr) => {
-          Ok(ValueInfo { value: self.execute_postfix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_postfix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Call(call) => {
-          Ok(ValueInfo { value: self.execute_call_expression(call)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_call_expression(call)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Object(object) => {
-          Ok(ValueInfo { value: self.new_object(object)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.new_object(object)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Array(array) => {
-          Ok(ValueInfo { value: self.new_array(array)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.new_array(array)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Function(function_declaration) => {
           let func = create_function(&self.global, function_declaration, Rc::downgrade(&self.cur_scope));
-          Ok(ValueInfo { value: func, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: func, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PropertyAccess(property_access) => {
           // expression.name
@@ -244,10 +244,10 @@ impl Context {
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
           // println!("PropertyAccess: {:?} {:?}",left_obj, right);
-          Ok(ValueInfo { value, name: Some(right.clone()), access_path: String::from(""), reference: Some(Value::Object(left_obj)) })
+          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: String::from(""), reference: Some(Value::Object(left_obj)) })
         },
         Expression::ComputedPropertyName(property_name) => {
-          Ok(ValueInfo { value: self.execute_expression(&property_name.expression)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_expression(&property_name.expression)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::ElementAccess(element_access) => {
           // expression[argument]
@@ -259,31 +259,32 @@ impl Context {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", right), 0, 0))
           }
           let value = (*left_obj).borrow().get_value(right.clone());
-          Ok(ValueInfo { value, name: Some(right.clone()),  access_path: String::from(""),reference: Some(Value::Object(left_obj)) })
+          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()),  access_path: String::from(""),reference: Some(Value::Object(left_obj)) })
         },
         Expression::Identifier(identifier) => {
           let name = identifier.literal.clone();
-          let (value, scope) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
+          let (value, scope, is_const) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
           if let Some(val) = value {
-            Ok(ValueInfo{ value: val, name: Some(name.clone()),  access_path: name.clone(),reference: Some(Value::Scope(Rc::downgrade(&scope))) })
+            Ok(ValueInfo { is_const, value: val, name: Some(name.clone()),  access_path: name.clone(),reference: Some(Value::Scope(Rc::downgrade(&scope))) })
           } else {
             Err(JSIError::new(JSIErrorType::ReferenceError, format!("{} is not defined", name), 0, 0))
           }
         },
         Expression::Assign(assign) => {
-          Ok(ValueInfo{ value: self.execute_assign_expression(assign)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_assign_expression(assign)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::String(string) => {
-          Ok(ValueInfo {value: Value::String(string.value.clone()), name: None, access_path:string.value.clone(), reference: None })
+          Ok(ValueInfo {is_const: false, value: Value::String(string.value.clone()), name: None, access_path:string.value.clone(), reference: None })
         },
         Expression::Number(number) => {
-          Ok(ValueInfo {value: Value::Number(number.value.clone()), name: None, access_path: number.literal.clone(), reference: None })
+          Ok(ValueInfo {is_const: false, value: Value::Number(number.value.clone()), name: None, access_path: number.literal.clone(), reference: None })
         },
         Expression::New(new_object) => {
-          Ok(ValueInfo { value: self.execute_new_expression(new_object)?, name: None, access_path: String::from(""),reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_new_expression(new_object)?, name: None, access_path: String::from(""),reference: None })
         },
         Expression::Keyword(keyword) => {
           Ok(ValueInfo {
+            is_const: false,
             value: match *keyword {
               Keywords::False => Value::Boolean(false),
               Keywords::True => Value::Boolean(true),
@@ -298,6 +299,7 @@ impl Context {
         _ => {
           println!("expression: {:?}", expression);
           Ok(ValueInfo {
+            is_const: false,
             value: Value::Undefined,
             name: None,
             reference: None,
@@ -466,7 +468,7 @@ impl Context {
       let right_value = self.execute_expression(&expression.right)?;
       // TODO: more operator
       if expression.operator == Token::Assign {
-        left_info.set_value(right_value.clone());
+        left_info.set_value(right_value.clone())?;
         Ok(right_value)
       } else {
         Err(JSIError::new(JSIErrorType::SyntaxError, String::from("todo: unsupported operator"), 0, 0))
@@ -499,7 +501,7 @@ impl Context {
       } else {
         Value::NAN
       };
-      operand_info.set_value(value.clone());
+      operand_info.set_value(value.clone())?;
       Ok(value)
     }
 
@@ -523,7 +525,7 @@ impl Context {
       } else {
         Value::NAN
       };
-      operand_info.set_value(value);
+      operand_info.set_value(value)?;
       Ok(origin_value)
     }
 
@@ -540,7 +542,7 @@ impl Context {
       if let Statement::Var(var) = &initializer  {
         if var.flag == VariableFlag::Var {
           self.call_statement(&initializer, &mut for_result, &mut for_last_statement_value, &mut for_interrupt, for_call_options)?;
-        } else if var.flag == VariableFlag::Let {
+        } else if var.flag == VariableFlag::Let || var.flag == VariableFlag::Const {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
           is_change_scope = true;
           self.call_statement(&initializer, &mut for_result, &mut for_last_statement_value, &mut for_interrupt, for_call_options)?;
@@ -766,9 +768,9 @@ impl Context {
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {
           // TODO: 参数引用
-          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone());
+          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone(), false);
         } else {
-          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined);
+          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined, false);
         }
       }
       // 执行 body
@@ -814,12 +816,12 @@ impl Context {
       // 挂载全局对象
       let mut global_scope = self.scope.borrow_mut();
 
-      global_scope.set_value(String::from("globalThis"), Value::RefObject(Rc::downgrade(&self.global)));
+      global_scope.set_value(String::from("globalThis"), Value::RefObject(Rc::downgrade(&self.global)), true);
 
       for name in GLOBAL_OBJECT_NAME_LIST.iter() {
         let object_type_name = name.to_string();
         let object = get_global_object(&self.global, object_type_name.clone());
-        global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)));
+        global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)), true);
       }
     }
 

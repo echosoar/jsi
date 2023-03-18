@@ -9,7 +9,14 @@ pub struct Scope {
   pub from: Option<Rc<RefCell<Scope>>>,
   pub childs: Vec<Rc<RefCell<Scope>>>,
   pub labels: Vec<String>,
-  variables: HashMap<String, Value>
+  variables: HashMap<String, VariableInfo>
+}
+
+
+#[derive(Debug, Clone)]
+pub struct VariableInfo {
+  pub value: Value,
+  pub is_const: bool,
 }
 
 impl Scope {
@@ -24,22 +31,22 @@ impl Scope {
     }
   }
 
-  pub fn set_value(&mut self, name: String, value: Value) {
-    self.variables.insert(name, value);
+  pub fn set_value(&mut self, name: String, value: Value, is_const: bool) {
+    self.variables.insert(name, VariableInfo{value, is_const});
   }
 }
 
-pub fn get_value_and_scope(scope: Rc<RefCell<Scope>>, identifier: String) -> (Option<Value>, Rc<RefCell<Scope>>) {
+pub fn get_value_and_scope(scope: Rc<RefCell<Scope>>, identifier: String) -> (Option<Value>, Rc<RefCell<Scope>>, bool) {
   // println!("get_value_and_scope: {:?} {:?}", identifier, scope);
   let s = scope.borrow();
   let value = s.variables.get(&identifier);
   if let Some(val) = value {
-    return (Some(val.clone()), Rc::clone(&scope))
+    return (Some(val.value.clone()), Rc::clone(&scope), val.is_const)
   } else {
     if let Some(parent) = &scope.borrow().parent {
       get_value_and_scope(Rc::clone(parent), identifier)
     } else {
-      (None, Rc::clone(&scope))
+      (None, Rc::clone(&scope), false)
     }
   }
 }

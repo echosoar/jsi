@@ -106,7 +106,7 @@ impl AST{
   fn parse_statement(&mut self) -> JSIResult<Statement> {
     // println!("parse_statement: {:?} {:?}", self.token,  self.literal);
     match self.token {
-        Token::Var | Token::Let => self.parse_variable_statement(),
+        Token::Var | Token::Let | Token::Const => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
         Token::Switch => self.parse_switch_statement(),
         Token::For => self.parse_for_statement(),
@@ -169,6 +169,9 @@ impl AST{
     if self.token == Token::Let {
       self.check_token_and_next(Token::Let)?;
       variable_flag = VariableFlag::Let;
+    } else if self.token == Token::Const {
+      self.check_token_and_next(Token::Const)?;
+      variable_flag = VariableFlag::Const;
     } else {
       self.check_token_and_next(Token::Var)?;
     }
@@ -289,7 +292,7 @@ impl AST{
     // 解析 initializer
     // 需要额外处理 var 的情况
     let mut initializer = Statement::Unknown;
-    if self.token == Token::Var || self.token == Token::Let {
+    if self.token == Token::Var || self.token == Token::Let || self.token == Token::Const {
         initializer = self.parse_variable_statement()?;
     } else if self.token != Token::Semicolon {
       initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });

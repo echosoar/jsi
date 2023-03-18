@@ -18,13 +18,18 @@ pub struct ValueInfo {
   pub value: Value,
   // 访问的路径
   pub access_path: String,
-  pub reference: Option<Value>
+  // a.c，a 就是 reference，c 就是 name 变量名
+  pub reference: Option<Value>,
+  pub is_const: bool,
 }
 
 impl ValueInfo {
-  pub fn set_value(&mut self, value: Value) -> Option<String> {
+  pub fn set_value(&mut self, value: Value) -> JSIResult<Option<String>> {
     if self.name == None {
-      return  None;
+      return  Err(JSIError::new(JSIErrorType::SyntaxError, format!("Invalid left-hand side in assignment"), 0, 0));
+    }
+    if self.is_const {
+      return  Err(JSIError::new(JSIErrorType::TypeError, format!("Assignment to constant variable"), 0, 0));
     }
     let name = match &self.name {
         Some(name) => name.clone(),
@@ -37,19 +42,20 @@ impl ValueInfo {
               enumerable: false,
               value: value,
             });
-            None
+            Ok(None)
           },
           Value::Scope(scope) => {
             let scope_rc = scope.upgrade();
             if let Some(scope)= scope_rc {
-              scope.borrow_mut().set_value( name.clone(), value);
+              scope.borrow_mut().set_value( name.clone(), value, false);
             }
-            None
+            Ok(None)
           },
-          _ => Some(name.clone())
+          _ => Ok(Some(name.clone()))
       }
     } else {
-      return Some(name.clone())
+      // TODO: no reference set value
+      return Ok(Some(name.clone()))
     }
   }
 }

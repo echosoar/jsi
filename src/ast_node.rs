@@ -122,6 +122,7 @@ pub enum Declaration {
 pub enum VariableFlag {
   Var,
   Let,
+  Const,
 }
 
 #[derive(Debug, Clone, PartialEq)]
