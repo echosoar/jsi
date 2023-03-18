@@ -17,6 +17,18 @@ pub enum JSIErrorType {
   Unknown,
 }
 
+impl JSIErrorType {
+  pub fn to_string(&self) -> String {
+    match self {
+        JSIErrorType::SyntaxError => String::from("SyntaxError"),
+        JSIErrorType::TypeError => String::from("TypeError"),
+        JSIErrorType::ReferenceError => String::from("ReferenceError"),
+        JSIErrorType::RangeError => String::from("RangeError"),
+        JSIErrorType::Unknown => String::from("Unknown"),
+    }
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct JSIError {
     pub error_type: JSIErrorType,
