@@ -1,4 +1,4 @@
-use std::{path::{Path}, env, fs::{self, File}, io::{Write, Read}, panic};
+use std::{path::{Path, PathBuf}, env, fs::{self, File}, io::{Write, Read}, panic};
 use std::fs::metadata;
 use std::collections::HashMap;
 use jsi::JSI;
@@ -24,8 +24,8 @@ impl Test262Dir {
             result: Test262DirResult::new(),
         }
     }
-    pub fn run(&mut self, preload_code: &str) {
-        let (dirs, files) = self.get_childs();
+    pub fn run(&mut self, preload_code: &str, ignore_list: &Vec<PathBuf>, only_list: &Vec<PathBuf>) {
+        let (dirs, files) = self.get_childs(ignore_list, only_list);
         self.cases += files.len();
         for file in files.iter() {
             let mut passed = false;
@@ -34,19 +34,27 @@ impl Test262Dir {
                 // println!("run: {:?}", code);
                 let result = jsi.run(format!("{}\n{}", preload_code, file.code));
                 // println!("result: {:?}", result);
-                if let Ok(_) = result {
-                    return true;
-                }
-                return false
+                return result;
             });
             if result.is_err() {
                 println!("panic: {:?} {:?}", file.name, file.code);
+                passed = false;
             } else {
-                if let Ok(exec_passed) = result {
-                    if file.negative {
-                        passed = !exec_passed;
+                if let Ok(inner_result) = result {
+                    if let Err(jsi_error) = inner_result {
+                        if file.negative {
+                            let error = jsi_error.error_type.to_string();
+                            if file.negative_type.len() > 0 && error != file.negative_type {
+                                println!("negative error type: {:?} {:?} {:?}", file.name, file.negative_type, error);
+                                passed = false;
+                            } else {
+                                passed = true;
+                            }
+                        } else {
+                            passed = false;
+                        }
                     } else {
-                        passed = exec_passed;
+                        passed = !file.negative;
                     }
                 }
             }
@@ -57,7 +65,7 @@ impl Test262Dir {
         }
         for dirs in dirs.iter() {
             let mut dirs_info = dirs.clone();
-            dirs_info.run(preload_code);
+            dirs_info.run(preload_code, ignore_list, only_list);
             self.cases += dirs_info.cases;
             self.passed += dirs_info.passed;
             self.result.dirs.insert(dirs_info.name.clone(), dirs_info.result);
@@ -66,10 +74,8 @@ impl Test262Dir {
         self.result.passed = self.passed;
     }
 
-    fn get_childs(&self) -> (Vec<Test262Dir>, Vec<Test262File>) {
-        let dir = Path::new(
-            &env::current_dir().unwrap()
-        ).join(&self.dir);
+    fn get_childs(&self,  ignore_list: &Vec<PathBuf>, only_list: &Vec<PathBuf>) -> (Vec<Test262Dir>, Vec<Test262File>) {
+        let dir = make_dir(&self.dir);
         let paths = fs::read_dir(&dir).unwrap();
         let names = paths.filter_map(|entry| {
             entry.ok().and_then(|e|
@@ -81,6 +87,20 @@ impl Test262Dir {
         let mut files: Vec<Test262File> = vec![];
         for name in names.iter() {
             let abso_name = dir.join(&name);
+            if only_list.len() > 0 {
+                let mut is_ignore = true;
+                for only in only_list.iter() {
+                    if abso_name.starts_with(&only) {
+                        is_ignore = false
+                    }
+                }
+                if is_ignore {
+                    continue;
+                }
+            }
+            if ignore_list.contains(&abso_name) {
+                continue;
+            }
             let md = metadata(&abso_name).unwrap();
             if md.is_dir() {
                 dirs.push(Test262Dir::new(name.clone(), String::from(abso_name.to_str().unwrap())))
@@ -93,6 +113,8 @@ impl Test262Dir {
         return (dirs, files)
     }
 }
+
+
 
 #[derive(Clone)]
 struct Test262File {
@@ -168,11 +190,24 @@ fn load_harness(path: &str) -> String {
     return code;
 }
 
+fn make_dir(dir: &String) -> PathBuf {
+    Path::new(
+        &env::current_dir().unwrap()
+    ).join(dir)
+}
+
 #[test]
 fn test_all_262() {
     let prelaod = format!("{}\n", load_harness("harness/assert.js"));
+    let ignore_list: Vec<PathBuf> =vec![
+        make_dir(&String::from("test262/test/annexB")),
+        make_dir(&String::from("test262/test/intl402")),
+    ];
+    let only_list: Vec<PathBuf> =vec![
+        // make_dir(&String::from("test262/test/language")),
+    ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
-    test262.run(prelaod.as_str());
+    test262.run(prelaod.as_str(), &ignore_list, &only_list);
     let serialized_result = serde_json::to_string_pretty(&test262.result).unwrap();
     let file_name = "./262_result.json";
     let mut file = File::create(file_name).unwrap();
