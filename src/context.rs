@@ -691,6 +691,7 @@ impl Context {
       // 绑定属性
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
+        // TODO: not string name
         let name = self.execute_expression(&property.name)?.to_string(&self.global);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
