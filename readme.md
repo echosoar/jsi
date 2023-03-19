@@ -3,11 +3,14 @@
 JSI is a JavaScript Interpreter written in Rust.
 
 
-<img src="https://img.shields.io/badge/Test262-3498%20Passed-brightgreen.svg" alt="test262 passed" />
+<img src="https://img.shields.io/badge/Test262-3499%20Passed-brightgreen.svg" alt="test262 passed" />
+<img src="https://img.shields.io/badge/Test262-46442%20Total-blue.svg" alt="test262 total" />
 
 ---
 ### Usage
 ```rust
+use jsi::JSI;
+
 let mut jsi = JSI::new();
 let result = jsi.run(String::from("\
   let a = [];

@@ -371,9 +371,8 @@ impl Context {
           // TODO: JSIResult
           Ok(self.execute_number_operator_expression(&left, &right, &expression.operator))
         },
-        Token::Less | Token::Greater => {
-           // TODO: JSIResult
-          Ok(self.execute_compare_operator_expression(&left, &right, &expression.operator))
+        Token::Less | Token::Greater | Token::LessOrEqual | Token::GreaterOrEqual => {
+          self.execute_compare_operator_expression(&left, &right, &expression.operator)
         },
         _ =>  {
           Err(JSIError::new(JSIErrorType::Unknown, format!("unsupport binary {:?}", expression), 0, 0))
@@ -407,23 +406,25 @@ impl Context {
     }
 
     // 执行方法调用表达式
-    fn execute_compare_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
+    fn execute_compare_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> JSIResult<Value> {
       let left_number: f64;
       let right_number: f64;
       if let Some(num) = left.to_number(&self.global) {
         left_number = num;
       } else {
-        return Value::NAN;
+        return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0))
       }
       if let Some(num) = right.to_number(&self.global) {
         right_number = num;
       } else {
-        return Value::NAN;
+        return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0))
       }
       match operator {
-        Token::Greater => Value::Boolean(left_number > right_number),
-        Token::Less => Value::Boolean(left_number < right_number),
-        _=> Value::NAN,
+        Token::Greater => Ok(Value::Boolean(left_number > right_number)),
+        Token::GreaterOrEqual => Ok(Value::Boolean(left_number >= right_number)),
+        Token::Less => Ok(Value::Boolean(left_number < right_number)),
+        Token::LessOrEqual => Ok(Value::Boolean(left_number <= right_number)),
+        _=> Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0)),
       }
     }
 
@@ -465,13 +466,45 @@ impl Context {
     // 执行赋值表达式
     fn execute_assign_expression(&mut self, expression: &AssignExpression) -> JSIResult<Value> {
       let mut left_info = self.execute_expression_info(&expression.left)?;
-      let right_value = self.execute_expression(&expression.right)?;
-      // TODO: more operator
-      if expression.operator == Token::Assign {
-        left_info.set_value(right_value.clone())?;
-        Ok(right_value)
-      } else {
-        Err(JSIError::new(JSIErrorType::SyntaxError, String::from("todo: unsupported operator"), 0, 0))
+      let mut right_value = self.execute_expression(&expression.right)?;
+      let mut oper = expression.operator.clone();
+      let binary = match &oper {
+        Token::AddAssign => {
+          Some(Token::Plus)
+        },
+        Token::SubtractAssign => {
+          Some(Token::Subtract)
+        },
+        Token::MultiplyAssign => {
+          Some(Token::Multiply)
+        },
+        Token::SlashAssign => {
+          Some(Token::Slash)
+        },
+        Token::RemainderAssign => {
+          Some(Token::Remainder)
+        },
+        _ => {
+          None
+        }
+      };
+      if let Some(operator) = binary {
+        oper = Token::Assign;
+        let binary_expression = BinaryExpression {
+          left: expression.left.clone(),
+          right: expression.right.clone(),
+          operator: operator
+        };
+        right_value = self.execute_binary_expression(&binary_expression)?;
+      }
+      match oper {
+        Token::Assign => {
+          left_info.set_value(right_value.clone())?;
+          Ok(left_info.value)
+        },
+        _ => {
+          Err(JSIError::new(JSIErrorType::SyntaxError, String::from("todo: unsupported operator"), 0, 0))
+        }
       }
     }
 
@@ -479,30 +512,51 @@ impl Context {
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> JSIResult<Value> {
       
       let mut operand_info = self.execute_expression_info(&expression.operand)?;
-      let value_number = operand_info.value.to_number(&self.global);
-      let value = if let Some(new_value) = value_number {
-        let mut new_value = new_value;
-        match &expression.operator {
-          Token::Increment => {
-            new_value = new_value + 1f64;
-          },
-          Token::Decrement => {
-            new_value = new_value - 1f64;
-          },
-          Token::Subtract => {
-            new_value = -new_value;
-          },
-          Token::Plus => {
-            new_value = new_value;
-          }
-          _ => {}
+
+      match &expression.operator {
+        Token::Typeof => {
+          Ok(Value::String(operand_info.value.type_of()))
+        },
+        Token::Void => {
+          Ok(Value::Undefined)
+        },
+        // TODO: delete
+        // Token::Void => {
+        //   Ok(Value::Undefined)
+        // },
+        // TODO: await
+        // Token::Void => {
+        //   Ok(Value::Undefined)
+        // },
+        _ => {
+          let value_number = operand_info.value.to_number(&self.global);
+          let value = if let Some(new_value) = value_number {
+            let mut new_value = new_value;
+            match &expression.operator {
+              Token::Increment => {
+                new_value = new_value + 1f64;
+              },
+              Token::Decrement => {
+                new_value = new_value - 1f64;
+              },
+              Token::Subtract => {
+                new_value = -new_value;
+              },
+              Token::Plus => {
+                new_value = new_value;
+              }
+              _ => {}
+            }
+            Value::Number(new_value)
+          } else {
+            Value::NAN
+          };
+          operand_info.set_value(value.clone())?;
+          Ok(value)
         }
-        Value::Number(new_value)
-      } else {
-        Value::NAN
-      };
-      operand_info.set_value(value.clone())?;
-      Ok(value)
+      }
+
+      
     }
 
     // 执行 i++ i--

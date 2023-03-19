@@ -18,3 +18,10 @@ fn run_boolean_object() {
   assert_eq!(result , Value::String(String::from("falsetrue")));
 }
 
+#[test]
+fn run_boolean_typeof() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  typeof false")).unwrap();
+  assert_eq!(result , Value::String(String::from("boolean")));
+}

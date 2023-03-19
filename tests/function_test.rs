@@ -84,3 +84,12 @@ fn run_function_instances_has_class() {
   Object.prototype.toString.call(func)")).unwrap();
   assert_eq!(result , Value::String(String::from("[object Function]")));
 }
+
+#[test]
+fn run_function_typeof() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  function func() {}\n
+  typeof func")).unwrap();
+  assert_eq!(result , Value::String(String::from("function")));
+}

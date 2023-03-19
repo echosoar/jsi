@@ -31,6 +31,7 @@ impl ValueInfo {
     if self.is_const {
       return  Err(JSIError::new(JSIErrorType::TypeError, format!("Assignment to constant variable"), 0, 0));
     }
+    self.value = value.clone();
     let name = match &self.name {
         Some(name) => name.clone(),
         _ => String::from(""),
@@ -394,6 +395,18 @@ impl Value {
       Value::BooleanObj(obj) => Some(Rc::downgrade(obj)),
       Value::RefObject(obj) => Some(obj.clone()),
       _ => None
+    }
+  }
+
+  pub fn type_of(&self) -> String {
+    match self {
+      Value::Boolean(_) => String::from("boolean"),
+      Value::Number(_) => String::from("number"),
+      Value::NAN => String::from("number"),
+      Value::String(_) => String::from("string"),
+      Value::Undefined => String::from("undefined"),
+      Value::Function(_) => String::from("function"),
+      _ => String::from("object")
     }
   }
 

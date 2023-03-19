@@ -137,3 +137,12 @@ fn run_new_object() {
   numRes.toString()")).unwrap();
   assert_eq!(result , Value::String(String::from("5")));
 }
+
+#[test]
+fn run_object_typeof() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let num = new Object(1);
+  typeof num")).unwrap();
+  assert_eq!(result , Value::String(String::from("object")));
+}
