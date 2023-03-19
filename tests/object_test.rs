@@ -146,3 +146,21 @@ fn run_object_typeof() {
   typeof num")).unwrap();
   assert_eq!(result , Value::String(String::from("object")));
 }
+
+
+#[test]
+fn run_object_value() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+var key1 = {
+  valueOf: function() {
+    return 1;
+  },
+  toString: null
+};
+
+var object = {
+  [key1]: 'B',
+}")).unwrap();
+  assert_eq!(result , Value::String(String::from("object")));
+}

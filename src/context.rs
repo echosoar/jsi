@@ -1,12 +1,12 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT}, array::create_array}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::create_array}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
 
 
 use super::ast::AST;
 pub struct Context {
   scope: Rc<RefCell<Scope>>,
-  global: Rc<RefCell<Object>>,
+  pub global: Rc<RefCell<Object>>,
   cur_scope: Rc<RefCell<Scope>>
 }
 
@@ -20,6 +20,7 @@ impl Context {
         scope,
         cur_scope,
       };
+      bind_global(&mut ctx);
       ctx.init();
       return ctx;
     }
@@ -47,7 +48,7 @@ impl Context {
        for declaration in declarations.iter() {
         match  declaration {
             Declaration::Function(function_statement) => {
-              let function = create_function(&self.global, &function_statement, Rc::downgrade(&self.cur_scope));
+              let function = create_function(&self, &function_statement, Rc::downgrade(&self.cur_scope));
              (*self.cur_scope).borrow_mut().set_value(function_statement.name.literal.clone(), function, false)
             }
         };
@@ -105,7 +106,7 @@ impl Context {
           let call_options = CallStatementOptions {
             label: None,
           };
-          if condition.to_boolean(&self.global) {
+          if condition.to_boolean(self) {
             if let Statement::Unknown = *if_statement.then_statement {
               // no then
             } else {
@@ -149,7 +150,7 @@ impl Context {
             if let Some(catch) = &try_statement.catch {
               self.switch_scope(Some(Rc::clone(&self.cur_scope)));
               if let Some(error_decl) =&catch.declaration {
-                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err.to_error_object(&self.global)), false);
+                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err.to_error_object(&self)), false);
               }
               let result = self.call_block(&vec![], &catch.body.statements)?;
               (*interrupt) = result.2;
@@ -231,7 +232,7 @@ impl Context {
           Ok(ValueInfo { is_const: false, value: self.new_array(array)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Function(function_declaration) => {
-          let func = create_function(&self.global, function_declaration, Rc::downgrade(&self.cur_scope));
+          let func = create_function(self, function_declaration, Rc::downgrade(&self.cur_scope));
           Ok(ValueInfo { is_const: false, value: func, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PropertyAccess(property_access) => {
@@ -240,7 +241,7 @@ impl Context {
           if left == Value::Null {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", property_access.name.literal), 0, 0))
           }
-          let left_obj = left.to_object(&self.global);
+          let left_obj = left.to_object(self);
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
           // println!("PropertyAccess: {:?} {:?}",left_obj, right);
@@ -253,8 +254,8 @@ impl Context {
           // expression[argument]
           let left = self.execute_expression(&element_access.expression)?;
           
-          let left_obj = left.to_object(&self.global);
-          let right = self.execute_expression(&element_access.argument)?.to_string(&self.global);
+          let left_obj = left.to_object(self);
+          let right = self.execute_expression(&element_access.argument)?.to_string(self);
           if left == Value::Null {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", right), 0, 0))
           }
@@ -316,12 +317,12 @@ impl Context {
       // 逻辑运算 左值
       if expression.operator == Token::LogicalAnd {
         // false &&
-        if !left.to_boolean(&self.global) {
+        if !left.to_boolean(self) {
           return Ok(Value::Boolean(false));
         }
       } else if expression.operator == Token::LogicalOr {
         // true ||
-        if left.to_boolean(&self.global) {
+        if left.to_boolean(self) {
           return Ok(Value::Boolean(true));
         }
       }
@@ -331,7 +332,7 @@ impl Context {
       // 逻辑运算 右值
       if expression.operator == Token::LogicalAnd || expression.operator == Token::LogicalOr {
         // true && false / false || false
-        if !right.to_boolean(&self.global) {
+        if !right.to_boolean(self) {
           return Ok(Value::Boolean(false));
         } else {
           // true && true / false || true
@@ -341,10 +342,10 @@ impl Context {
 
       match expression.operator {
         Token::Equal => {
-          return Ok(Value::Boolean(left.is_equal_to(&self.global, &right, false)));
+          return Ok(Value::Boolean(left.is_equal_to(self, &right, false)));
         },
         Token::StrictEqual => {
-          return Ok(Value::Boolean(left.is_equal_to(&self.global, &right, true)));
+          return Ok(Value::Boolean(left.is_equal_to(self, &right, true)));
         },
         Token::Plus | Token::Subtract | Token::Multiply | Token::Slash |Token::Remainder => {
           // 数字处理
@@ -356,7 +357,7 @@ impl Context {
           if expression.operator == Token::Plus {
             // 如果有一个是字符串，那就返回字符串
             if left.is_string() || right.is_string() {
-              return Ok(Value::String(left.to_string(&self.global) + right.to_string(&self.global).as_str()));
+              return Ok(Value::String(left.to_string(self) + right.to_string(self).as_str()));
             }
           }
 
@@ -385,12 +386,12 @@ impl Context {
     fn execute_number_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
       let left_number: f64;
       let right_number: f64;
-      if let Some(num) = left.to_number(&self.global) {
+      if let Some(num) = left.to_number(self) {
         left_number = num;
       } else {
         return Value::NAN;
       }
-      if let Some(num) = right.to_number(&self.global) {
+      if let Some(num) = right.to_number(self) {
         right_number = num;
       } else {
         return Value::NAN;
@@ -409,12 +410,12 @@ impl Context {
     fn execute_compare_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> JSIResult<Value> {
       let left_number: f64;
       let right_number: f64;
-      if let Some(num) = left.to_number(&self.global) {
+      if let Some(num) = left.to_number(self) {
         left_number = num;
       } else {
         return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0))
       }
-      if let Some(num) = right.to_number(&self.global) {
+      if let Some(num) = right.to_number(self) {
         right_number = num;
       } else {
         return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0))
@@ -452,7 +453,7 @@ impl Context {
               function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
             };
             if let Some(_) = is_global_object {
-              return callee.value.instantiate_object(&self.global, arguments);
+              return callee.value.instantiate_object(self, arguments);
             }
           }
           Err(JSIError::new(JSIErrorType::TypeError, format!("{:?} is not a function", callee.access_path), 0, 0))
@@ -529,7 +530,7 @@ impl Context {
         //   Ok(Value::Undefined)
         // },
         _ => {
-          let value_number = operand_info.value.to_number(&self.global);
+          let value_number = operand_info.value.to_number(self);
           let value = if let Some(new_value) = value_number {
             let mut new_value = new_value;
             match &expression.operator {
@@ -563,7 +564,7 @@ impl Context {
     fn execute_postfix_unary_expression(&mut self, expression: &PostfixUnaryExpression) -> JSIResult<Value> {
       let mut operand_info = self.execute_expression_info(&expression.operand)?;
       let origin_value = operand_info.value.clone();
-      let value_number = origin_value.to_number(&self.global);
+      let value_number = origin_value.to_number(self);
       let value = if let Some(new_value) = value_number {
         let mut new_value = new_value;
         match &expression.operator {
@@ -619,7 +620,7 @@ impl Context {
             // nothing to do
           } else {
             let value = self.execute_expression(condition)?;
-            if !value.to_boolean(&self.global) {
+            if !value.to_boolean(self) {
               break;
             }
           }
@@ -681,7 +682,7 @@ impl Context {
             // nothing to do
           } else {
             let value = self.execute_expression(condition)?;
-            if !value.to_boolean(&self.global) {
+            if !value.to_boolean(self) {
               break;
             }
           }
@@ -705,7 +706,7 @@ impl Context {
         let case = &switch_statment.clauses[case_index];
         if let Some(condition) = &case.condition {
           let case_value = self.execute_expression(condition).unwrap();
-          if case_value.is_equal_to(&self.global, &value, true) {
+          if case_value.is_equal_to(self, &value, true) {
             matched = case_index as i32;
           }
         }
@@ -729,7 +730,7 @@ impl Context {
         for element in &new_object.arguments {
           arguments.push(self.execute_expression(element)?);
         }
-      let obj = constructor.value.instantiate_object(&self.global, arguments);
+      let obj = constructor.value.instantiate_object(&self, arguments);
       if let Ok(obj) = obj {
         Ok(obj)
       } else {
@@ -739,7 +740,7 @@ impl Context {
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> JSIResult<Value> {
       // 获取 object 实例
-      let object = create_object(&self.global,ClassType::Array, None);
+      let object = create_object(&self,ClassType::Array, None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
       // TODO:
@@ -748,7 +749,7 @@ impl Context {
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
         // TODO: not string name
-        let name = self.execute_expression(&property.name)?.to_string(&self.global);
+        let name = self.execute_expression(&property.name)?.to_string(self);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
         object_mut.define_property(name, Property {
@@ -760,7 +761,7 @@ impl Context {
     }
 
     fn new_array(&mut self, expression: &ArrayLiteral) -> JSIResult<Value> {
-      let array = create_array(&self.global, 0);
+      let array = create_array(&self, 0);
       if let Value::Array(arr_obj) = &array {
         let mut arguments: Vec<Value> = vec![];
         for element in &expression.elements {
@@ -768,7 +769,7 @@ impl Context {
         }
         let weak = Rc::downgrade(arr_obj);
         let call_ctx = &mut CallContext {
-          global: Rc::downgrade(&self.global),
+          ctx: &self,
           this: weak,
           reference: None,
         };
@@ -777,7 +778,7 @@ impl Context {
       Ok(array)
     }
 
-    fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
+    pub fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
       // 获取 function 定义
       let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
       // 获取 function 调用的 this
@@ -788,13 +789,13 @@ impl Context {
         } else if let Value::Array(obj) = call_this_value {
           this_obj = obj;
         } else if let Value::Function(func) = call_this_value {
-          this_obj = get_function_this(&self.global, func);
+          this_obj = get_function_this(&self, func);
         }
       }
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         let mut ctx = CallContext{
-          global:  Rc::downgrade(&self.global),
+          ctx: &self,
           this: Rc::downgrade(&this_obj),
           reference: reference,
         };
@@ -874,13 +875,16 @@ impl Context {
 
       for name in GLOBAL_OBJECT_NAME_LIST.iter() {
         let object_type_name = name.to_string();
-        let object = get_global_object(&self.global, object_type_name.clone());
+        let object = get_global_object(self, object_type_name.clone());
         global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)), true);
       }
     }
-
     // 获取当前调用栈
     // fn get_current_stack() {
 
     // }
 } 
+
+
+
+pub type CallbackFunction = dyn Fn(&mut Context)-> JSIResult<Value>;

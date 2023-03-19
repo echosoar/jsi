@@ -1,5 +1,4 @@
-use jsi::{JSI, value::Value, error::JSIError};
-use yaml_rust::YamlLoader;
+use jsi::{JSI, value::Value};
 
 #[test]
 fn run_string() {

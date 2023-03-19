@@ -129,19 +129,3 @@ fn run_const_error() {
     assert!(false , "need SyntaxError");
   }
 }
-
-#[test]
-fn run_const_errorx() {
-  let mut jsi = JSI::new();
-  let result = jsi.run(String::from("\
-    let b = 123;
-    b += 1;
-  "));
-  println!("result: {:?}", result);
-  if let Err(jsi_error) = result {
-    assert_eq!(jsi_error.error_type, JSIErrorType::TypeError);
-    assert_eq!(jsi_error.message , String::from("Assignment to constant variable"));
-  } else {
-    assert!(false , "need SyntaxError");
-  }
-}
