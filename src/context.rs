@@ -48,7 +48,7 @@ impl Context {
        for declaration in declarations.iter() {
         match  declaration {
             Declaration::Function(function_statement) => {
-              let function = create_function(&self, &function_statement, Rc::downgrade(&self.cur_scope));
+              let function = create_function(self, &function_statement, Rc::downgrade(&self.cur_scope));
              (*self.cur_scope).borrow_mut().set_value(function_statement.name.literal.clone(), function, false)
             }
         };
@@ -150,7 +150,8 @@ impl Context {
             if let Some(catch) = &try_statement.catch {
               self.switch_scope(Some(Rc::clone(&self.cur_scope)));
               if let Some(error_decl) =&catch.declaration {
-                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err.to_error_object(&self)), false);
+                let err_obj = err.to_error_object(self);
+                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err_obj), false);
               }
               let result = self.call_block(&vec![], &catch.body.statements)?;
               (*interrupt) = result.2;
@@ -730,7 +731,7 @@ impl Context {
         for element in &new_object.arguments {
           arguments.push(self.execute_expression(element)?);
         }
-      let obj = constructor.value.instantiate_object(&self, arguments);
+      let obj = constructor.value.instantiate_object(self, arguments);
       if let Ok(obj) = obj {
         Ok(obj)
       } else {
@@ -740,7 +741,7 @@ impl Context {
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> JSIResult<Value> {
       // 获取 object 实例
-      let object = create_object(&self,ClassType::Array, None);
+      let object = create_object(self,ClassType::Array, None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
       // TODO:
@@ -761,7 +762,7 @@ impl Context {
     }
 
     fn new_array(&mut self, expression: &ArrayLiteral) -> JSIResult<Value> {
-      let array = create_array(&self, 0);
+      let array = create_array(self, 0);
       if let Value::Array(arr_obj) = &array {
         let mut arguments: Vec<Value> = vec![];
         for element in &expression.elements {
@@ -769,7 +770,7 @@ impl Context {
         }
         let weak = Rc::downgrade(arr_obj);
         let call_ctx = &mut CallContext {
-          ctx: &self,
+          ctx: self,
           this: weak,
           reference: None,
         };
@@ -789,13 +790,13 @@ impl Context {
         } else if let Value::Array(obj) = call_this_value {
           this_obj = obj;
         } else if let Value::Function(func) = call_this_value {
-          this_obj = get_function_this(&self, func);
+          this_obj = get_function_this(self, func);
         }
       }
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         let mut ctx = CallContext{
-          ctx: &self,
+          ctx: self,
           this: Rc::downgrade(&this_obj),
           reference: reference,
         };
@@ -869,13 +870,15 @@ impl Context {
     // 初始化，主要是挂载全局对象
     fn init(&mut self) {
       // 挂载全局对象
-      let mut global_scope = self.scope.borrow_mut();
-
-      global_scope.set_value(String::from("globalThis"), Value::RefObject(Rc::downgrade(&self.global)), true);
+      {
+        let mut global_scope = self.scope.borrow_mut();
+        global_scope.set_value(String::from("globalThis"), Value::RefObject(Rc::downgrade(&self.global)), true);
+      }
 
       for name in GLOBAL_OBJECT_NAME_LIST.iter() {
         let object_type_name = name.to_string();
         let object = get_global_object(self, object_type_name.clone());
+        let mut global_scope = self.scope.borrow_mut();
         global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)), true);
       }
     }

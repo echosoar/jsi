@@ -154,9 +154,11 @@ impl Object {
    
     if let Value::Function(function_define) = &fun {
       // 获取 function 定义
-      let fun_clone = Rc::clone(function_define);
-      let fun_obj = (*fun_clone).borrow_mut();
-      let function_define_value = fun_obj.get_initializer().unwrap();
+      let function_define_value = {
+        let fun_clone = Rc::clone(function_define);
+        let fun_obj = (*fun_clone).borrow_mut();
+        fun_obj.get_initializer().unwrap()
+      };
       
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = function_define_value.as_ref() {
@@ -164,7 +166,8 @@ impl Object {
         return (builtin_function)(call_ctx, arguments);
       }
       if let Statement::Function(_) = function_define_value.as_ref() {
-        return call_ctx.call_function(Rc::clone(function_define), Some(Value::Function(Rc::clone(function_define))), None, arguments);
+        let call_function_define = Rc::clone(function_define);
+        return call_ctx.call_function(call_function_define, Some(Value::Function(Rc::clone(function_define))), None, arguments);
       }
     }
     Err(JSIError::new(crate::error::JSIErrorType::ReferenceError, format!("{:?} method not exists", name), 0, 0))
@@ -180,7 +183,7 @@ pub struct Property {
 }
 
 // 实例化对象
-pub fn create_object(ctx: &Context, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
+pub fn create_object(ctx: &mut Context, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(obj_type, value)));
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
@@ -190,7 +193,7 @@ pub fn create_object(ctx: &Context, obj_type: ClassType, value: Option<Box<State
   object
 }
 
-pub fn bind_global_object(ctx: &Context) {
+pub fn bind_global_object(ctx: &mut Context) {
   let obj_rc = get_global_object(ctx, GLOBAL_OBJECT_NAME.to_string());
   let mut obj = (*obj_rc).borrow_mut();
   let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
@@ -224,12 +227,12 @@ fn object_keys(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
     return Ok(Value::Array(array_obj));
   }
   let weak = Rc::downgrade(&array_obj);
+  let obj_rc= args[0].to_object(call_ctx.ctx);
   let new_call_ctx = &mut CallContext {
     ctx: call_ctx.ctx,
     this: weak,
     reference: None,
   };
-  let obj_rc= args[0].to_object(call_ctx.ctx);
   let obj = obj_rc.borrow();
   for key in obj.property_list.iter() {
     let prop = obj.property.get(key);

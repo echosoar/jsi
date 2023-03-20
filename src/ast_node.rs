@@ -41,27 +41,26 @@ impl PartialEq for Statement {
 
 impl fmt::Debug for Statement {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let mut stype = "unknown";
-    match self {
-      Statement::Block(_) => { stype = "block"},
-      Statement::Break(_) => { stype = "break"},
-      Statement::BuiltinFunction(_) => { stype = "builtin function"},
-      Statement::Class(_) => { stype = "class"},
-      Statement::Continue(_) => { stype = "continue"},
-      Statement::Expression(_) => { stype = "expression"},
-      Statement::For(_) => { stype = "for"},
-      Statement::Function(_) => { stype = "function"},
-      Statement::If(_) => { stype = "if"},
-      Statement::Label(_) => { stype = "label"},
-      Statement::Return(_) => { stype = "return"},
-      Statement::Switch(_) => { stype = "switch"},
-      Statement::Try(_) => { stype = "try"},
-      Statement::Var(_) => { stype = "var"},
-      Statement::While(_) => { stype = "while"},
+    let stype = match self {
+      Statement::Block(_) => { "block"},
+      Statement::Break(_) => { "break"},
+      Statement::BuiltinFunction(_) => { "builtin function"},
+      Statement::Class(_) => { "class"},
+      Statement::Continue(_) => { "continue"},
+      Statement::Expression(_) => { "expression"},
+      Statement::For(_) => { "for"},
+      Statement::Function(_) => { "function"},
+      Statement::If(_) => { "if"},
+      Statement::Label(_) => { "label"},
+      Statement::Return(_) => { "return"},
+      Statement::Switch(_) => { "switch"},
+      Statement::Try(_) => { "try"},
+      Statement::Var(_) => { "var"},
+      Statement::While(_) => { "while"},
       _ => {
-        stype = "other"
+        "other"
       },
-    }
+    };
     write!(f, "{}", stype)
   }
 }
@@ -367,7 +366,7 @@ pub struct VariableDeclaration {
 pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> JSIResult<Value>;
 pub struct CallContext<'a> {
   // 全局对象，globalThis
-  pub ctx: &'a Context,
+  pub ctx: &'a mut Context,
   // 调用时的 this
   pub this: Weak<RefCell<Object>>,
   // 引用，调用的发起方，比如  a.call()，reference 就是 a
@@ -377,8 +376,7 @@ pub struct CallContext<'a> {
 
 impl <'a>CallContext<'a> {
   pub fn call_function(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
-    // self.ctx.call_function_object(function_define, call_this,reference,  arguments)
-    Ok(Value::Undefined)
+    self.ctx.call_function_object(function_define, call_this,reference,  arguments)
   }
 }
 

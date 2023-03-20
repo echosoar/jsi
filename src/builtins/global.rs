@@ -50,7 +50,7 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
   return global;
 }
 
-pub fn bind_global(ctx: &Context) {
+pub fn bind_global(ctx: &mut Context) {
   // 绑定 Object 的 静态方法 和 原型链方法
   bind_global_object(ctx);
   // 绑定 Function 的 静态方法 和 原型链方法
@@ -67,14 +67,22 @@ pub fn bind_global(ctx: &Context) {
   bind_global_error(ctx);
 }
 
-pub fn get_global_object(ctx: &Context, name: String) -> Rc<RefCell<Object>> {
-  let clone_global_mut = ctx.global.borrow_mut();
-  let obj = clone_global_mut.get_value(name.clone()).to_object(ctx);
+pub fn get_global_object(ctx: &mut Context, name: String) -> Rc<RefCell<Object>> {
+
+  let value = {
+    let clone_global_mut = ctx.global.borrow_mut();
+    clone_global_mut.get_value(name.clone())
+  };
+
+  let obj = value.to_object(ctx);
   return obj;
 }
 
-pub fn get_global_object_by_name(ctx: &Context, name: &str) -> Rc<RefCell<Object>> {
-  let clone_global_mut = ctx.global.borrow_mut();
-  let obj = clone_global_mut.get_value(name.to_string().clone()).to_object(ctx);
+pub fn get_global_object_by_name(ctx: &mut Context, name: &str) -> Rc<RefCell<Object>> {
+  let value = {
+    let clone_global_mut = ctx.global.borrow_mut();
+    clone_global_mut.get_value(name.to_string().clone())
+  };
+  let obj = value.to_object(ctx);
   return obj;
 }

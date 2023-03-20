@@ -6,7 +6,7 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
 
 // 初始化一个方法
 // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
- pub fn create_function(ctx: &Context, function_declaration: &FunctionDeclaration, define_scope: Weak<RefCell<Scope>>) -> Value {
+ pub fn create_function(ctx: &mut Context, function_declaration: &FunctionDeclaration, define_scope: Weak<RefCell<Scope>>) -> Value {
   let global_function = get_global_object(ctx, String::from("Function"));
   let function = create_object(ctx,ClassType::Function, Some(Box::new(Statement::Function((*function_declaration).clone()))));
   let function_clone = Rc::clone(&function);
@@ -30,7 +30,7 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
 }
 
 // 构建内置方法
-pub fn builtin_function(ctx: &Context, name: String, length: f64, fun: BuiltinFunction) -> Value {
+pub fn builtin_function(ctx: &mut Context, name: String, length: f64, fun: BuiltinFunction) -> Value {
   let global_function = get_global_object(ctx, String::from("Function"));
   let function = create_object(ctx, ClassType::Function, Some(Box::new(Statement::BuiltinFunction(fun))));
   let function_clone = Rc::clone(&function);
@@ -51,7 +51,7 @@ pub fn builtin_function(ctx: &Context, name: String, length: f64, fun: BuiltinFu
 }
 
 
-pub fn bind_global_function(ctx: &Context) {
+pub fn bind_global_function(ctx: &mut Context) {
   let fun_rc = get_global_object(ctx, String::from("Function"));
   let fun = (*fun_rc).borrow_mut();
   if let Some(prop)= &fun.prototype {
@@ -94,7 +94,7 @@ fn function_bind(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   Ok(Value::Function(Rc::new(RefCell::new(new_fun))))
 }
 
-pub fn get_function_this(ctx: &Context, func: Rc<RefCell<Object>>)-> Rc<RefCell<Object>> {
+pub fn get_function_this(ctx: &mut Context, func: Rc<RefCell<Object>>)-> Rc<RefCell<Object>> {
   let bind_this = func.borrow().get_inner_property_value(String::from("this"));
   if let Some(this) = bind_this {
     return this.to_object(ctx)

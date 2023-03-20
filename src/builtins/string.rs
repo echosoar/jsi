@@ -4,7 +4,7 @@ use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType
 
 use super::{object::{create_object, Property}, global::get_global_object, function::builtin_function};
 
- pub fn create_string(ctx: &Context, init: Value) -> Value {
+ pub fn create_string(ctx: &mut Context, init: Value) -> Value {
   let global_string = get_global_object(ctx, String::from("String"));
   let string = create_object(ctx, ClassType::String, None);
   let string_clone = Rc::clone(&string);
@@ -14,7 +14,7 @@ use super::{object::{create_object, Property}, global::get_global_object, functi
   Value::StringObj(string)
 }
 
-pub fn bind_global_string(ctx: &Context) {
+pub fn bind_global_string(ctx: &mut Context) {
   let string_rc = get_global_object(ctx, String::from("String"));
   let mut string = (*string_rc).borrow_mut();
   let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);

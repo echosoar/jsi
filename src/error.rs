@@ -49,7 +49,7 @@ impl JSIError {
       }
     }
 
-    pub fn to_error_object(&self, ctx: &Context) -> Rc<RefCell<Object>> {
+    pub fn to_error_object(&self, ctx: &mut Context) -> Rc<RefCell<Object>> {
       if let Some(value) = &self.value {
         return value.to_object(ctx);
       }

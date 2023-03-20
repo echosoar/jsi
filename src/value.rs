@@ -190,7 +190,7 @@ impl Value {
     return false
   }
 
-  pub fn to_string(&self, ctx: &Context) -> String {
+  pub fn to_string(&self, ctx: &mut Context) -> String {
     match self {
       Value::String(str) => str.clone(),
       Value::Number(number) => number.to_string(),
@@ -246,7 +246,7 @@ impl Value {
     }
   }
 
-  pub fn to_number(&self, ctx: &Context) -> Option<f64> {
+  pub fn to_number(&self, ctx: &mut Context) -> Option<f64> {
     match self {
       Value::String(str) => {
         match str.parse::<f64>() {
@@ -285,7 +285,7 @@ impl Value {
       }
     }
   }
-  pub fn to_boolean(&self, ctx: &Context) -> bool {
+  pub fn to_boolean(&self, ctx: &mut Context) -> bool {
     match self {
         Value::Undefined | Value::Null => false,
         Value::String(str) => {
@@ -319,7 +319,7 @@ impl Value {
   }
 
   // 实例化对象
-  pub fn instantiate_object(&self, ctx: &Context, args: Vec<Value>) -> JSIResult<Value> {
+  pub fn instantiate_object(&self, ctx: &mut Context, args: Vec<Value>) -> JSIResult<Value> {
     let rc_obj = self.to_weak_rc_object();
     if let Some(wrc) = rc_obj {
       let rc = wrc.upgrade();
@@ -348,7 +348,7 @@ impl Value {
     Err(JSIError::new(JSIErrorType::Unknown, format!("todo: unsupported global Type"), 0, 0))
   }
 
-  pub fn to_object(&self, ctx: &Context) -> Rc<RefCell<Object>> {
+  pub fn to_object(&self, ctx: &mut Context) -> Rc<RefCell<Object>> {
     let obj_value = self.to_object_value(ctx);
     match obj_value {
       Value::StringObj(obj) => {
@@ -374,7 +374,7 @@ impl Value {
     
   }
 
-  pub fn to_object_value(&self, ctx: &Context) -> Value {
+  pub fn to_object_value(&self, ctx: &mut Context) -> Value {
     match self {
       Value::String(string) => {
         create_string(ctx, Value::String(string.to_owned()))
@@ -434,7 +434,7 @@ impl Value {
     }
   }
 
-  pub fn is_equal_to(&self, ctx: &Context, other_value: &Value, is_check_type: bool) -> bool {
+  pub fn is_equal_to(&self, ctx: &mut Context, other_value: &Value, is_check_type: bool) -> bool {
     let self_type = self.get_value_type();
     let other_type = other_value.get_value_type();
     let is_same_type = self_type == other_type;

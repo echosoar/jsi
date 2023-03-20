@@ -161,6 +161,8 @@ var key1 = {
 
 var object = {
   [key1]: 'B',
-}")).unwrap();
-  assert_eq!(result , Value::String(String::from("object")));
+};
+Object.keys(object).join(':')
+")).unwrap();
+  assert_eq!(result , Value::String(String::from("1")));
 }

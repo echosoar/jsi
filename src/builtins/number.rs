@@ -4,7 +4,7 @@ use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType
 
 use super::{object::{create_object, Property}, global::get_global_object, function::builtin_function};
 
- pub fn create_number(ctx: &Context, init: Value) -> Value {
+ pub fn create_number(ctx: &mut Context, init: Value) -> Value {
   let global_number = get_global_object(ctx, String::from("Number"));
   let number = create_object(ctx, ClassType::Number, None);
   let number_clone = Rc::clone(&number);
@@ -14,7 +14,7 @@ use super::{object::{create_object, Property}, global::get_global_object, functi
   Value::NumberObj(number)
 }
 
-pub fn bind_global_number(ctx: &Context) {
+pub fn bind_global_number(ctx: &mut Context) {
   let number_rc = get_global_object(ctx, String::from("Number"));
   let mut number = (*number_rc).borrow_mut();
   let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);

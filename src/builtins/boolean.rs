@@ -5,7 +5,7 @@ use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType
 use super::{object::{create_object, Property}, global::get_global_object, function::builtin_function};
 
  // ref:https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-boolean-objects
- pub fn create_boolean(ctx: &Context, init: Value) -> Value {
+ pub fn create_boolean(ctx: &mut Context, init: Value) -> Value {
   let global_boolean = get_global_object(ctx, GLOBAL_BOOLEAN_NAME.to_string());
   let boolean = create_object(ctx, ClassType::Boolean, None);
   let boolean_clone = Rc::clone(&boolean);
@@ -15,7 +15,7 @@ use super::{object::{create_object, Property}, global::get_global_object, functi
   Value::BooleanObj(boolean)
 }
 
-pub fn bind_global_boolean(ctx: &Context) {
+pub fn bind_global_boolean(ctx: &mut Context) {
   let bool_rc = get_global_object(ctx, GLOBAL_BOOLEAN_NAME.to_string());
   let mut bool = (*bool_rc).borrow_mut();
   let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);

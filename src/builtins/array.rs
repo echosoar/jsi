@@ -5,7 +5,7 @@ use crate::{value::Value, ast_node::{CallContext, ClassType}, error::{JSIResult,
 use super::{object::{create_object, Property}, function::builtin_function, global::get_global_object};
 
  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
- pub fn create_array(ctx: &Context, length: usize) -> Value {
+ pub fn create_array(ctx: &mut Context, length: usize) -> Value {
   let global_array = get_global_object(ctx, String::from("Array"));
   let array = create_object(ctx, ClassType::Array, None);
   let array_clone = Rc::clone(&array);
@@ -17,7 +17,7 @@ use super::{object::{create_object, Property}, function::builtin_function, globa
   Value::Array(array)
 }
 
-pub fn bind_global_array(ctx: &Context) {
+pub fn bind_global_array(ctx: &mut Context) {
   let arr_rc = get_global_object(ctx, String::from("Array"));
   let mut arr = (*arr_rc).borrow_mut();
   let name = String::from("isArray");
@@ -62,21 +62,21 @@ fn array_join(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> 
     }
   }
   let mut string_list: Vec<String> = vec![];
-  let iter = |_: i32, value: &Value| {
-    string_list.push(value.to_string(call_ctx.ctx));
+  let iter = |_: i32, value: &Value, ctx: &mut Context| {
+    string_list.push(value.to_string(ctx));
   };
   array_iter_mut(call_ctx, iter);
   Ok(Value::String(string_list.join(join)))
 }
 
-fn array_iter_mut<F: FnMut(i32, &Value)>(ctx: &mut CallContext, mut callback: F) {
-  let this_origin = ctx.this.upgrade();
+fn array_iter_mut<F: FnMut(i32, &Value, &mut Context)>(call_ctx: &mut CallContext, mut callback: F) {
+  let this_origin = call_ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
   let this = this_rc.borrow_mut();
   let len = this.get_property_value(String::from("length"));
   if let Value::Number(len) = len {
     for index in 0..(len as i32) {
-      (callback)(index, &this.get_property_value(index.to_string()));
+      (callback)(index, &this.get_property_value(index.to_string()), call_ctx.ctx);
     }
   }
 }
