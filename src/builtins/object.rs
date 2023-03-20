@@ -203,6 +203,10 @@ pub fn bind_global_object(ctx: &mut Context) {
   let name = String::from("keys");
   property.insert(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, object_keys) });
 
+  // Object.getOwnPropertyNames
+  let name = String::from("getOwnPropertyNames");
+  property.insert(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, object_get_own_property_names) });
+
   if let Some(prop)= &obj.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = (*prototype_rc).borrow_mut();
@@ -245,8 +249,32 @@ fn object_keys(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
   return Ok(Value::Array(array_obj));
 }
 
+// Object.getOwnPropertyNames
+fn object_get_own_property_names(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let array = create_array(call_ctx.ctx, 0);
+  let array_obj = match array {
+    Value::Array(arr) => Some(arr),
+    _ => None
+  }.unwrap();
 
-// Object.keys()
+  if args.len() < 1 {
+    return Ok(Value::Array(array_obj));
+  }
+  let weak = Rc::downgrade(&array_obj);
+  let obj_rc= args[0].to_object(call_ctx.ctx);
+  let new_call_ctx = &mut CallContext {
+    ctx: call_ctx.ctx,
+    this: weak,
+    reference: None,
+  };
+  let obj = obj_rc.borrow();
+  for key in obj.property_list.iter() {
+    Object::call(new_call_ctx, String::from("push"), vec![Value::String(key.clone())])?;
+  }
+  return Ok(Value::Array(array_obj));
+}
+
+// Object.prototype.toString
 fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   let this_origin = ctx.this.upgrade();
   let this_rc = this_origin.unwrap();

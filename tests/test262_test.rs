@@ -198,7 +198,11 @@ fn make_dir(dir: &String) -> PathBuf {
 
 #[test]
 fn test_all_262() {
-    let prelaod = format!("{}\n", load_harness("harness/assert.js"));
+    let preload_list = vec![
+        load_harness("harness/assert.js"),
+        // load_harness("harness/compareArray.js"),
+    ];
+    let prelaod = preload_list.join("\n");
     let ignore_list: Vec<PathBuf> =vec![
         make_dir(&String::from("test262/test/annexB")),
         make_dir(&String::from("test262/test/intl402")),

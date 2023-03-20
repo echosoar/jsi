@@ -152,17 +152,29 @@ fn run_object_typeof() {
 fn run_object_value() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
-var key1 = {
-  valueOf: function() {
-    return 1;
-  },
-  toString: null
-};
-
-var object = {
-  [key1]: 'B',
-};
-Object.keys(object).join(':')
+  var counter = 0;
+  var key1 = {
+    valueOf: function() {
+      counter++;
+      return 1;
+    },
+    toString: null
+  };
+  var key2 = {
+    valueOf: function() {
+      counter++;
+      return 2;
+    },
+    toString: null
+  };
+  
+  var object = {
+    a: 'A',
+    [key1]: 'B',
+    c: 'C',
+    [key2]: 'D',
+  };
+  Object.getOwnPropertyNames(object).join()
 ")).unwrap();
-  assert_eq!(result , Value::String(String::from("1")));
+  assert_eq!(result , Value::String(String::from("a,1,c,2")));
 }
