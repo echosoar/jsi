@@ -922,6 +922,7 @@ impl AST{
           // TODO: float
           (Token::Period, cur_char_string)
         },
+        '`' => (Token::Backtick, cur_char_string),
         ',' => (Token::Comma, cur_char_string),
         ';' => (Token::Semicolon, cur_char_string),
         '(' => (Token::LeftParenthesis, cur_char_string),

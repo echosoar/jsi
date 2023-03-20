@@ -113,11 +113,13 @@ pub enum Token {
 	Semicolon, // ";"
 	Colon, // ":"
 	QuestionMark, // "?"
+  Backtick, // ` ES2015
   Exponentiation, // "**" ES2017
   ExponentiationAssign, // "**=" ES2017
 	NullishCoalescing, // "??" ES2020
 	NullishCoalescingAssign, // "??=" ES2020
 	OptionalChaining, // "?." ES2020
+  
   // not keyword
   ILLEGAL,
   // 结尾
