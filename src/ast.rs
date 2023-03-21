@@ -3,7 +3,7 @@
 use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -634,11 +634,11 @@ impl AST{
     let mut start_index = self.cur_char_index;
     loop {
       // EOF
+      start_index = start_index + 1;
       if start_index >= self.length {
         return false;
       }
       let char = self.code[start_index];
-      start_index = start_index + 1;
       if skip_space {
         match char {
           // TODO: 更多空白符
@@ -1507,6 +1507,7 @@ impl AST{
 
   // 解析字面量 优先级 20 最后处理
   fn parse_literal_expression(&mut self) -> JSIResult<Expression> {
+    // println!("parse_literal_expression {:?}", self.token);
     let literal = self.literal.clone();
     match self.token {
       Token::Identifier => {
@@ -1681,23 +1682,41 @@ impl AST{
 
   // 解析字符串模板
   fn parse_template_litreal(&mut self) -> JSIResult<Expression> {
-    let spans: Vec<Expression> = vec![];
+    let mut spans: Vec<Expression> = vec![];
+    let mut pre_char_start_index = self.cur_char_index;
     while self.char != '`' {
-      println!("chjar {}", self.char);
       // TODO: `\`${xxx}\``
       if !self.read() {
         break;
       }
-
       if self.char == '$' && self.next_is('{', false) {
+        if pre_char_start_index != self.cur_char_index  {
+          let literal = chars_to_string(&self.code, pre_char_start_index.clone(), self.cur_char_index);
+          pre_char_start_index = self.cur_char_index;
+          spans.push(Expression::String(StringLiteral { literal: literal.clone(), value: literal }));
+        }
+        // skip ‘$'
         self.read();
-        let expr = self.parse_expression();
-        println!("expr {:?}",expr);
+        // skip ‘{'
+        self.read();
+        self.next();
+        
+        let expr = self.parse_expression()?;
+        spans.push(expr);
+        pre_char_start_index = self.cur_char_index;
       }
     }
-    println!("chjarxx {}",self.char);
+    if pre_char_start_index != self.cur_char_index {
+      let literal = chars_to_string(&self.code, pre_char_start_index.clone(), self.cur_char_index);
+      spans.push(Expression::String(StringLiteral { literal: literal.clone(), value: literal }));
+    }
+    // skip '`'
     self.read();
-    Ok(Expression::Unknown)
+    // TODO: read_check
+    self.next();
+    Ok(Expression::TemplateLiteral(TemplateLiteralExpression{
+      spans
+    }))
   }
 
   // 解析参数

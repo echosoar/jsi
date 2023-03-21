@@ -28,3 +28,14 @@ fn run_string_typeof() {
   typeof 'abc'")).unwrap();
   assert_eq!(result , Value::String(String::from("string")));
 }
+
+#[test]
+fn run_string_xxx() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let a = function() {
+    return `xxx`;
+  }
+  a()")).unwrap();
+  assert_eq!(result , Value::String(String::from("xxx")));
+}

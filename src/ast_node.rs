@@ -85,6 +85,7 @@ pub enum Expression {
   Array(ArrayLiteral),
   Function(FunctionDeclaration),
   New(NewExpression),
+  TemplateLiteral(TemplateLiteralExpression),
   // {[a]: 12}
   ComputedPropertyName(ComputedPropertyName),
   // for class
@@ -313,6 +314,12 @@ pub struct PrefixUnaryExpression {
 pub struct PostfixUnaryExpression {
   pub operand: Box<Expression>,
   pub operator: Token,
+}
+
+// 字符串模板表达式
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateLiteralExpression {
+  pub spans: Vec<Expression>
 }
 
 #[derive(Debug, Clone, PartialEq)]

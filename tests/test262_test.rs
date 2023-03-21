@@ -41,6 +41,7 @@ impl Test262Dir {
                 passed = false;
             } else {
                 if let Ok(inner_result) = result {
+                    println!("inner_result {:?}", inner_result);
                     if let Err(jsi_error) = inner_result {
                         if file.negative {
                             let error = jsi_error.error_type.to_string();
@@ -200,6 +201,7 @@ fn make_dir(dir: &String) -> PathBuf {
 fn test_all_262() {
     let preload_list = vec![
         load_harness("harness/assert.js"),
+        load_harness("harness/sta.js"),
         load_harness("harness/compareArray.js"),
     ];
     let prelaod = preload_list.join("\n");

@@ -276,7 +276,16 @@ impl Context {
           Ok(ValueInfo { is_const: false, value: self.execute_assign_expression(assign)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::String(string) => {
-          Ok(ValueInfo {is_const: false, value: Value::String(string.value.clone()), name: None, access_path:string.value.clone(), reference: None })
+          Ok(ValueInfo {is_const: false, value: Value::String(string.value.clone()), name: None, access_path: string.value.clone(), reference: None })
+        },
+        Expression::TemplateLiteral(template) => {
+          let mut strings: Vec<String> = vec![];
+          for span in template.spans.iter() {
+            let value = self.execute_expression(span)?;
+            strings.push(value.to_string(self));
+          }
+          let string = strings.join("");
+          Ok(ValueInfo {is_const: false, value: Value::String(string.clone()), name: None, access_path:string, reference: None })
         },
         Expression::Number(number) => {
           Ok(ValueInfo {is_const: false, value: Value::Number(number.value.clone()), name: None, access_path: number.literal.clone(), reference: None })
