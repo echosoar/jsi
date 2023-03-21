@@ -1532,6 +1532,9 @@ impl AST{
           value: slice
         }))
       },
+      Token::Backtick => {
+        self.parse_template_litreal()
+      },
       Token::False => {
         self.next();
         Ok(Expression::Keyword(Keywords::False))
@@ -1674,6 +1677,27 @@ impl AST{
         Ok(Expression::Unknown)
       }
     }
+  }
+
+  // 解析字符串模板
+  fn parse_template_litreal(&mut self) -> JSIResult<Expression> {
+    let spans: Vec<Expression> = vec![];
+    while self.char != '`' {
+      println!("chjar {}", self.char);
+      // TODO: `\`${xxx}\``
+      if !self.read() {
+        break;
+      }
+
+      if self.char == '$' && self.next_is('{', false) {
+        self.read();
+        let expr = self.parse_expression();
+        println!("expr {:?}",expr);
+      }
+    }
+    println!("chjarxx {}",self.char);
+    self.read();
+    Ok(Expression::Unknown)
   }
 
   // 解析参数
