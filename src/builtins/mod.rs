@@ -6,3 +6,4 @@ pub mod number;
 pub mod boolean;
 pub mod error;
 pub mod global;
+pub mod console;

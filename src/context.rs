@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::create_array}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::create_array, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
 
 
 use super::ast::AST;
@@ -56,6 +56,7 @@ impl Context {
       // 函数声明需要添加 prototype、constrctor、__proto__
       // 绑定变量声明
       // 执行 statement
+      // result_value 是 block 的返回值
       let mut result_value = Value::Undefined;
       let mut last_statement_value = Value::Undefined;
       // 中断，类似于 break 、continue 等
@@ -66,6 +67,7 @@ impl Context {
         };
         self.call_statement(statement, &mut result_value, &mut last_statement_value, &mut interrupt, call_options)?;
         if interrupt != Value::Undefined {
+          // 如果是 return，那么 block 的返回值(result_value) 在处理 return 时已经赋值了
           break;
         }
       }
@@ -92,7 +94,8 @@ impl Context {
           Ok(true)
         },
         Statement::Return(return_statement) => {
-          (*result_value) = self.execute_expression(&return_statement.expression)?;
+          let result = self.execute_expression(&return_statement.expression)?;
+          (*result_value) = result;
           (*last_statement_value) = result_value.clone();
           (*interrupt) = Value::Interrupt(Token::Return, Expression::Unknown);
           Ok(true)
@@ -144,6 +147,7 @@ impl Context {
           let result = self.call_block(&vec![], &try_statement.body.statements);
           self.close_scope();
           if let Ok(value) = &result {
+            (*result_value) = value.0.clone();
             (*last_statement_value) = value.1.clone();
             (*interrupt) = value.2.clone();
           } else if let Err(err) = &result {
@@ -154,8 +158,9 @@ impl Context {
                 (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err_obj), false);
               }
               let result = self.call_block(&vec![], &catch.body.statements)?;
-              (*interrupt) = result.2;
+              (*result_value) = result.0;
               (*last_statement_value) = result.1;
+              (*interrupt) = result.2;
               self.close_scope();
             }
           }
@@ -172,6 +177,7 @@ impl Context {
         Statement::Block(block) => {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
           let result = self.call_block(&vec![], &block.statements)?;
+          (*result_value) = result.0;
           (*interrupt) = result.2;
           self.close_scope();
           Ok(true)
@@ -215,7 +221,7 @@ impl Context {
       // println!("expression: {:?}", expression);
       match expression {
         Expression::Binary(binary) => {
-          Ok(ValueInfo { is_const: false, value: self.execute_binary_expression(binary)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value:self.execute_binary_expression(binary)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PrefixUnary(expr) => {
           Ok(ValueInfo { is_const: false, value: self.execute_prefix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
@@ -354,8 +360,14 @@ impl Context {
         Token::Equal => {
           return Ok(Value::Boolean(left.is_equal_to(self, &right, false)));
         },
+        Token::NotEqual => {
+          return Ok(Value::Boolean(!left.is_equal_to(self, &right, false)));
+        },
         Token::StrictEqual => {
           return Ok(Value::Boolean(left.is_equal_to(self, &right, true)));
+        },
+        Token::StrictNotEqual => {
+          return Ok(Value::Boolean(!left.is_equal_to(self, &right, true)));
         },
         Token::Plus | Token::Subtract | Token::Multiply | Token::Slash |Token::Remainder => {
           // 数字处理
@@ -828,6 +840,13 @@ impl Context {
           define_scope_value = scope.upgrade();
         }
       }
+
+      {
+        let sc = define_scope_value.as_ref().unwrap();
+        let xx = Rc::clone(&sc);
+        let x2 = xx.borrow();
+        println!("todo:xx {:?}", x2.labels);
+      }
       self.switch_scope(define_scope_value);
       // 绑定参数
       for parameter_index in 0..function_declaration.parameters.len() {
@@ -838,10 +857,10 @@ impl Context {
           (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined, false);
         }
       }
-      // 执行 body
-      let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements)?;
-      self.close_scope();
-      Ok(result.0)
+       // 执行 body
+       let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements)?;
+       self.close_scope();
+       Ok(result.0)
     }
 
     // 切换作用域
@@ -890,6 +909,9 @@ impl Context {
         let mut global_scope = self.scope.borrow_mut();
         global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)), true);
       }
+      let console = create_console(self);
+      let mut global_scope = self.scope.borrow_mut();
+      global_scope.set_value(String::from("console"), Value::Object(console), true);
     }
     // 获取当前调用栈
     // fn get_current_stack() {

@@ -1552,6 +1552,10 @@ impl AST{
         self.next();
         Ok(Expression::Keyword(Keywords::Undefined))
       },
+      Token::This => {
+        self.next();
+        Ok(Expression::Keyword(Keywords::This))
+      },
       Token::LeftBrace => {
         self.parse_object_literal()
       },

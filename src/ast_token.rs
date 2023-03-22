@@ -188,6 +188,7 @@ pub fn get_token_keyword(literal: &String, is_strict: bool) -> Token {
 pub fn get_token_literal(literal: &String) -> Token {
   match literal.as_str() {
     "null" => Token::Null,
+    "undefined" => Token::Undefined,
     "true" => Token::True,
     "false" => Token::False,
     _ => Token::ILLEGAL

@@ -101,6 +101,7 @@ pub enum Keywords {
   True,
   Null,
   Undefined,
+  This,
 }
 
 impl Keywords {
@@ -110,6 +111,7 @@ impl Keywords {
         Keywords::True => String::from("true"),
         Keywords::Null => String::from("null"),
         Keywords::Undefined => String::from("undefined"),
+        Keywords::This => String::from("this"),
       }
     }
 }
