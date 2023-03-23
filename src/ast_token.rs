@@ -113,11 +113,13 @@ pub enum Token {
 	Semicolon, // ";"
 	Colon, // ":"
 	QuestionMark, // "?"
+  Backtick, // ` ES2015
   Exponentiation, // "**" ES2017
   ExponentiationAssign, // "**=" ES2017
 	NullishCoalescing, // "??" ES2020
 	NullishCoalescingAssign, // "??=" ES2020
 	OptionalChaining, // "?." ES2020
+  
   // not keyword
   ILLEGAL,
   // 结尾
@@ -186,6 +188,7 @@ pub fn get_token_keyword(literal: &String, is_strict: bool) -> Token {
 pub fn get_token_literal(literal: &String) -> Token {
   match literal.as_str() {
     "null" => Token::Null,
+    "undefined" => Token::Undefined,
     "true" => Token::True,
     "false" => Token::False,
     _ => Token::ILLEGAL

@@ -1,13 +1,13 @@
-use std::{rc::Rc, cell::RefCell};
-
+use std::{rc::Rc};
+use crate::context::{Context};
 use crate::{value::Value, ast_node::{CallContext, ClassType}, error::{JSIResult, JSIError, JSIErrorType}};
 
-use super::{object::{create_object, Property, Object}, function::builtin_function, global::get_global_object};
+use super::{object::{create_object, Property}, function::builtin_function, global::get_global_object};
 
  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
- pub fn create_array(global: &Rc<RefCell<Object>>, length: usize) -> Value {
-  let global_array = get_global_object(global, String::from("Array"));
-  let array = create_object(global, ClassType::Array, None);
+ pub fn create_array(ctx: &mut Context, length: usize) -> Value {
+  let global_array = get_global_object(ctx, String::from("Array"));
+  let array = create_object(ctx, ClassType::Array, None);
   let array_clone = Rc::clone(&array);
   let mut array_mut = (*array_clone).borrow_mut();
   array_mut.define_property(String::from("length"),  Property { enumerable: true, value: Value::Number(length as f64) });
@@ -17,21 +17,21 @@ use super::{object::{create_object, Property, Object}, function::builtin_functio
   Value::Array(array)
 }
 
-pub fn bind_global_array(global:  &Rc<RefCell<Object>>) {
-  let arr_rc = get_global_object(global, String::from("Array"));
+pub fn bind_global_array(ctx: &mut Context) {
+  let arr_rc = get_global_object(ctx, String::from("Array"));
   let mut arr = (*arr_rc).borrow_mut();
   let name = String::from("isArray");
-  arr.property.insert(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, array_static_is_array) });
+  arr.property.insert(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, array_static_is_array) });
 
   if let Some(prop)= &arr.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = prototype_rc.borrow_mut();
     let name = String::from("toString");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 0f64, array_to_string) });
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, array_to_string) });
     let name = String::from("join");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, array_join) });
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, array_join) });
     let name = String::from("push");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, array_push) });
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, array_push) });
   }
 }
 
@@ -54,7 +54,7 @@ fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
 }
 
 // Array.prototype.join
-fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+fn array_join(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut join = ",";
   if args.len() > 0 {
     if let Value::String(join_param) = &args[0] {
@@ -62,33 +62,31 @@ fn array_join(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
     }
   }
   let mut string_list: Vec<String> = vec![];
-  let global = ctx.global.upgrade().unwrap();
-  let iter = |_: i32, value: &Value| {
-    string_list.push(value.to_string(&global));
+  let iter = |_: i32, value: &Value, ctx: &mut Context| {
+    string_list.push(value.to_string(ctx));
   };
-  array_iter_mut(ctx, iter);
+  array_iter_mut(call_ctx, iter);
   Ok(Value::String(string_list.join(join)))
 }
 
-fn array_iter_mut<F: FnMut(i32, &Value)>(ctx: &mut CallContext, mut callback: F) {
-  let this_origin = ctx.this.upgrade();
+fn array_iter_mut<F: FnMut(i32, &Value, &mut Context)>(call_ctx: &mut CallContext, mut callback: F) {
+  let this_origin = call_ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
   let this = this_rc.borrow_mut();
   let len = this.get_property_value(String::from("length"));
   if let Value::Number(len) = len {
     for index in 0..(len as i32) {
-      (callback)(index, &this.get_property_value(index.to_string()));
+      (callback)(index, &this.get_property_value(index.to_string()), call_ctx.ctx);
     }
   }
 }
 
 // Array.prototype.push
-fn array_push(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+fn array_push(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   // 插入值
-  let global = ctx.global.upgrade().unwrap();
-  let this_rc = ctx.this.upgrade().unwrap();
+  let this_rc = call_ctx.this.upgrade().unwrap();
   let mut this = this_rc.borrow_mut();
-  let mut len_opt = this.get_property_value(String::from("length")).to_number(&global);
+  let len_opt = this.get_property_value(String::from("length")).to_number(call_ctx.ctx);
   if let Some(len) = len_opt {
     let mut len = len as usize;
     for value in args.iter() { 

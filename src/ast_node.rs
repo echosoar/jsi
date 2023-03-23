@@ -1,5 +1,6 @@
+use std::rc::Rc;
 use std::{fmt, cell::RefCell, rc::Weak};
-
+use crate::context::{Context};
 use crate::{ast_token::Token, value::Value, builtins::{object::Object}, error::JSIResult};
 
 #[derive(Clone)]
@@ -40,27 +41,26 @@ impl PartialEq for Statement {
 
 impl fmt::Debug for Statement {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let mut stype = "unknown";
-    match self {
-      Statement::Block(_) => { stype = "block"},
-      Statement::Break(_) => { stype = "break"},
-      Statement::BuiltinFunction(_) => { stype = "builtin function"},
-      Statement::Class(_) => { stype = "class"},
-      Statement::Continue(_) => { stype = "continue"},
-      Statement::Expression(_) => { stype = "expression"},
-      Statement::For(_) => { stype = "for"},
-      Statement::Function(_) => { stype = "function"},
-      Statement::If(_) => { stype = "if"},
-      Statement::Label(_) => { stype = "label"},
-      Statement::Return(_) => { stype = "return"},
-      Statement::Switch(_) => { stype = "switch"},
-      Statement::Try(_) => { stype = "try"},
-      Statement::Var(_) => { stype = "var"},
-      Statement::While(_) => { stype = "while"},
+    let stype = match self {
+      Statement::Block(_) => { "block"},
+      Statement::Break(_) => { "break"},
+      Statement::BuiltinFunction(_) => { "builtin function"},
+      Statement::Class(_) => { "class"},
+      Statement::Continue(_) => { "continue"},
+      Statement::Expression(_) => { "expression"},
+      Statement::For(_) => { "for"},
+      Statement::Function(_) => { "function"},
+      Statement::If(_) => { "if"},
+      Statement::Label(_) => { "label"},
+      Statement::Return(_) => { "return"},
+      Statement::Switch(_) => { "switch"},
+      Statement::Try(_) => { "try"},
+      Statement::Var(_) => { "var"},
+      Statement::While(_) => { "while"},
       _ => {
-        stype = "other"
+        "other"
       },
-    }
+    };
     write!(f, "{}", stype)
   }
 }
@@ -85,6 +85,7 @@ pub enum Expression {
   Array(ArrayLiteral),
   Function(FunctionDeclaration),
   New(NewExpression),
+  TemplateLiteral(TemplateLiteralExpression),
   // {[a]: 12}
   ComputedPropertyName(ComputedPropertyName),
   // for class
@@ -100,6 +101,7 @@ pub enum Keywords {
   True,
   Null,
   Undefined,
+  This,
 }
 
 impl Keywords {
@@ -109,6 +111,7 @@ impl Keywords {
         Keywords::True => String::from("true"),
         Keywords::Null => String::from("null"),
         Keywords::Undefined => String::from("undefined"),
+        Keywords::This => String::from("this"),
       }
     }
 }
@@ -122,6 +125,7 @@ pub enum Declaration {
 pub enum VariableFlag {
   Var,
   Let,
+  Const,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -314,6 +318,12 @@ pub struct PostfixUnaryExpression {
   pub operator: Token,
 }
 
+// 字符串模板表达式
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateLiteralExpression {
+  pub spans: Vec<Expression>
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupExpression {
   pub expression: Box<Expression>
@@ -363,14 +373,20 @@ pub struct VariableDeclaration {
 
 
 pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> JSIResult<Value>;
-pub struct CallContext {
+pub struct CallContext<'a> {
   // 全局对象，globalThis
-  pub global: Weak<RefCell<Object>>,
+  pub ctx: &'a mut Context,
   // 调用时的 this
   pub this: Weak<RefCell<Object>>,
   // 引用，调用的发起方，比如  a.call()，reference 就是 a
   // 当直接调用 call() 的时候，refererce 是 None
   pub reference: Option<Weak<RefCell<Object>>>,
+}
+
+impl <'a>CallContext<'a> {
+  pub fn call_function(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
+    self.ctx.call_function_object(function_define, call_this,reference,  arguments)
+  }
 }
 
 #[derive(Debug, Clone)]

@@ -29,3 +29,12 @@ fn run_array_instances_has_class() {
   Object.prototype.toString.call(arr)")).unwrap();
   assert_eq!(result , Value::String(String::from("[object Array]")));
 }
+
+#[test]
+fn run_array_typeof() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let num = [1,2];
+  typeof num")).unwrap();
+  assert_eq!(result , Value::String(String::from("object")));
+}

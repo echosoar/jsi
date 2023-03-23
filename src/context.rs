@@ -1,12 +1,12 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT}, array::create_array}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::create_array, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
 
 
 use super::ast::AST;
 pub struct Context {
   scope: Rc<RefCell<Scope>>,
-  global: Rc<RefCell<Object>>,
+  pub global: Rc<RefCell<Object>>,
   cur_scope: Rc<RefCell<Scope>>
 }
 
@@ -20,6 +20,7 @@ impl Context {
         scope,
         cur_scope,
       };
+      bind_global(&mut ctx);
       ctx.init();
       return ctx;
     }
@@ -47,14 +48,15 @@ impl Context {
        for declaration in declarations.iter() {
         match  declaration {
             Declaration::Function(function_statement) => {
-              let function = create_function(&self.global, &function_statement, Rc::downgrade(&self.cur_scope));
-             (*self.cur_scope).borrow_mut().set_value(function_statement.name.literal.clone(), function)
+              let function = create_function(self, &function_statement, Rc::downgrade(&self.cur_scope));
+             (*self.cur_scope).borrow_mut().set_value(function_statement.name.literal.clone(), function, false)
             }
         };
       }
       // 函数声明需要添加 prototype、constrctor、__proto__
       // 绑定变量声明
       // 执行 statement
+      // result_value 是 block 的返回值
       let mut result_value = Value::Undefined;
       let mut last_statement_value = Value::Undefined;
       // 中断，类似于 break 、continue 等
@@ -64,7 +66,8 @@ impl Context {
           label: None,
         };
         self.call_statement(statement, &mut result_value, &mut last_statement_value, &mut interrupt, call_options)?;
-        if interrupt != Value::Undefined {
+        if !interrupt.is_equal_to(self, &Value::Undefined, true) {
+          // 如果是 return，那么 block 的返回值(result_value) 在处理 return 时已经赋值了
           break;
         }
       }
@@ -81,7 +84,7 @@ impl Context {
               let mut value = self.execute_expression(&let_var.initializer)?;
               value.bind_name(name.clone());
               (*last_statement_value) = value.clone();
-              (*self.cur_scope).borrow_mut().set_value(name, value);
+              (*self.cur_scope).borrow_mut().set_value(name, value, var_statement.flag == VariableFlag::Const);
             }
           }
           Ok(true)
@@ -91,7 +94,8 @@ impl Context {
           Ok(true)
         },
         Statement::Return(return_statement) => {
-          (*result_value) = self.execute_expression(&return_statement.expression)?;
+          let result = self.execute_expression(&return_statement.expression)?;
+          (*result_value) = result;
           (*last_statement_value) = result_value.clone();
           (*interrupt) = Value::Interrupt(Token::Return, Expression::Unknown);
           Ok(true)
@@ -105,7 +109,7 @@ impl Context {
           let call_options = CallStatementOptions {
             label: None,
           };
-          if condition.to_boolean(&self.global) {
+          if condition.to_boolean(self) {
             if let Statement::Unknown = *if_statement.then_statement {
               // no then
             } else {
@@ -143,17 +147,20 @@ impl Context {
           let result = self.call_block(&vec![], &try_statement.body.statements);
           self.close_scope();
           if let Ok(value) = &result {
+            (*result_value) = value.0.clone();
             (*last_statement_value) = value.1.clone();
             (*interrupt) = value.2.clone();
           } else if let Err(err) = &result {
             if let Some(catch) = &try_statement.catch {
               self.switch_scope(Some(Rc::clone(&self.cur_scope)));
               if let Some(error_decl) =&catch.declaration {
-                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err.to_error_object(&self.global)));
+                let err_obj = err.to_error_object(self);
+                (*self.cur_scope).borrow_mut().set_value(error_decl.literal.clone(), Value::Object(err_obj), false);
               }
               let result = self.call_block(&vec![], &catch.body.statements)?;
-              (*interrupt) = result.2;
+              (*result_value) = result.0;
               (*last_statement_value) = result.1;
+              (*interrupt) = result.2;
               self.close_scope();
             }
           }
@@ -170,6 +177,7 @@ impl Context {
         Statement::Block(block) => {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
           let result = self.call_block(&vec![], &block.statements)?;
+          (*result_value) = result.0;
           (*interrupt) = result.2;
           self.close_scope();
           Ok(true)
@@ -213,77 +221,96 @@ impl Context {
       // println!("expression: {:?}", expression);
       match expression {
         Expression::Binary(binary) => {
-          Ok(ValueInfo { value: self.execute_binary_expression(binary)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value:self.execute_binary_expression(binary)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PrefixUnary(expr) => {
-          Ok(ValueInfo { value: self.execute_prefix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_prefix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PostfixUnary(expr) => {
-          Ok(ValueInfo { value: self.execute_postfix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_postfix_unary_expression(expr)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Call(call) => {
-          Ok(ValueInfo { value: self.execute_call_expression(call)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_call_expression(call)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Object(object) => {
-          Ok(ValueInfo { value: self.new_object(object)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.new_object(object)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Array(array) => {
-          Ok(ValueInfo { value: self.new_array(array)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.new_array(array)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Function(function_declaration) => {
-          let func = create_function(&self.global, function_declaration, Rc::downgrade(&self.cur_scope));
-          Ok(ValueInfo { value: func, name: None, access_path: String::from(""), reference: None })
+          let func = create_function(self, function_declaration, Rc::downgrade(&self.cur_scope));
+          Ok(ValueInfo { is_const: false, value: func, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PropertyAccess(property_access) => {
           // expression.name
           let left = self.execute_expression(&property_access.expression)?;
-          if left == Value::Null {
+          if left.is_equal_to(self, &Value::Null, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", property_access.name.literal), 0, 0))
           }
-          let left_obj = left.to_object(&self.global);
+          let left_obj = left.to_object(self);
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
           // println!("PropertyAccess: {:?} {:?}",left_obj, right);
-          Ok(ValueInfo { value, name: Some(right.clone()), access_path: String::from(""), reference: Some(Value::Object(left_obj)) })
+          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: String::from(""), reference: Some(Value::Object(left_obj)) })
         },
         Expression::ComputedPropertyName(property_name) => {
-          Ok(ValueInfo { value: self.execute_expression(&property_name.expression)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_expression(&property_name.expression)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::ElementAccess(element_access) => {
           // expression[argument]
           let left = self.execute_expression(&element_access.expression)?;
           
-          let left_obj = left.to_object(&self.global);
-          let right = self.execute_expression(&element_access.argument)?.to_string(&self.global);
-          if left == Value::Null {
+          let left_obj = left.to_object(self);
+          let right = self.execute_expression(&element_access.argument)?.to_string(self);
+          if left.is_equal_to(self, &Value::Null, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", right), 0, 0))
           }
           let value = (*left_obj).borrow().get_value(right.clone());
-          Ok(ValueInfo { value, name: Some(right.clone()),  access_path: String::from(""),reference: Some(Value::Object(left_obj)) })
+          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()),  access_path: String::from(""),reference: Some(Value::Object(left_obj)) })
+        },
+        Expression::Conditional(condition) => {
+          let condition_res = self.execute_expression(&condition.condition)?;
+          let value = if condition_res.to_boolean(self) {
+            self.execute_expression(&condition.when_true)?
+          } else {
+            self.execute_expression(&condition.when_false)?
+          };
+          Ok(ValueInfo { is_const: false, value, name: None,  access_path: String::from(""), reference: None })
         },
         Expression::Identifier(identifier) => {
           let name = identifier.literal.clone();
-          let (value, scope) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
+          let (value, scope, is_const) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
           if let Some(val) = value {
-            Ok(ValueInfo{ value: val, name: Some(name.clone()),  access_path: name.clone(),reference: Some(Value::Scope(Rc::downgrade(&scope))) })
+            Ok(ValueInfo { is_const, value: val, name: Some(name.clone()),  access_path: name.clone(),reference: Some(Value::Scope(Rc::downgrade(&scope))) })
           } else {
             Err(JSIError::new(JSIErrorType::ReferenceError, format!("{} is not defined", name), 0, 0))
           }
         },
         Expression::Assign(assign) => {
-          Ok(ValueInfo{ value: self.execute_assign_expression(assign)?, name: None, access_path: String::from(""), reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_assign_expression(assign)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::String(string) => {
-          Ok(ValueInfo {value: Value::String(string.value.clone()), name: None, access_path:string.value.clone(), reference: None })
+          Ok(ValueInfo {is_const: false, value: Value::String(string.value.clone()), name: None, access_path: string.value.clone(), reference: None })
+        },
+        Expression::TemplateLiteral(template) => {
+          let mut strings: Vec<String> = vec![];
+          for span in template.spans.iter() {
+            let value = self.execute_expression(span)?;
+            strings.push(value.to_string(self));
+          }
+          let string = strings.join("");
+          Ok(ValueInfo {is_const: false, value: Value::String(string.clone()), name: None, access_path:string, reference: None })
         },
         Expression::Number(number) => {
-          Ok(ValueInfo {value: Value::Number(number.value.clone()), name: None, access_path: number.literal.clone(), reference: None })
+          Ok(ValueInfo {is_const: false, value: Value::Number(number.value.clone()), name: None, access_path: number.literal.clone(), reference: None })
         },
         Expression::New(new_object) => {
-          Ok(ValueInfo { value: self.execute_new_expression(new_object)?, name: None, access_path: String::from(""),reference: None })
+          Ok(ValueInfo { is_const: false, value: self.execute_new_expression(new_object)?, name: None, access_path: String::from(""),reference: None })
         },
         Expression::Keyword(keyword) => {
           Ok(ValueInfo {
+            is_const: false,
             value: match *keyword {
               Keywords::False => Value::Boolean(false),
               Keywords::True => Value::Boolean(true),
@@ -298,6 +325,7 @@ impl Context {
         _ => {
           println!("expression: {:?}", expression);
           Ok(ValueInfo {
+            is_const: false,
             value: Value::Undefined,
             name: None,
             reference: None,
@@ -314,12 +342,12 @@ impl Context {
       // 逻辑运算 左值
       if expression.operator == Token::LogicalAnd {
         // false &&
-        if !left.to_boolean(&self.global) {
+        if !left.to_boolean(self) {
           return Ok(Value::Boolean(false));
         }
       } else if expression.operator == Token::LogicalOr {
         // true ||
-        if left.to_boolean(&self.global) {
+        if left.to_boolean(self) {
           return Ok(Value::Boolean(true));
         }
       }
@@ -329,7 +357,7 @@ impl Context {
       // 逻辑运算 右值
       if expression.operator == Token::LogicalAnd || expression.operator == Token::LogicalOr {
         // true && false / false || false
-        if !right.to_boolean(&self.global) {
+        if !right.to_boolean(self) {
           return Ok(Value::Boolean(false));
         } else {
           // true && true / false || true
@@ -339,10 +367,16 @@ impl Context {
 
       match expression.operator {
         Token::Equal => {
-          return Ok(Value::Boolean(left.is_equal_to(&self.global, &right, false)));
+          return Ok(Value::Boolean(left.is_equal_to(self, &right, false)));
+        },
+        Token::NotEqual => {
+          return Ok(Value::Boolean(!left.is_equal_to(self, &right, false)));
         },
         Token::StrictEqual => {
-          return Ok(Value::Boolean(left.is_equal_to(&self.global, &right, true)));
+          return Ok(Value::Boolean(left.is_equal_to(self, &right, true)));
+        },
+        Token::StrictNotEqual => {
+          return Ok(Value::Boolean(!left.is_equal_to(self, &right, true)));
         },
         Token::Plus | Token::Subtract | Token::Multiply | Token::Slash |Token::Remainder => {
           // 数字处理
@@ -354,7 +388,7 @@ impl Context {
           if expression.operator == Token::Plus {
             // 如果有一个是字符串，那就返回字符串
             if left.is_string() || right.is_string() {
-              return Ok(Value::String(left.to_string(&self.global) + right.to_string(&self.global).as_str()));
+              return Ok(Value::String(left.to_string(self) + right.to_string(self).as_str()));
             }
           }
 
@@ -369,9 +403,8 @@ impl Context {
           // TODO: JSIResult
           Ok(self.execute_number_operator_expression(&left, &right, &expression.operator))
         },
-        Token::Less | Token::Greater => {
-           // TODO: JSIResult
-          Ok(self.execute_compare_operator_expression(&left, &right, &expression.operator))
+        Token::Less | Token::Greater | Token::LessOrEqual | Token::GreaterOrEqual => {
+          self.execute_compare_operator_expression(&left, &right, &expression.operator)
         },
         _ =>  {
           Err(JSIError::new(JSIErrorType::Unknown, format!("unsupport binary {:?}", expression), 0, 0))
@@ -384,12 +417,12 @@ impl Context {
     fn execute_number_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
       let left_number: f64;
       let right_number: f64;
-      if let Some(num) = left.to_number(&self.global) {
+      if let Some(num) = left.to_number(self) {
         left_number = num;
       } else {
         return Value::NAN;
       }
-      if let Some(num) = right.to_number(&self.global) {
+      if let Some(num) = right.to_number(self) {
         right_number = num;
       } else {
         return Value::NAN;
@@ -405,23 +438,25 @@ impl Context {
     }
 
     // 执行方法调用表达式
-    fn execute_compare_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
+    fn execute_compare_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> JSIResult<Value> {
       let left_number: f64;
       let right_number: f64;
-      if let Some(num) = left.to_number(&self.global) {
+      if let Some(num) = left.to_number(self) {
         left_number = num;
       } else {
-        return Value::NAN;
+        return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0))
       }
-      if let Some(num) = right.to_number(&self.global) {
+      if let Some(num) = right.to_number(self) {
         right_number = num;
       } else {
-        return Value::NAN;
+        return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0))
       }
       match operator {
-        Token::Greater => Value::Boolean(left_number > right_number),
-        Token::Less => Value::Boolean(left_number < right_number),
-        _=> Value::NAN,
+        Token::Greater => Ok(Value::Boolean(left_number > right_number)),
+        Token::GreaterOrEqual => Ok(Value::Boolean(left_number >= right_number)),
+        Token::Less => Ok(Value::Boolean(left_number < right_number)),
+        Token::LessOrEqual => Ok(Value::Boolean(left_number <= right_number)),
+        _=> Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '{:?}'", operator), 0, 0)),
       }
     }
 
@@ -449,7 +484,7 @@ impl Context {
               function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
             };
             if let Some(_) = is_global_object {
-              return callee.value.instantiate_object(&self.global, arguments);
+              return callee.value.instantiate_object(self, arguments);
             }
           }
           Err(JSIError::new(JSIErrorType::TypeError, format!("{:?} is not a function", callee.access_path), 0, 0))
@@ -463,13 +498,45 @@ impl Context {
     // 执行赋值表达式
     fn execute_assign_expression(&mut self, expression: &AssignExpression) -> JSIResult<Value> {
       let mut left_info = self.execute_expression_info(&expression.left)?;
-      let right_value = self.execute_expression(&expression.right)?;
-      // TODO: more operator
-      if expression.operator == Token::Assign {
-        left_info.set_value(right_value.clone());
-        Ok(right_value)
-      } else {
-        Err(JSIError::new(JSIErrorType::SyntaxError, String::from("todo: unsupported operator"), 0, 0))
+      let mut right_value = self.execute_expression(&expression.right)?;
+      let mut oper = expression.operator.clone();
+      let binary = match &oper {
+        Token::AddAssign => {
+          Some(Token::Plus)
+        },
+        Token::SubtractAssign => {
+          Some(Token::Subtract)
+        },
+        Token::MultiplyAssign => {
+          Some(Token::Multiply)
+        },
+        Token::SlashAssign => {
+          Some(Token::Slash)
+        },
+        Token::RemainderAssign => {
+          Some(Token::Remainder)
+        },
+        _ => {
+          None
+        }
+      };
+      if let Some(operator) = binary {
+        oper = Token::Assign;
+        let binary_expression = BinaryExpression {
+          left: expression.left.clone(),
+          right: expression.right.clone(),
+          operator: operator
+        };
+        right_value = self.execute_binary_expression(&binary_expression)?;
+      }
+      match oper {
+        Token::Assign => {
+          left_info.set_value(right_value.clone())?;
+          Ok(left_info.value)
+        },
+        _ => {
+          Err(JSIError::new(JSIErrorType::SyntaxError, String::from("todo: unsupported operator"), 0, 0))
+        }
       }
     }
 
@@ -477,37 +544,67 @@ impl Context {
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> JSIResult<Value> {
       
       let mut operand_info = self.execute_expression_info(&expression.operand)?;
-      let value_number = operand_info.value.to_number(&self.global);
-      let value = if let Some(new_value) = value_number {
-        let mut new_value = new_value;
-        match &expression.operator {
-          Token::Increment => {
-            new_value = new_value + 1f64;
-          },
-          Token::Decrement => {
-            new_value = new_value - 1f64;
-          },
-          Token::Subtract => {
-            new_value = -new_value;
-          },
-          Token::Plus => {
-            new_value = new_value;
-          }
-          _ => {}
+      match &expression.operator {
+        Token::Typeof => {
+          Ok(Value::String(operand_info.value.type_of()))
+        },
+        Token::Void => {
+          Ok(Value::Undefined)
+        },
+        Token::Not => {
+          Ok(Value::Boolean(!operand_info.value.to_boolean(self)))
+        },
+        // TODO: delete
+        // Token::Void => {
+        //   Ok(Value::Undefined)
+        // },
+        // TODO: await
+        // Token::Void => {
+        //   Ok(Value::Undefined)
+        // },
+        _ => {
+          let value_number = operand_info.value.to_number(self);
+          let value = if let Some(new_value) = value_number {
+            let mut new_value = new_value;
+            let mut is_need_set_value = false;
+            match &expression.operator {
+              Token::Increment => {
+                new_value = new_value + 1f64;
+                is_need_set_value = true;
+              },
+              Token::Decrement => {
+                new_value = new_value - 1f64;
+                is_need_set_value = true;
+              },
+              Token::Subtract => {
+                new_value = -new_value;
+              },
+              Token::Plus => {
+                new_value = new_value;
+              },
+              _ => {}
+            }
+            let value = Value::Number(new_value);
+            if is_need_set_value {
+              operand_info.set_value(value.clone())?;
+            }
+            value
+          } else {
+            Value::NAN
+          };
+          
+          Ok(value)
         }
-        Value::Number(new_value)
-      } else {
-        Value::NAN
-      };
-      operand_info.set_value(value.clone());
-      Ok(value)
+      }
+
+      
     }
 
     // 执行 i++ i--
     fn execute_postfix_unary_expression(&mut self, expression: &PostfixUnaryExpression) -> JSIResult<Value> {
       let mut operand_info = self.execute_expression_info(&expression.operand)?;
       let origin_value = operand_info.value.clone();
-      let value_number = origin_value.to_number(&self.global);
+      let value_number = origin_value.to_number(self);
       let value = if let Some(new_value) = value_number {
         let mut new_value = new_value;
         match &expression.operator {
@@ -523,7 +620,7 @@ impl Context {
       } else {
         Value::NAN
       };
-      operand_info.set_value(value);
+      operand_info.set_value(value)?;
       Ok(origin_value)
     }
 
@@ -540,7 +637,7 @@ impl Context {
       if let Statement::Var(var) = &initializer  {
         if var.flag == VariableFlag::Var {
           self.call_statement(&initializer, &mut for_result, &mut for_last_statement_value, &mut for_interrupt, for_call_options)?;
-        } else if var.flag == VariableFlag::Let {
+        } else if var.flag == VariableFlag::Let || var.flag == VariableFlag::Const {
           self.switch_scope(Some(Rc::clone(&self.cur_scope)));
           is_change_scope = true;
           self.call_statement(&initializer, &mut for_result, &mut for_last_statement_value, &mut for_interrupt, for_call_options)?;
@@ -563,7 +660,7 @@ impl Context {
             // nothing to do
           } else {
             let value = self.execute_expression(condition)?;
-            if !value.to_boolean(&self.global) {
+            if !value.to_boolean(self) {
               break;
             }
           }
@@ -625,7 +722,7 @@ impl Context {
             // nothing to do
           } else {
             let value = self.execute_expression(condition)?;
-            if !value.to_boolean(&self.global) {
+            if !value.to_boolean(self) {
               break;
             }
           }
@@ -649,7 +746,7 @@ impl Context {
         let case = &switch_statment.clauses[case_index];
         if let Some(condition) = &case.condition {
           let case_value = self.execute_expression(condition).unwrap();
-          if case_value.is_equal_to(&self.global, &value, true) {
+          if case_value.is_equal_to(self, &value, true) {
             matched = case_index as i32;
           }
         }
@@ -673,7 +770,7 @@ impl Context {
         for element in &new_object.arguments {
           arguments.push(self.execute_expression(element)?);
         }
-      let obj = constructor.value.instantiate_object(&self.global, arguments);
+      let obj = constructor.value.instantiate_object(self, arguments);
       if let Ok(obj) = obj {
         Ok(obj)
       } else {
@@ -683,27 +780,39 @@ impl Context {
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> JSIResult<Value> {
       // 获取 object 实例
-      let object = create_object(&self.global,ClassType::Array, None);
+      let object = create_object(self,ClassType::Array, None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
-      // TODO:
-      // object.prototype = global.object_prototype;
       // 绑定属性
+      let mut normal_propertys: Vec<(String, Value)> = vec![];
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
-        let name = self.execute_expression(&property.name)?.to_string(&self.global);
+        let name = self.execute_expression(&property.name)?.to_string(self);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
-        object_mut.define_property(name, Property {
+        // ComputedPropertyName 优先级更高，影响 object 的属性顺序
+        if let Expression::ComputedPropertyName(_) = *property.name {
+          object_mut.define_property(name, Property {
+            enumerable: true,
+            value: initializer,
+          });
+        } else {
+          normal_propertys.push((name, initializer));
+        }
+      }
+
+      for property_index in 0..normal_propertys.len() {
+        let property = normal_propertys[property_index].to_owned();
+        object_mut.define_property(property.0, Property {
           enumerable: true,
-          value: initializer,
+          value: property.1,
         });
       }
       Ok(Value::Object(object))
     }
 
     fn new_array(&mut self, expression: &ArrayLiteral) -> JSIResult<Value> {
-      let array = create_array(&self.global, 0);
+      let array = create_array(self, 0);
       if let Value::Array(arr_obj) = &array {
         let mut arguments: Vec<Value> = vec![];
         for element in &expression.elements {
@@ -711,7 +820,7 @@ impl Context {
         }
         let weak = Rc::downgrade(arr_obj);
         let call_ctx = &mut CallContext {
-          global: Rc::downgrade(&self.global),
+          ctx: self,
           this: weak,
           reference: None,
         };
@@ -720,7 +829,7 @@ impl Context {
       Ok(array)
     }
 
-    fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
+    pub fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
       // 获取 function 定义
       let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
       // 获取 function 调用的 this
@@ -731,13 +840,13 @@ impl Context {
         } else if let Value::Array(obj) = call_this_value {
           this_obj = obj;
         } else if let Value::Function(func) = call_this_value {
-          this_obj = get_function_this(&self.global, func);
+          this_obj = get_function_this(self, func);
         }
       }
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         let mut ctx = CallContext{
-          global:  Rc::downgrade(&self.global),
+          ctx: self,
           this: Rc::downgrade(&this_obj),
           reference: reference,
         };
@@ -765,26 +874,29 @@ impl Context {
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {
           // TODO: 参数引用
-          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone());
+          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone(), false);
         } else {
-          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined);
+          (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined, false);
         }
       }
-      // 执行 body
-      let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements)?;
-      self.close_scope();
-      Ok(result.0)
+       // 执行 body
+       let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements)?;
+       self.close_scope();
+       Ok(result.0)
     }
 
     // 切换作用域
     fn switch_scope(&mut self, define_scope: Option<Rc<RefCell<Scope>>>) {
+      // 创建新的作用域
       let mut new_scope = Scope::new();
+      // 作用域的父级为定义是的作用域，而不是调用时的作用域
       new_scope.parent = define_scope;
       if let Some(scope) = &new_scope.parent {
         let rc = Rc::clone(scope);
         let scope = rc.borrow();
         new_scope.labels = scope.labels.clone();
       }
+      // 添加调用时的来源作用域，调用完成之后得关闭当前作用域，回到调用时的作用域
       new_scope.from = Some(Rc::clone(&self.cur_scope));
       let scope_rc = Rc::new(RefCell::new(new_scope));
       let rc = Rc::clone(&scope_rc);
@@ -794,7 +906,9 @@ impl Context {
 
     // 退出作用域
     fn close_scope(&mut self) {
-      if let Some(parent_scope_rc) = &self.cur_scope.borrow().from {
+      let cur = Rc::clone(&self.cur_scope);
+      let cur_rc = cur.borrow();
+      if let Some(parent_scope_rc) = &cur_rc.from {
         let len = (*parent_scope_rc).borrow_mut().childs.len();
         let mut cur_scope_index = len;
         for index in 0..len {
@@ -805,25 +919,35 @@ impl Context {
         if cur_scope_index != len {
           (*parent_scope_rc).borrow_mut().childs.remove(cur_scope_index);
         }
+        // 回到父级作用域
+        self.cur_scope = Rc::clone(parent_scope_rc);
       }
     }
 
     // 初始化，主要是挂载全局对象
     fn init(&mut self) {
       // 挂载全局对象
-      let mut global_scope = self.scope.borrow_mut();
-
-      global_scope.set_value(String::from("globalThis"), Value::RefObject(Rc::downgrade(&self.global)));
+      {
+        let mut global_scope = self.scope.borrow_mut();
+        global_scope.set_value(String::from("globalThis"), Value::RefObject(Rc::downgrade(&self.global)), true);
+      }
 
       for name in GLOBAL_OBJECT_NAME_LIST.iter() {
         let object_type_name = name.to_string();
-        let object = get_global_object(&self.global, object_type_name.clone());
-        global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)));
+        let object = get_global_object(self, object_type_name.clone());
+        let mut global_scope = self.scope.borrow_mut();
+        global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)), true);
       }
+      let console = create_console(self);
+      let mut global_scope = self.scope.borrow_mut();
+      global_scope.set_value(String::from("console"), Value::Object(console), true);
     }
-
     // 获取当前调用栈
     // fn get_current_stack() {
 
     // }
 } 
+
+
+
+pub type CallbackFunction = dyn Fn(&mut Context)-> JSIResult<Value>;

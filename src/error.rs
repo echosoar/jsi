@@ -1,5 +1,5 @@
 use std::{result, rc::Rc, cell::RefCell};
-
+use crate::context::{Context};
 use crate::{builtins::{object::Object, error::create_error}, value::Value};
 
 pub type JSIResult<T> = result::Result<T, JSIError>;
@@ -49,11 +49,11 @@ impl JSIError {
       }
     }
 
-    pub fn to_error_object(&self, global: &Rc<RefCell<Object>>) -> Rc<RefCell<Object>> {
+    pub fn to_error_object(&self, ctx: &mut Context) -> Rc<RefCell<Object>> {
       if let Some(value) = &self.value {
-        return value.to_object(global);
+        return value.to_object(ctx);
       }
-      let new_error = create_error(global, Value::String(self.message.clone()));
+      let new_error = create_error(ctx, Value::String(self.message.clone()));
       // TODO: set error line/stack
       let obj = if let Value::Object(obj) = new_error {
         Some(obj)

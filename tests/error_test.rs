@@ -112,3 +112,20 @@ fn run_throw_error_catch() {
   ")).unwrap();
   assert_eq!(result , Value::String(String::from("abc")));
 }
+
+
+#[test]
+fn run_const_error() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    const a = 123;
+    a = 456;
+  "));
+  println!("result: {:?}", result);
+  if let Err(jsi_error) = result {
+    assert_eq!(jsi_error.error_type, JSIErrorType::TypeError);
+    assert_eq!(jsi_error.message , String::from("Assignment to constant variable"));
+  } else {
+    assert!(false , "need SyntaxError");
+  }
+}

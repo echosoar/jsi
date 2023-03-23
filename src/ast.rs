@@ -3,7 +3,7 @@
 use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -106,7 +106,7 @@ impl AST{
   fn parse_statement(&mut self) -> JSIResult<Statement> {
     // println!("parse_statement: {:?} {:?}", self.token,  self.literal);
     match self.token {
-        Token::Var | Token::Let => self.parse_variable_statement(),
+        Token::Var | Token::Let | Token::Const => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
         Token::Switch => self.parse_switch_statement(),
         Token::For => self.parse_for_statement(),
@@ -169,6 +169,9 @@ impl AST{
     if self.token == Token::Let {
       self.check_token_and_next(Token::Let)?;
       variable_flag = VariableFlag::Let;
+    } else if self.token == Token::Const {
+      self.check_token_and_next(Token::Const)?;
+      variable_flag = VariableFlag::Const;
     } else {
       self.check_token_and_next(Token::Var)?;
     }
@@ -289,7 +292,7 @@ impl AST{
     // 解析 initializer
     // 需要额外处理 var 的情况
     let mut initializer = Statement::Unknown;
-    if self.token == Token::Var || self.token == Token::Let {
+    if self.token == Token::Var || self.token == Token::Let || self.token == Token::Const {
         initializer = self.parse_variable_statement()?;
     } else if self.token != Token::Semicolon {
       initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
@@ -631,11 +634,11 @@ impl AST{
     let mut start_index = self.cur_char_index;
     loop {
       // EOF
+      start_index = start_index + 1;
       if start_index >= self.length {
         return false;
       }
       let char = self.code[start_index];
-      start_index = start_index + 1;
       if skip_space {
         match char {
           // TODO: 更多空白符
@@ -919,6 +922,7 @@ impl AST{
           // TODO: float
           (Token::Period, cur_char_string)
         },
+        '`' => (Token::Backtick, cur_char_string),
         ',' => (Token::Comma, cur_char_string),
         ';' => (Token::Semicolon, cur_char_string),
         '(' => (Token::LeftParenthesis, cur_char_string),
@@ -1503,6 +1507,7 @@ impl AST{
 
   // 解析字面量 优先级 20 最后处理
   fn parse_literal_expression(&mut self) -> JSIResult<Expression> {
+    // println!("parse_literal_expression {:?}", self.token);
     let literal = self.literal.clone();
     match self.token {
       Token::Identifier => {
@@ -1528,6 +1533,9 @@ impl AST{
           value: slice
         }))
       },
+      Token::Backtick => {
+        self.parse_template_litreal()
+      },
       Token::False => {
         self.next();
         Ok(Expression::Keyword(Keywords::False))
@@ -1543,6 +1551,10 @@ impl AST{
       Token::Undefined => {
         self.next();
         Ok(Expression::Keyword(Keywords::Undefined))
+      },
+      Token::This => {
+        self.next();
+        Ok(Expression::Keyword(Keywords::This))
       },
       Token::LeftBrace => {
         self.parse_object_literal()
@@ -1670,6 +1682,45 @@ impl AST{
         Ok(Expression::Unknown)
       }
     }
+  }
+
+  // 解析字符串模板
+  fn parse_template_litreal(&mut self) -> JSIResult<Expression> {
+    let mut spans: Vec<Expression> = vec![];
+    let mut pre_char_start_index = self.cur_char_index;
+    while self.char != '`' {
+      // TODO: `\`${xxx}\``
+      if !self.read() {
+        break;
+      }
+      if self.char == '$' && self.next_is('{', false) {
+        if pre_char_start_index != self.cur_char_index  {
+          let literal = chars_to_string(&self.code, pre_char_start_index.clone(), self.cur_char_index);
+          pre_char_start_index = self.cur_char_index;
+          spans.push(Expression::String(StringLiteral { literal: literal.clone(), value: literal }));
+        }
+        // skip ‘$'
+        self.read();
+        // skip ‘{'
+        self.read();
+        self.next();
+        
+        let expr = self.parse_expression()?;
+        spans.push(expr);
+        pre_char_start_index = self.cur_char_index;
+      }
+    }
+    if pre_char_start_index != self.cur_char_index {
+      let literal = chars_to_string(&self.code, pre_char_start_index.clone(), self.cur_char_index);
+      spans.push(Expression::String(StringLiteral { literal: literal.clone(), value: literal }));
+    }
+    // skip '`'
+    self.read();
+    // TODO: read_check
+    self.next();
+    Ok(Expression::TemplateLiteral(TemplateLiteralExpression{
+      spans
+    }))
   }
 
   // 解析参数

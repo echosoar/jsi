@@ -137,3 +137,44 @@ fn run_new_object() {
   numRes.toString()")).unwrap();
   assert_eq!(result , Value::String(String::from("5")));
 }
+
+#[test]
+fn run_object_typeof() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let num = new Object(1);
+  typeof num")).unwrap();
+  assert_eq!(result , Value::String(String::from("object")));
+}
+
+
+#[test]
+fn run_object_value() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  var counter = 0;
+  var key1 = {
+    valueOf: function() {
+      counter++;
+      return 1;
+    },
+    toString: null
+  };
+  var key2 = {
+    valueOf: function() {
+      counter++;
+      return 2;
+    },
+    toString: null
+  };
+  
+  var object = {
+    a: 'A',
+    [key1]: 'B',
+    c: 'C',
+    [key2]: 'D',
+  };
+  Object.getOwnPropertyNames(object).join()
+")).unwrap();
+  assert_eq!(result , Value::String(String::from("1,2,a,c")));
+}

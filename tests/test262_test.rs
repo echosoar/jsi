@@ -41,6 +41,7 @@ impl Test262Dir {
                 passed = false;
             } else {
                 if let Ok(inner_result) = result {
+                    println!("inner_result {:?}", inner_result);
                     if let Err(jsi_error) = inner_result {
                         if file.negative {
                             let error = jsi_error.error_type.to_string();
@@ -87,17 +88,6 @@ impl Test262Dir {
         let mut files: Vec<Test262File> = vec![];
         for name in names.iter() {
             let abso_name = dir.join(&name);
-            if only_list.len() > 0 {
-                let mut is_ignore = true;
-                for only in only_list.iter() {
-                    if abso_name.starts_with(&only) {
-                        is_ignore = false
-                    }
-                }
-                if is_ignore {
-                    continue;
-                }
-            }
             if ignore_list.contains(&abso_name) {
                 continue;
             }
@@ -105,6 +95,17 @@ impl Test262Dir {
             if md.is_dir() {
                 dirs.push(Test262Dir::new(name.clone(), String::from(abso_name.to_str().unwrap())))
             } else {
+                if only_list.len() > 0 {
+                    let mut is_ignore = true;
+                    for only in only_list.iter() {
+                        if abso_name.starts_with(&only) {
+                            is_ignore = false
+                        }
+                    }
+                    if is_ignore {
+                        continue;
+                    }
+                }
                 if name.ends_with(".js") {
                     files.push(Test262File::new(name.clone(), String::from(abso_name.to_str().unwrap())))
                 }
@@ -198,13 +199,18 @@ fn make_dir(dir: &String) -> PathBuf {
 
 #[test]
 fn test_all_262() {
-    let prelaod = format!("{}\n", load_harness("harness/assert.js"));
+    let preload_list = vec![
+        load_harness("harness/assert.js"),
+        // load_harness("harness/sta.js"),
+        load_harness("harness/compareArray.js"),
+    ];
+    let prelaod = preload_list.join("\n");
     let ignore_list: Vec<PathBuf> =vec![
         make_dir(&String::from("test262/test/annexB")),
         make_dir(&String::from("test262/test/intl402")),
     ];
     let only_list: Vec<PathBuf> =vec![
-        // make_dir(&String::from("test262/test/language")),
+        // make_dir(&String::from("test262/test/language/computed-property-names/to-name-side-effects/numbers-object.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);

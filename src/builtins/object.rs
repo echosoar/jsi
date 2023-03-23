@@ -2,6 +2,7 @@ use std::borrow::BorrowMut;
 use std::cell::{RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use crate::context::{Context};
 use super::array::create_array;
 // use super::array::new_array;
 use super::function::builtin_function;
@@ -10,7 +11,6 @@ use crate::ast_node::{Statement, CallContext, ClassType};
 use crate::constants::GLOBAL_OBJECT_NAME;
 use crate::error::{JSIResult, JSIError};
 use crate::value::{Value, INSTANTIATE_OBJECT_METHOD_NAME};
-
 
 #[derive(Debug,Clone)]
 // 对象
@@ -144,8 +144,8 @@ impl Object {
     Value::Undefined
   }
 
-  pub fn call(ctx: &mut CallContext, name: String, arguments:Vec<Value>) -> JSIResult<Value> {
-    let this = ctx.this.upgrade().unwrap();
+  pub fn call(call_ctx: &mut CallContext, name: String, arguments:Vec<Value>) -> JSIResult<Value> {
+    let this = call_ctx.this.upgrade().unwrap();
     let fun = {
       //  处理临时借用
       let this_mut = (*this).borrow_mut();
@@ -154,21 +154,27 @@ impl Object {
    
     if let Value::Function(function_define) = &fun {
       // 获取 function 定义
-      let fun_clone = Rc::clone(function_define);
-      let fun_obj = (*fun_clone).borrow_mut();
-      let function_define_value = fun_obj.get_initializer().unwrap();
+      let function_define_value = {
+        let fun_clone = Rc::clone(function_define);
+        let fun_obj = (*fun_clone).borrow_mut();
+        fun_obj.get_initializer().unwrap()
+      };
       
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = function_define_value.as_ref() {
         // let mut ctx = CallContext{ global: ctx.global, this: Rc::downgrade(&function_define) };
-        return (builtin_function)( ctx, arguments);
+        return (builtin_function)(call_ctx, arguments);
+      }
+      if let Statement::Function(_) = function_define_value.as_ref() {
+        let call_function_define = Rc::clone(function_define);
+        return call_ctx.call_function(call_function_define, Some(Value::Function(Rc::clone(function_define))), None, arguments);
       }
     }
     Err(JSIError::new(crate::error::JSIErrorType::ReferenceError, format!("{:?} method not exists", name), 0, 0))
   }
 }
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug,Clone)]
 pub struct Property {
   // 是否可枚举
   pub enumerable: bool,
@@ -177,32 +183,36 @@ pub struct Property {
 }
 
 // 实例化对象
-pub fn create_object(global: &Rc<RefCell<Object>>, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
+pub fn create_object(ctx: &mut Context, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(obj_type, value)));
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
   // 绑定 obj.constructor = global.Object
-  let global_object = get_global_object(global, GLOBAL_OBJECT_NAME.to_string());
+  let global_object = get_global_object(ctx, GLOBAL_OBJECT_NAME.to_string());
   object_mut.constructor = Some(Rc::downgrade(&global_object));
   object
 }
 
-pub fn bind_global_object(global: &Rc<RefCell<Object>>) {
-  let obj_rc = get_global_object(global, GLOBAL_OBJECT_NAME.to_string());
+pub fn bind_global_object(ctx: &mut Context) {
+  let obj_rc = get_global_object(ctx, GLOBAL_OBJECT_NAME.to_string());
   let mut obj = (*obj_rc).borrow_mut();
-  let create_function = builtin_function(global, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
+  let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
   obj.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
   let property = obj.property.borrow_mut();
   // Object.keys
   let name = String::from("keys");
-  property.insert(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 1f64, object_keys) });
+  property.insert(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, object_keys) });
+
+  // Object.getOwnPropertyNames
+  let name = String::from("getOwnPropertyNames");
+  property.insert(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, object_get_own_property_names) });
 
   if let Some(prop)= &obj.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = (*prototype_rc).borrow_mut();
     // Object.prototype.toString
     let name = String::from("toString");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 0f64, to_string) });
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, to_string) });
   }
  
 }
@@ -210,9 +220,8 @@ pub fn bind_global_object(global: &Rc<RefCell<Object>>) {
 
 
 // Object.keys()
-fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
-  let hangle_global = ctx.global.upgrade().unwrap();
-  let array = create_array(&hangle_global, 0);
+fn object_keys(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let array = create_array(call_ctx.ctx, 0);
   let array_obj = match array {
     Value::Array(arr) => Some(arr),
     _ => None
@@ -222,26 +231,50 @@ fn object_keys(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
     return Ok(Value::Array(array_obj));
   }
   let weak = Rc::downgrade(&array_obj);
-  let call_ctx = &mut CallContext {
-    global: Rc::downgrade(&hangle_global),
+  let obj_rc= args[0].to_object(call_ctx.ctx);
+  let new_call_ctx = &mut CallContext {
+    ctx: call_ctx.ctx,
     this: weak,
     reference: None,
   };
-  let obj_rc= args[0].to_object(&hangle_global);
   let obj = obj_rc.borrow();
   for key in obj.property_list.iter() {
     let prop = obj.property.get(key);
     if let Some(property) = prop {
       if property.enumerable {
-        Object::call(call_ctx, String::from("push"), vec![Value::String(key.clone())]);
+        Object::call(new_call_ctx, String::from("push"), vec![Value::String(key.clone())])?;
       }
     }
   }
   return Ok(Value::Array(array_obj));
 }
 
+// Object.getOwnPropertyNames
+fn object_get_own_property_names(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let array = create_array(call_ctx.ctx, 0);
+  let array_obj = match array {
+    Value::Array(arr) => Some(arr),
+    _ => None
+  }.unwrap();
 
-// Object.keys()
+  if args.len() < 1 {
+    return Ok(Value::Array(array_obj));
+  }
+  let weak = Rc::downgrade(&array_obj);
+  let obj_rc= args[0].to_object(call_ctx.ctx);
+  let new_call_ctx = &mut CallContext {
+    ctx: call_ctx.ctx,
+    this: weak,
+    reference: None,
+  };
+  let obj = obj_rc.borrow();
+  for key in obj.property_list.iter() {
+    Object::call(new_call_ctx, String::from("push"), vec![Value::String(key.clone())])?;
+  }
+  return Ok(Value::Array(array_obj));
+}
+
+// Object.prototype.toString
 fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   let this_origin = ctx.this.upgrade();
   let this_rc = this_origin.unwrap();
@@ -252,11 +285,10 @@ fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
  Ok( Value::String(obj_type))
 }
 
-fn create(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
-  let global = ctx.global.upgrade().unwrap();
+fn create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   if args.len() > 0 {
-    let obj = args[0].to_object_value(&global);
+    let obj = args[0].to_object_value(call_ctx.ctx);
     return Ok(obj)
   }
-  Ok(Value::Object(create_object(&global, ClassType::Object, None)))
+  Ok(Value::Object(create_object(call_ctx.ctx, ClassType::Object, None)))
 }
