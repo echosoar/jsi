@@ -66,7 +66,7 @@ impl Context {
           label: None,
         };
         self.call_statement(statement, &mut result_value, &mut last_statement_value, &mut interrupt, call_options)?;
-        if interrupt != Value::Undefined {
+        if !interrupt.is_equal_to(self, &Value::Undefined, true) {
           // 如果是 return，那么 block 的返回值(result_value) 在处理 return 时已经赋值了
           break;
         }
@@ -245,7 +245,7 @@ impl Context {
         Expression::PropertyAccess(property_access) => {
           // expression.name
           let left = self.execute_expression(&property_access.expression)?;
-          if left == Value::Null {
+          if left.is_equal_to(self, &Value::Null, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", property_access.name.literal), 0, 0))
           }
           let left_obj = left.to_object(self);
@@ -263,11 +263,20 @@ impl Context {
           
           let left_obj = left.to_object(self);
           let right = self.execute_expression(&element_access.argument)?.to_string(self);
-          if left == Value::Null {
+          if left.is_equal_to(self, &Value::Null, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", right), 0, 0))
           }
           let value = (*left_obj).borrow().get_value(right.clone());
           Ok(ValueInfo { is_const: false, value, name: Some(right.clone()),  access_path: String::from(""),reference: Some(Value::Object(left_obj)) })
+        },
+        Expression::Conditional(condition) => {
+          let condition_res = self.execute_expression(&condition.condition)?;
+          let value = if condition_res.to_boolean(self) {
+            self.execute_expression(&condition.when_true)?
+          } else {
+            self.execute_expression(&condition.when_false)?
+          };
+          Ok(ValueInfo { is_const: false, value, name: None,  access_path: String::from(""), reference: None })
         },
         Expression::Identifier(identifier) => {
           let name = identifier.literal.clone();
@@ -535,13 +544,15 @@ impl Context {
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> JSIResult<Value> {
       
       let mut operand_info = self.execute_expression_info(&expression.operand)?;
-
       match &expression.operator {
         Token::Typeof => {
           Ok(Value::String(operand_info.value.type_of()))
         },
         Token::Void => {
           Ok(Value::Undefined)
+        },
+        Token::Not => {
+          Ok(Value::Boolean(!operand_info.value.to_boolean(self)))
         },
         // TODO: delete
         // Token::Void => {
@@ -555,26 +566,33 @@ impl Context {
           let value_number = operand_info.value.to_number(self);
           let value = if let Some(new_value) = value_number {
             let mut new_value = new_value;
+            let mut is_need_set_value = false;
             match &expression.operator {
               Token::Increment => {
                 new_value = new_value + 1f64;
+                is_need_set_value = true;
               },
               Token::Decrement => {
                 new_value = new_value - 1f64;
+                is_need_set_value = true;
               },
               Token::Subtract => {
                 new_value = -new_value;
               },
               Token::Plus => {
                 new_value = new_value;
-              }
+              },
               _ => {}
             }
-            Value::Number(new_value)
+            let value = Value::Number(new_value);
+            if is_need_set_value {
+              operand_info.set_value(value.clone())?;
+            }
+            value
           } else {
             Value::NAN
           };
-          operand_info.set_value(value.clone())?;
+          
           Ok(value)
         }
       }
@@ -765,18 +783,29 @@ impl Context {
       let object = create_object(self,ClassType::Array, None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
-      // TODO:
-      // object.prototype = global.object_prototype;
       // 绑定属性
+      let mut normal_propertys: Vec<(String, Value)> = vec![];
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
-        // TODO: not string name
         let name = self.execute_expression(&property.name)?.to_string(self);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
-        object_mut.define_property(name, Property {
+        // ComputedPropertyName 优先级更高，影响 object 的属性顺序
+        if let Expression::ComputedPropertyName(_) = *property.name {
+          object_mut.define_property(name, Property {
+            enumerable: true,
+            value: initializer,
+          });
+        } else {
+          normal_propertys.push((name, initializer));
+        }
+      }
+
+      for property_index in 0..normal_propertys.len() {
+        let property = normal_propertys[property_index].to_owned();
+        object_mut.define_property(property.0, Property {
           enumerable: true,
-          value: initializer,
+          value: property.1,
         });
       }
       Ok(Value::Object(object))
@@ -840,13 +869,6 @@ impl Context {
           define_scope_value = scope.upgrade();
         }
       }
-
-      {
-        let sc = define_scope_value.as_ref().unwrap();
-        let xx = Rc::clone(&sc);
-        let x2 = xx.borrow();
-        println!("todo:xx {:?}", x2.labels);
-      }
       self.switch_scope(define_scope_value);
       // 绑定参数
       for parameter_index in 0..function_declaration.parameters.len() {
@@ -865,13 +887,16 @@ impl Context {
 
     // 切换作用域
     fn switch_scope(&mut self, define_scope: Option<Rc<RefCell<Scope>>>) {
+      // 创建新的作用域
       let mut new_scope = Scope::new();
+      // 作用域的父级为定义是的作用域，而不是调用时的作用域
       new_scope.parent = define_scope;
       if let Some(scope) = &new_scope.parent {
         let rc = Rc::clone(scope);
         let scope = rc.borrow();
         new_scope.labels = scope.labels.clone();
       }
+      // 添加调用时的来源作用域，调用完成之后得关闭当前作用域，回到调用时的作用域
       new_scope.from = Some(Rc::clone(&self.cur_scope));
       let scope_rc = Rc::new(RefCell::new(new_scope));
       let rc = Rc::clone(&scope_rc);
@@ -881,7 +906,9 @@ impl Context {
 
     // 退出作用域
     fn close_scope(&mut self) {
-      if let Some(parent_scope_rc) = &self.cur_scope.borrow().from {
+      let cur = Rc::clone(&self.cur_scope);
+      let cur_rc = cur.borrow();
+      if let Some(parent_scope_rc) = &cur_rc.from {
         let len = (*parent_scope_rc).borrow_mut().childs.len();
         let mut cur_scope_index = len;
         for index in 0..len {
@@ -892,6 +919,8 @@ impl Context {
         if cur_scope_index != len {
           (*parent_scope_rc).borrow_mut().childs.remove(cur_scope_index);
         }
+        // 回到父级作用域
+        self.cur_scope = Rc::clone(parent_scope_rc);
       }
     }
 

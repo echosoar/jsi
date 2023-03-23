@@ -174,7 +174,7 @@ impl Object {
   }
 }
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug,Clone)]
 pub struct Property {
   // 是否可枚举
   pub enumerable: bool,

@@ -201,7 +201,7 @@ fn make_dir(dir: &String) -> PathBuf {
 fn test_all_262() {
     let preload_list = vec![
         load_harness("harness/assert.js"),
-        load_harness("harness/sta.js"),
+        // load_harness("harness/sta.js"),
         load_harness("harness/compareArray.js"),
     ];
     let prelaod = preload_list.join("\n");
@@ -210,7 +210,7 @@ fn test_all_262() {
         make_dir(&String::from("test262/test/intl402")),
     ];
     let only_list: Vec<PathBuf> =vec![
-        make_dir(&String::from("test262/test/language/computed-property-names/to-name-side-effects/numbers-object.js")),
+        // make_dir(&String::from("test262/test/language/computed-property-names/to-name-side-effects/numbers-object.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);

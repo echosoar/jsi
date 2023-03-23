@@ -87,7 +87,7 @@ pub enum Value {
   Interrupt(Token,Expression),
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ValueType {
   // 5种基本数据类型
   String,
@@ -104,6 +104,7 @@ pub enum ValueType {
 }
 
 impl PartialEq for Value {
+  // 仅做简单比较，不能处理 Number(1.2) == 1.2 这种，需要通过 value.is_equal_to
   fn eq(&self, other: &Value) -> bool {
       match (self, other) {
           (Value::String(a), Value::String(b)) => *a == *b,
@@ -191,7 +192,13 @@ impl Value {
   }
 
   pub fn to_string(&self, ctx: &mut Context) -> String {
-    match self {
+    
+    let mut self_value = self;
+    let primitive_value = self.to_primitive_value(ctx);
+    if let Some(value) = &primitive_value {
+      self_value = value;
+    }
+    match self_value {
       Value::String(str) => str.clone(),
       Value::Number(number) => number.to_string(),
       Value::Boolean(bool) => {
@@ -203,21 +210,6 @@ impl Value {
       },
       Value::NAN => String::from("NaN"),
       _ => {
-        let base_type_obj: Option<&Rc<RefCell<Object>>> = match self {
-          Value::StringObj(obj) => Some(obj),
-          Value::NumberObj(obj) => Some(obj),
-          Value::BooleanObj(obj) => Some(obj),
-          _ => None
-        };
-        if let Some(obj) = base_type_obj {
-          let mut call_ctx = CallContext{
-            ctx,
-            this: Rc::downgrade(&obj),
-            reference: None,
-          };
-          let value = Object::call(&mut call_ctx, String::from("valueOf"), vec![]).unwrap();
-          return value.to_string(ctx);
-        }
         // object
         let object: Option<&Rc<RefCell<Object>>> = match self {
           Value::Array(obj) => Some(obj),
@@ -247,7 +239,12 @@ impl Value {
   }
 
   pub fn to_number(&self, ctx: &mut Context) -> Option<f64> {
-    match self {
+    let mut self_value = self;
+    let primitive_value = self.to_primitive_value(ctx);
+    if let Some(value) = &primitive_value {
+      self_value = value;
+    }
+    match self_value {
       Value::String(str) => {
         match str.parse::<f64>() {
             Ok(num) => Some(num),
@@ -263,30 +260,18 @@ impl Value {
         }
       },
       _ => {
-        let base_type_obj: Option<&Rc<RefCell<Object>>> = match self {
-          Value::StringObj(obj) => Some(obj),
-          Value::NumberObj(obj) => Some(obj),
-          Value::BooleanObj(obj) => Some(obj),
-          _ => None
-        };
-        if let Some(obj) = base_type_obj {
-          let mut call_ctx = CallContext{
-            ctx,
-            this: Rc::downgrade(&obj),
-            reference: None,
-          };
-          let value = Object::call(&mut call_ctx, String::from("valueOf"), vec![]);
-          if let Ok(res) = value {
-            return res.to_number(ctx);
-          }
-        }
         // TODO: throw error
         None
       }
     }
   }
   pub fn to_boolean(&self, ctx: &mut Context) -> bool {
-    match self {
+    let mut self_value = self;
+    let primitive_value = self.to_primitive_value(ctx);
+    if let Some(value) = &primitive_value {
+      self_value = value;
+    }
+    match self_value {
         Value::Undefined | Value::Null => false,
         Value::String(str) => {
           return str.to_owned() == String::from("");
@@ -298,21 +283,6 @@ impl Value {
           return boolean.to_owned();
         },
         _ => {
-          let base_type_obj: Option<&Rc<RefCell<Object>>> = match self {
-            Value::StringObj(obj) => Some(obj),
-            Value::NumberObj(obj) => Some(obj),
-            Value::BooleanObj(obj) => Some(obj),
-            _ => None
-          };
-          if let Some(obj) = base_type_obj {
-            let mut call_ctx = CallContext{
-              ctx,
-              this: Rc::downgrade(&obj),
-              reference: None,
-            };
-            let value = Object::call(&mut call_ctx, String::from("valueOf"), vec![]).unwrap();
-            return value.to_boolean(ctx);
-          }
           true
         }
     }
@@ -391,6 +361,40 @@ impl Value {
     }
   }
 
+  // 到原始值，也就是 Boolean(false) => false 等
+  pub fn to_primitive_value(&self, ctx: &mut Context) -> Option<Value> {
+    let base_type_obj: Option<(ValueType, &Rc<RefCell<Object>>)> = match self {
+      Value::StringObj(obj) => Some((ValueType::String,obj)),
+      Value::NumberObj(obj) => Some((ValueType::Number,obj)),
+      Value::BooleanObj(obj) => Some((ValueType::Boolean,obj)),
+      _ => None
+    };
+
+    if let Some(type_obj) = base_type_obj {
+      let mut call_ctx = CallContext{
+        ctx,
+        this: Rc::downgrade(&type_obj.1),
+        reference: None,
+      };
+      // 不会出错
+      let value = Object::call(&mut call_ctx, String::from("valueOf"), vec![]).unwrap();
+      match type_obj.0 {
+        ValueType::Number => {
+          return Some(Value::Number(value.to_number(ctx).unwrap()));
+        },
+        ValueType::Boolean => {
+          return Some(Value::Boolean(value.to_boolean(ctx)));
+        },
+        ValueType::String => {
+          return Some(Value::String(value.to_string(ctx)));
+        },
+        _ => {}
+      }
+    }
+
+    return None;
+  }
+
 
   pub fn to_weak_rc_object(&self) -> Option<Weak<RefCell<Object>>> {
     match self {
@@ -417,14 +421,17 @@ impl Value {
     }
   }
 
-  pub fn get_value_type(&self) -> ValueType {
+  fn get_value_type(&self) -> ValueType {
     match self {
       Value::Object(_) => ValueType::Object,
       Value::Function(_) => ValueType::Function,
       Value::Array(_) => ValueType::Array,
       Value::String(_) => ValueType::String,
+      Value::StringObj(_) => ValueType::String,
       Value::Number(_) => ValueType::Number,
+      Value::NumberObj(_) => ValueType::Number,
       Value::Boolean(_) => ValueType::Boolean,
+      Value::BooleanObj(_) => ValueType::Boolean,
       Value::Null => ValueType::Null,
       Value::Undefined => ValueType::Undefined,
       _ => {
@@ -434,28 +441,31 @@ impl Value {
     }
   }
 
-  pub fn is_equal_to(&self, ctx: &mut Context, other_value: &Value, is_check_type: bool) -> bool {
+  pub fn is_equal_to(&self, ctx: &mut Context, other: &Value, is_check_type: bool) -> bool {
     let self_type = self.get_value_type();
-    let other_type = other_value.get_value_type();
+    let other_type = other.get_value_type();
     let is_same_type = self_type == other_type;
     if is_check_type && !is_same_type {
       return false;
     }
-    if is_same_type {
-      if self_type == ValueType::Boolean || self_type == ValueType::Number || self_type == ValueType::String || self_type == ValueType::Null || self_type == ValueType::Undefined {
-        return self == other_value;
-      }
+    let mut self_value = self;
+    let primitive_value = self.to_primitive_value(ctx);
+    if let Some(value) = &primitive_value {
+      self_value = value;
     }
 
-    if (self_type == ValueType::Null || self_type == ValueType::Undefined) && (other_type == ValueType::Null || other_type == ValueType::Undefined) {
-      return true;
+    let mut other_value = other;
+    let other_primitive_value = other.to_primitive_value(ctx);
+    if let Some(value) = &other_primitive_value {
+      other_value = value;
     }
-
-    if self_type == ValueType::Object || other_type == ValueType::Object {
-      // TODO: to primary value Number(123) => 123
-      return false;
+    match (self_value, other_value) {
+        (Value::String(a), Value::String(b)) => *a == *b,
+        (Value::Number(a), Value::Number(b)) => *a == *b,
+        (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
+        (Value::Null, Value::Null) | (Value::Undefined, Value::Undefined) => true,
+        _ => false,
     }
-    return self.to_number(ctx) == other_value.to_number(ctx);
   }
 
   // 匿名方法，需要绑定name

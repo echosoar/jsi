@@ -176,5 +176,5 @@ fn run_object_value() {
   };
   Object.getOwnPropertyNames(object).join()
 ")).unwrap();
-  assert_eq!(result , Value::String(String::from("a,1,c,2")));
+  assert_eq!(result , Value::String(String::from("1,2,a,c")));
 }
