@@ -85,6 +85,7 @@ pub enum Expression {
   Array(ArrayLiteral),
   Function(FunctionDeclaration),
   New(NewExpression),
+  Sequence(SequenceExpression),
   TemplateLiteral(TemplateLiteralExpression),
   // {[a]: 12}
   ComputedPropertyName(ComputedPropertyName),
@@ -316,6 +317,12 @@ pub struct PrefixUnaryExpression {
 pub struct PostfixUnaryExpression {
   pub operand: Box<Expression>,
   pub operator: Token,
+}
+
+// 字符串模板表达式
+#[derive(Debug, Clone, PartialEq)]
+pub struct SequenceExpression {
+  pub expressions: Vec<Expression>
 }
 
 // 字符串模板表达式

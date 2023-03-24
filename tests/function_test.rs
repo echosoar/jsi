@@ -49,3 +49,14 @@ fn run_function_typeof() {
   typeof func")).unwrap();
   assert_eq!(result , Value::String(String::from("function")));
 }
+
+#[test]
+fn run_arrow_function() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let a = (a, b ,c) => {
+    return '1' + a + b + c;
+  }
+  a(2, 'a', false);")).unwrap();
+  assert_eq!(result , Value::String(String::from("12afalse")));
+}

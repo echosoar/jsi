@@ -361,6 +361,20 @@ impl Value {
     }
   }
 
+  pub fn is_primitive_value(&self) -> bool {
+    match self {
+      Value::String(_) => true,
+      Value::StringObj(_) => true,
+      Value::Number(_) => true,
+      Value::NumberObj(_) => true,
+      Value::Boolean(_) => true,
+      Value::BooleanObj(_) => true,
+      Value::Undefined => true,
+      Value::Null => true,
+      _ => false
+    }
+  }
+
   // 到原始值，也就是 Boolean(false) => false 等
   pub fn to_primitive_value(&self, ctx: &mut Context) -> Option<Value> {
     let base_type_obj: Option<(ValueType, &Rc<RefCell<Object>>)> = match self {
@@ -464,7 +478,12 @@ impl Value {
         (Value::Number(a), Value::Number(b)) => *a == *b,
         (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
         (Value::Null, Value::Null) | (Value::Undefined, Value::Undefined) => true,
-        _ => false,
+        _ => {
+          if self_value.is_primitive_value() && other_value.is_primitive_value() {
+            return self_value.to_number(ctx) == other_value.to_number(ctx);
+          }
+          return false;
+        },
     }
   }
 

@@ -3,7 +3,7 @@
 use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -460,6 +460,53 @@ impl AST{
       self.scope.declare(Declaration::Function(func.clone()));
     }
     return Ok(func);
+  }
+
+
+  fn parse_arrow_function(&mut self, params: Expression) -> JSIResult<Expression> {
+    let mut parameters: Vec<Parameter> = vec![];
+    match  params {
+      Expression::Identifier(iden) => {
+        parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
+      },
+      // TODO: assign
+      Expression::Sequence(sequence) => {
+        for expr in sequence.expressions.iter() {
+          match expr {
+            Expression::Identifier(iden) => {
+              parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
+            },
+            // TODO: assign
+            _ => {}
+          }
+        }
+      },
+      _ => {}
+    }
+   
+    // 解析方法体
+    if self.token == Token::LeftBrace {
+      self.new_scope();
+      let body_statement = self.parse_block_statement()?;
+      let body = match body_statement {
+        Statement::Block(block) => block,
+        _ => BlockStatement { statements: vec![] }
+      };
+      let declarations = self.scope.declarations.clone();
+      self.close_scope();
+      let func = FunctionDeclaration {
+        is_anonymous: true,
+        name: IdentifierLiteral { literal: String::new() },
+        parameters,
+        body,
+        declarations,
+      };
+      Ok(Expression::Function(func))
+    } else {
+      // TODO: 无花括号的箭头函数
+      Ok(Expression::Unknown)
+    }
+    
   }
 
   // 解析 class(ES2015)
@@ -1178,6 +1225,26 @@ impl AST{
     res
   }
 
+  // 解析逗号运算符，虽然优先级最高，但是一般只在匹配到左括号/左中括号时调用
+  fn parse_comma_expression(&mut self) -> JSIResult<Expression> {
+    let left = self.parse_expression()?;
+    if self.token == Token::Comma {
+      let mut exprs: Vec<Expression> = vec![left];
+      loop {
+        if self.token != Token::Comma {
+          break
+        }
+        self.next();
+        let next_expr = self.parse_expression()?;
+        exprs.push(next_expr);
+      }
+      return Ok(Expression::Sequence(SequenceExpression {
+        expressions: exprs
+      }));
+    }
+    return Ok(left);
+  }
+
   // 解析赋值运算符，优先级 2，从右到左
   // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-assignment-operators
   fn parse_assignment_expression(&mut self) -> JSIResult<Expression> {
@@ -1415,6 +1482,11 @@ impl AST{
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
   fn parse_left_hand_side_expression(&mut self) -> JSIResult<Expression> {
     let mut left = self.parse_group_expression()?;
+    if self.token == Token::Assign && self.char == '>' {
+      self.next();
+      self.next();
+      return self.parse_arrow_function(left);
+    }
     loop {
       self.cur_expr = left.clone();
       let new_left = match self.token {
@@ -1496,8 +1568,11 @@ impl AST{
   fn parse_group_expression(&mut self) -> JSIResult<Expression> {
      if self.token == Token::LeftParenthesis {
       self.next();
-      let expr = self.parse_expression()?;
+      let expr = self.parse_comma_expression()?;
       self.check_token_and_next(Token::RightParenthesis)?;
+      if let Expression::Sequence(_) = &expr {
+        return Ok(expr);
+      }
       return Ok(Expression::Group(GroupExpression {
         expression: Box::new(expr),
       }))
@@ -1791,7 +1866,7 @@ impl AST{
       Token::String => String::from("Unexpected string"),
       _ => format!("Unexpected token {:?}", self.token),
     };
-    println!("token:{:?}", self.literal);
+    // panic!("token:{:?}", self.literal);
     // TODO: line column
     JSIError::new(JSIErrorType::SyntaxError, message, 0, 0)
   }
