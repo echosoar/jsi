@@ -230,7 +230,7 @@ fn test_all_262() {
         };
         let json_old = read_json(old_file_name);
         let json_new = read_json(file_name);
-        check_diff(&mut diff, String::from("/test262/test"), &json_old, &json_new);
+        check_diff(&mut diff, String::from("test262/test"), &json_old, &json_new);
         let serialized_result = serde_json::to_string_pretty(&diff).unwrap();
         let diff_result_file_name = "./tests/262_result_diff.json";
         let mut file = File::create(diff_result_file_name).unwrap();
@@ -287,7 +287,7 @@ fn check_diff(diff: &mut ResultDiff, path: String, old: &serde_json::Value, new:
     for old_file in old_files_list.iter() {
         let file_name = old_file.0;
         let new_file = new_files_list.get(file_name);
-        let file_path = format!("{}/{}.js", path, file_name);
+        let file_path = format!("{}/{}", path, file_name);
         if let Some(new_file_value) = new_file {
             let old_value_bool = old_file.1.as_bool().unwrap();
             let new_value_bool = new_file_value.as_bool().unwrap();
