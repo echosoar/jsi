@@ -214,9 +214,101 @@ fn test_all_262() {
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);
-    let serialized_result = serde_json::to_string_pretty(&test262.result).unwrap();
-    let file_name = "./262_result.json";
+    let serialized_result = serde_json::to_string(&test262.result).unwrap();
+    let file_name = "./tests/262_result.json";
     let mut file = File::create(file_name).unwrap();
     file.write_all(serialized_result.as_bytes()).unwrap();
-    println!("result: {:?}/{:?}", test262.passed, test262.cases)
+    println!("result: passed {:?} / total {:?} at {}", test262.passed, test262.cases, file_name);
+    let old_file_name = "./tests/262_result_data.json";
+    let old_exists = Path::new(old_file_name).exists();
+    if old_exists {
+        let mut diff = ResultDiff {
+            passed: vec![],
+            failed: vec![],
+            add: vec![],
+            remove: vec![],
+        };
+        let json_old = read_json(old_file_name);
+        let json_new = read_json(file_name);
+        check_diff(&mut diff, String::from("/test262/test"), &json_old, &json_new);
+        let serialized_result = serde_json::to_string(&diff).unwrap();
+        let diff_result_file_name = "./tests/262_result_diff.json";
+        let mut file = File::create(diff_result_file_name).unwrap();
+        file.write_all(serialized_result.as_bytes()).unwrap();
+        println!("result diff: passed {:?} / failed {:?} / add {:?} / remove {:?} at {}", diff.passed.len(), diff.failed.len(), diff.add.len(), diff.remove.len(), diff_result_file_name);
+    }
+    
+}
+
+fn read_json(file_path: &str) -> serde_json::Value {
+    let file = File::open(file_path).unwrap();
+    serde_json::from_reader(file).unwrap()
+}
+
+#[derive(Debug, Serialize)]
+struct ResultDiff {
+    passed: Vec<String>,
+    failed: Vec<String>,
+    add: Vec<String>,
+    remove: Vec<String>,
+}
+
+fn check_diff(diff: &mut ResultDiff, path: String, old: &serde_json::Value, new: &serde_json::Value) {
+    let old_dirs = old.get("dirs").unwrap();
+    let new_dirs = new.get("dirs").unwrap();
+    let old_dir_list = old_dirs.as_object().unwrap();
+    let new_dir_list = new_dirs.as_object().unwrap();
+    for old_dir in old_dir_list.iter() {
+        let dir_name = old_dir.0;
+        let new_dir = new_dir_list.get(dir_name);
+        let dir_path = format!("{}/{}", path, dir_name);
+        if let Some(new_dir_value) = new_dir {
+            check_diff(diff, dir_path, old_dir.1, new_dir_value);
+        } else {
+            // old exists but new not exists
+            diff.remove.push(dir_path);
+        }
+    }
+
+    for new_dir in new_dir_list.iter() {
+        let dir_name = new_dir.0;
+        let old_dir = old_dir_list.get(dir_name);
+        let dir_path = format!("{}/{}", path, dir_name);
+        if let None = old_dir {
+            diff.add.push(dir_path);
+        }
+    }
+
+    let old_files = old.get("files").unwrap();
+    let new_files = new.get("files").unwrap();
+    let old_files_list = old_files.as_object().unwrap();
+    let new_files_list = new_files.as_object().unwrap();
+
+    for old_file in old_files_list.iter() {
+        let file_name = old_file.0;
+        let new_file = new_files_list.get(file_name);
+        let file_path = format!("{}/{}.js", path, file_name);
+        if let Some(new_file_value) = new_file {
+            let old_value_bool = old_file.1.as_bool().unwrap();
+            let new_value_bool = new_file_value.as_bool().unwrap();
+            if old_value_bool && !new_value_bool {
+                diff.failed.push(file_path);
+            } else if !old_value_bool && new_value_bool {
+                diff.passed.push(file_path);
+            }
+        } else {
+            // old exists but new not exists
+            diff.remove.push(file_path);
+        }
+    }
+
+    for new_file in new_files_list.iter() {
+        let file_name = new_file.0;
+        let old_file = old_files_list.get(file_name);
+        let file_path = format!("{}/{}.js", path, file_name);
+        if let None = old_file {
+            diff.add.push(file_path);
+        }
+    }
+
 }
