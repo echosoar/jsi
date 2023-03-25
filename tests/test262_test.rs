@@ -231,7 +231,7 @@ fn test_all_262() {
         let json_old = read_json(old_file_name);
         let json_new = read_json(file_name);
         check_diff(&mut diff, String::from("/test262/test"), &json_old, &json_new);
-        let serialized_result = serde_json::to_string(&diff).unwrap();
+        let serialized_result = serde_json::to_string_pretty(&diff).unwrap();
         let diff_result_file_name = "./tests/262_result_diff.json";
         let mut file = File::create(diff_result_file_name).unwrap();
         file.write_all(serialized_result.as_bytes()).unwrap();
