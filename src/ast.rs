@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 // AST
 // mod super::token::TokenKeywords;
 use std::{io};
@@ -105,7 +106,7 @@ impl AST{
   // 解析生成 statement
   fn parse_statement(&mut self) -> JSIResult<Statement> {
     // println!("parse_statement: {:?} {:?}", self.token,  self.literal);
-    match self.token {
+    let statment = match self.token {
         Token::Var | Token::Let | Token::Const => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
         Token::Switch => self.parse_switch_statement(),
@@ -134,7 +135,7 @@ impl AST{
         },
         _ => {
           let expression = self.parse_expression()?;
-
+          // println!("statement expression {:?}", expression);
           // label:
           if self.token == Token::Colon {
             if let Expression::Identifier(identifier) = expression {
@@ -160,7 +161,16 @@ impl AST{
               }
           }
         },
+    };
+
+    loop {
+      if self.token == Token::Semicolon {
+        self.next();
+      } else {
+        break;
+      }
     }
+    return statment;
   }
 
   // 解析 let / var
@@ -422,9 +432,14 @@ impl AST{
     // 解析参数
     // 左括号
     let mut parameters: Vec<Parameter> = vec![];
+    let mut parameters_name: HashMap<String, bool> = HashMap::new();
     self.check_token_and_next(Token::LeftParenthesis)?;
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
       if self.token == Token::Identifier {
+        if let Some(_) = parameters_name.get(&self.literal) {
+          return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
+        }
+        parameters_name.insert(self.literal.clone(), true);
         parameters.push(Parameter{
           name: IdentifierLiteral { literal: self.literal.clone() },
           initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
@@ -451,6 +466,7 @@ impl AST{
     self.close_scope();
     let func = FunctionDeclaration {
       is_anonymous,
+      is_arrow: false,
       name: IdentifierLiteral { literal: name },
       parameters,
       body,
@@ -465,8 +481,13 @@ impl AST{
 
   fn parse_arrow_function(&mut self, params: Expression) -> JSIResult<Expression> {
     let mut parameters: Vec<Parameter> = vec![];
+    let mut parameters_name: HashMap<String, bool> = HashMap::new();
     match  params {
       Expression::Identifier(iden) => {
+        if let Some(_) = parameters_name.get(&iden.literal) {
+          return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
+        }
+        parameters_name.insert(iden.literal.clone(), true);
         parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
       },
       // TODO: assign
@@ -474,6 +495,10 @@ impl AST{
         for expr in sequence.expressions.iter() {
           match expr {
             Expression::Identifier(iden) => {
+              if let Some(_) = parameters_name.get(&iden.literal) {
+                return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
+              }
+              parameters_name.insert(iden.literal.clone(), true);
               parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
             },
             // TODO: assign
@@ -496,6 +521,7 @@ impl AST{
       self.close_scope();
       let func = FunctionDeclaration {
         is_anonymous: true,
+        is_arrow: true,
         name: IdentifierLiteral { literal: String::new() },
         parameters,
         body,
@@ -503,8 +529,18 @@ impl AST{
       };
       Ok(Expression::Function(func))
     } else {
-      // TODO: 无花括号的箭头函数
-      Ok(Expression::Unknown)
+      let expr = self.parse_expression()?;
+      let func = FunctionDeclaration {
+        is_anonymous: true,
+        is_arrow: true,
+        name: IdentifierLiteral { literal: String::new() },
+        parameters,
+        body: BlockStatement { statements: vec![
+          Statement::Return(ReturnStatement { expression: expr }),
+        ] },
+        declarations: vec![],
+      };
+      Ok(Expression::Function(func))
     }
     
   }
@@ -1222,6 +1258,7 @@ impl AST{
   // 解析表达式
   fn parse_expression(&mut self) -> JSIResult<Expression>  {
     let res = self.parse_assignment_expression();
+    // println!("parse_expression {:?}", res);
     res
   }
 
@@ -1263,7 +1300,6 @@ impl AST{
         }));
       },
       _ => Ok(left)
-      
     }
   }
 
@@ -1483,6 +1519,9 @@ impl AST{
   fn parse_left_hand_side_expression(&mut self) -> JSIResult<Expression> {
     let mut left = self.parse_group_expression()?;
     if self.token == Token::Assign && self.char == '>' {
+      if self.auto_semicolon_when_new_line {
+        return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '=>'"), 0, 0));
+      }
       self.next();
       self.next();
       return self.parse_arrow_function(left);

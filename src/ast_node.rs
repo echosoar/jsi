@@ -197,6 +197,7 @@ pub struct CatchClause {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDeclaration {
   pub is_anonymous: bool,
+  pub is_arrow: bool,
   pub name: IdentifierLiteral,
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,

@@ -57,6 +57,10 @@ fn run_arrow_function() {
   let a = (a, b ,c) => {
     return '1' + a + b + c;
   }
-  a(2, 'a', false);")).unwrap();
-  assert_eq!(result , Value::String(String::from("12afalse")));
+  let b = b => {
+    return '2' + b;
+  };
+  let c = c => c + '3';
+  a(1, 'a', false) + a.name + b(2) + b.name + c(3) + c.name;")).unwrap();
+  assert_eq!(result , Value::String(String::from("11afalsea22b33c")));
 }

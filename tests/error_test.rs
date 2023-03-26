@@ -121,10 +121,37 @@ fn run_const_error() {
     const a = 123;
     a = 456;
   "));
-  println!("result: {:?}", result);
   if let Err(jsi_error) = result {
     assert_eq!(jsi_error.error_type, JSIErrorType::TypeError);
     assert_eq!(jsi_error.message , String::from("Assignment to constant variable"));
+  } else {
+    assert!(false , "need SyntaxError");
+  }
+}
+
+
+#[test]
+fn run_arrow_function_error() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  var af = x;
+  => {}; "));
+  if let Err(jsi_error) = result {
+    assert_eq!(jsi_error.error_type, JSIErrorType::SyntaxError);
+    assert_eq!(jsi_error.message , String::from("Unexpected token '=>'"));
+  } else {
+    assert!(false , "need SyntaxError");
+  }
+}
+
+#[test]
+fn run_arrow_function_duplicates_error_error() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  var af = (x, x) => {} "));
+  if let Err(jsi_error) = result {
+    assert_eq!(jsi_error.error_type, JSIErrorType::SyntaxError);
+    assert_eq!(jsi_error.message , String::from("Duplicate parameter name not allowed in this context"));
   } else {
     assert!(false , "need SyntaxError");
   }
