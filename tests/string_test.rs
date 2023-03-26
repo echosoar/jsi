@@ -33,9 +33,6 @@ fn run_string_typeof() {
 fn run_string_xxx() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
-  let a = function() {
-    return `xxx`;
-  }
-  a()")).unwrap();
+  !('')")).unwrap();
   assert_eq!(result , Value::String(String::from("xxx")));
 }

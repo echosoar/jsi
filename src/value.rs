@@ -274,7 +274,7 @@ impl Value {
     match self_value {
         Value::Undefined | Value::Null => false,
         Value::String(str) => {
-          return str.to_owned() == String::from("");
+          return str.len() > 0;
         },
         Value::Number(num) => {
           return num.to_owned() != 0f64;

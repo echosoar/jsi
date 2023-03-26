@@ -19,10 +19,16 @@ pub struct JSI {
 
 impl JSI {
   pub fn new() -> JSI {
+      let context = Context::new();
       JSI {
-          context: Context::new()
+          context,
       }
   }
+
+  pub fn set_strict(&mut self,strict: bool) {
+    self.context.set_strict(strict);
+  }
+
   pub fn run(&mut self, code: String) -> JSIResult<Value> {
       return self.context.run(code)
   }

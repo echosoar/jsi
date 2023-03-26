@@ -8,6 +8,7 @@ use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, Iden
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
+  strict: bool,
   // 当前字符
   char: char,
   // 下一个字符的索引
@@ -30,6 +31,8 @@ pub struct AST {
   pre_token_need_semicolon: bool,
   // 当碰到换行时，是否需要自动添加 semicolon
   auto_semicolon_when_new_line: bool,
+  // 不声明方法到作用域，当方法定义咋 while 的条件中
+  not_declare_function_to_scope: bool,
 }
 
 impl AST{
@@ -37,6 +40,7 @@ impl AST{
     let chars: Vec<char> = code.chars().collect();
     let len = chars.len();
     AST {
+      strict: true,
       char: ' ',
       next_char_index: 0,
       cur_char_index: 0,
@@ -48,8 +52,13 @@ impl AST{
       scope: ASTScope::new(),
       pre_token_need_semicolon: false,
       auto_semicolon_when_new_line: false,
+      not_declare_function_to_scope: false,
     }
   }
+
+  pub fn set_strict(&mut self,strict: bool) {
+      self.strict = strict;
+    }
 
   // 解析生成 Program
   pub fn parse(&mut self) -> JSIResult<Program> {
@@ -308,7 +317,9 @@ impl AST{
       initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
       self.check_token_and_next(Token::Semicolon)?;
     }
+    self.not_declare_function_to_scope = true;
     let condition = self.parse_expression()?;
+    self.not_declare_function_to_scope = false;
     self.check_token_and_next(Token::Semicolon)?;
     let incrementor = self.parse_expression()?;
     self.check_token_and_next(Token::RightParenthesis)?;
@@ -328,7 +339,9 @@ impl AST{
   fn parse_while_statement(&mut self)  -> JSIResult<Statement> {
     self.check_token_and_next(Token::While)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
+    self.not_declare_function_to_scope = true;
     let condition = self.parse_expression()?;
+    self.not_declare_function_to_scope = false;
     self.check_token_and_next(Token::RightParenthesis)?;
 
     let block = self.parse_block_statement()?;
@@ -349,7 +362,9 @@ impl AST{
     let block = self.parse_block_statement()?;
     self.check_token_and_next(Token::While)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
+    self.not_declare_function_to_scope = true;
     let condition = self.parse_expression()?;
+    self.not_declare_function_to_scope = false;
     self.check_token_and_next(Token::RightParenthesis)?;
     let statement = ForStatement {
       initializer: Box::new(Statement::Unknown),
@@ -432,16 +447,14 @@ impl AST{
     // 解析参数
     // 左括号
     let mut parameters: Vec<Parameter> = vec![];
-    let mut parameters_name: HashMap<String, bool> = HashMap::new();
+    let mut parameters_names: HashMap<String, bool> = HashMap::new();
     self.check_token_and_next(Token::LeftParenthesis)?;
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
       if self.token == Token::Identifier {
-        if let Some(_) = parameters_name.get(&self.literal) {
-          return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
-        }
-        parameters_name.insert(self.literal.clone(), true);
+        let literal = self.literal.clone();
+        self.check_function_parameters_duplicate(&mut parameters_names, &literal)?;
         parameters.push(Parameter{
-          name: IdentifierLiteral { literal: self.literal.clone() },
+          name: IdentifierLiteral { literal: literal },
           initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
         });
         self.next()
@@ -472,22 +485,31 @@ impl AST{
       body,
       declarations,
     };
-    if variable_lifting && !is_anonymous {
+    if variable_lifting && !is_anonymous && !self.not_declare_function_to_scope {
       self.scope.declare(Declaration::Function(func.clone()));
     }
     return Ok(func);
   }
 
+  // 检测函数参数是否重名
+  fn check_function_parameters_duplicate(&mut self, parameters_name: &mut HashMap<String, bool>, parameter_name: &String) -> JSIResult<bool> {
+    if !self.strict {
+      return Ok(true);
+    }
+    if let Some(_) = parameters_name.get(parameter_name) {
+      return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
+    } else {
+      parameters_name.insert(parameter_name.clone(), true);
+    }
+    return Ok(true);
+  }
 
   fn parse_arrow_function(&mut self, params: Expression) -> JSIResult<Expression> {
     let mut parameters: Vec<Parameter> = vec![];
-    let mut parameters_name: HashMap<String, bool> = HashMap::new();
+    let mut parameters_names: HashMap<String, bool> = HashMap::new();
     match  params {
       Expression::Identifier(iden) => {
-        if let Some(_) = parameters_name.get(&iden.literal) {
-          return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
-        }
-        parameters_name.insert(iden.literal.clone(), true);
+        self.check_function_parameters_duplicate(&mut parameters_names, &iden.literal)?;
         parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
       },
       // TODO: assign
@@ -495,10 +517,7 @@ impl AST{
         for expr in sequence.expressions.iter() {
           match expr {
             Expression::Identifier(iden) => {
-              if let Some(_) = parameters_name.get(&iden.literal) {
-                return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
-              }
-              parameters_name.insert(iden.literal.clone(), true);
+              self.check_function_parameters_duplicate(&mut parameters_names, &iden.literal)?;
               parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
             },
             // TODO: assign

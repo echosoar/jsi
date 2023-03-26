@@ -45,14 +45,23 @@ fn run_function_instances_has_class() {
 fn run_function_typeof() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
-  function func() {}\n
-  typeof func")).unwrap();
-  assert_eq!(result , Value::String(String::from("function")));
+var check=0;
+while(function f(){}){ 
+  if(typeof(f) === 'function') {
+    check = -1;
+    break; 
+  } else {
+    check = 1;
+    break; 
+  }
+}check.toString() + typeof function() {}")).unwrap();
+  assert_eq!(result , Value::String(String::from("1function")));
 }
 
 #[test]
 fn run_arrow_function() {
   let mut jsi = JSI::new();
+  jsi.set_strict(false);
   let result = jsi.run(String::from("\
   let a = (a, b ,c) => {
     return '1' + a + b + c;
@@ -61,6 +70,7 @@ fn run_arrow_function() {
     return '2' + b;
   };
   let c = c => c + '3';
-  a(1, 'a', false) + a.name + b(2) + b.name + c(3) + c.name;")).unwrap();
-  assert_eq!(result , Value::String(String::from("11afalsea22b33c")));
+  let d = (d,d) => [arguments.length, arguments[0], arguments[1], d, '4'].join();
+  a(1, 'a', false) + a.name + b(2) + b.name + c(3) + c.name + d(4,5);")).unwrap();
+  assert_eq!(result , Value::String(String::from("11afalsea22b33c2,4,5,5,4")));
 }
