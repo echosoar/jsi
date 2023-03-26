@@ -85,6 +85,7 @@ pub enum Expression {
   Array(ArrayLiteral),
   Function(FunctionDeclaration),
   New(NewExpression),
+  Sequence(SequenceExpression),
   TemplateLiteral(TemplateLiteralExpression),
   // {[a]: 12}
   ComputedPropertyName(ComputedPropertyName),
@@ -93,6 +94,20 @@ pub enum Expression {
   Constructor(FunctionDeclaration),
   ClassMethod(ClassMethodDeclaration),
   Unknown,
+}
+impl Expression {
+  // https://tc39.es/ecma262/multipage/syntax-directed-operations.html#sec-static-semantics-assignmenttargettype
+  pub fn is_assignment_target_type(&self) -> bool {
+    match self {
+      Expression::Identifier(_) => true,
+      Expression::PropertyAccess(_) => true,
+      Expression::ElementAccess(_) => true,
+      Expression::Group(group) => {
+        return  group.expression.is_assignment_target_type();
+      },
+      _ => false
+    }
+  }
 }
 
 #[derive(Debug,Clone, PartialEq)]
@@ -196,6 +211,7 @@ pub struct CatchClause {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDeclaration {
   pub is_anonymous: bool,
+  pub is_arrow: bool,
   pub name: IdentifierLiteral,
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
@@ -316,6 +332,12 @@ pub struct PrefixUnaryExpression {
 pub struct PostfixUnaryExpression {
   pub operand: Box<Expression>,
   pub operator: Token,
+}
+
+// 字符串模板表达式
+#[derive(Debug, Clone, PartialEq)]
+pub struct SequenceExpression {
+  pub expressions: Vec<Expression>
 }
 
 // 字符串模板表达式

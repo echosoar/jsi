@@ -31,6 +31,7 @@ impl Test262Dir {
             let mut passed = false;
             let result = panic::catch_unwind(|| {
                 let mut jsi = JSI::new();
+                jsi.set_strict(!file.no_strict);
                 // println!("run: {:?}", code);
                 let result = jsi.run(format!("{}\n{}", preload_code, file.code));
                 // println!("result: {:?}", result);
@@ -41,7 +42,7 @@ impl Test262Dir {
                 passed = false;
             } else {
                 if let Ok(inner_result) = result {
-                    println!("inner_result {:?}", inner_result);
+                    // println!("inner_result {:?}", inner_result);
                     if let Err(jsi_error) = inner_result {
                         if file.negative {
                             let error = jsi_error.error_type.to_string();
@@ -121,6 +122,7 @@ impl Test262Dir {
 struct Test262File {
     pub name: String,
     pub code: String,
+    pub no_strict: bool,
     pub negative: bool,
     pub negative_type: String,
     
@@ -134,12 +136,14 @@ impl Test262File {
         return Test262File {
             name,
             code,
-            negative: config.0,
-            negative_type: config.1
+            no_strict: config.0,
+            negative: config.1,
+            negative_type: config.2
         }
     }
 
-    pub fn parse(code: &String) -> (bool, String) {
+    pub fn parse(code: &String) -> (bool, bool, String) {
+        let mut no_strict = false;
         let mut negative = false;
         let mut negative_type = String::from("");
         let start = code.find("/*---");
@@ -149,6 +153,20 @@ impl Test262File {
                 let config = &code[start + 5..end];
                 let docs = YamlLoader::load_from_str(config);
                 if let Ok(docs) = docs {
+                    
+                    if let Yaml::Array(arr) = &docs[0]["flags"] {
+                        for flag in arr.iter() {
+                            if let Some(str) = flag.as_str() {
+                                match str {
+                                    "noStrict" => {
+                                        no_strict = true;
+                                    },
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+
                     if let Yaml::BadValue = docs[0]["negative"] {
                     
                     } else {
@@ -161,7 +179,7 @@ impl Test262File {
                 }
             }
         }
-        return (negative, negative_type);
+        return (no_strict, negative, negative_type);
     }
 }
 
@@ -210,7 +228,7 @@ fn test_all_262() {
         make_dir(&String::from("test262/test/intl402")),
     ];
     let only_list: Vec<PathBuf> =vec![
-        // make_dir(&String::from("test262/test/language/computed-property-names/to-name-side-effects/numbers-object.js")),
+        // make_dir(&String::from("test262/test/language/statements/function/param-duplicated-non-strict.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);
@@ -230,8 +248,8 @@ fn test_all_262() {
         };
         let json_old = read_json(old_file_name);
         let json_new = read_json(file_name);
-        check_diff(&mut diff, String::from("/test262/test"), &json_old, &json_new);
-        let serialized_result = serde_json::to_string(&diff).unwrap();
+        check_diff(&mut diff, String::from("test262/test"), &json_old, &json_new);
+        let serialized_result = serde_json::to_string_pretty(&diff).unwrap();
         let diff_result_file_name = "./tests/262_result_diff.json";
         let mut file = File::create(diff_result_file_name).unwrap();
         file.write_all(serialized_result.as_bytes()).unwrap();
@@ -287,7 +305,7 @@ fn check_diff(diff: &mut ResultDiff, path: String, old: &serde_json::Value, new:
     for old_file in old_files_list.iter() {
         let file_name = old_file.0;
         let new_file = new_files_list.get(file_name);
-        let file_path = format!("{}/{}.js", path, file_name);
+        let file_path = format!("{}/{}", path, file_name);
         if let Some(new_file_value) = new_file {
             let old_value_bool = old_file.1.as_bool().unwrap();
             let new_value_bool = new_file_value.as_bool().unwrap();

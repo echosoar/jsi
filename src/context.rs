@@ -1,13 +1,14 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::create_array, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array, create_array_from_values}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
 
 
 use super::ast::AST;
 pub struct Context {
-  scope: Rc<RefCell<Scope>>,
   pub global: Rc<RefCell<Object>>,
-  cur_scope: Rc<RefCell<Scope>>
+  pub strict: bool,
+  scope: Rc<RefCell<Scope>>,
+  cur_scope: Rc<RefCell<Scope>>,
 }
 
 impl Context {
@@ -17,12 +18,17 @@ impl Context {
       let global = new_global_this();
       let mut ctx = Context {
         global,
+        strict: true,
         scope,
         cur_scope,
       };
       bind_global(&mut ctx);
       ctx.init();
       return ctx;
+    }
+
+    pub fn set_strict(&mut self,strict: bool) {
+      self.strict = strict;
     }
     
     // 运行一段 JS 代码
@@ -35,6 +41,7 @@ impl Context {
     // 运行一段 JS 代码
     pub fn parse(&mut self, code: String) -> JSIResult<Program> {
       let mut ast = AST::new(code);
+      ast.set_strict(self.strict);
       ast.parse()
     }
 
@@ -322,15 +329,24 @@ impl Context {
             access_path: keyword.to_string(),
           })
         },
-        _ => {
-          println!("expression: {:?}", expression);
-          Ok(ValueInfo {
+        Expression::Group(group) => {
+          self.execute_expression_info(&group.expression)
+        },
+        Expression::Sequence(sequence) => {
+          let mut last_result = ValueInfo {
             is_const: false,
             value: Value::Undefined,
             name: None,
             reference: None,
             access_path: String::from(""),
-          })
+          };
+          for expr in sequence.expressions.iter() {
+            last_result = self.execute_expression_info(&expr)?;
+          }
+          Ok(last_result)
+        },
+        _ => {
+          Err(JSIError::new(JSIErrorType::Unknown, format!("expression unsupported {:?}", expression), 0, 0))
         },
       }
     }
@@ -543,7 +559,13 @@ impl Context {
     // 执行 ++i --i
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> JSIResult<Value> {
       
-      let mut operand_info = self.execute_expression_info(&expression.operand)?;
+      let operand_info = self.execute_expression_info(&expression.operand);
+      if &Token::Typeof == &expression.operator {
+        if let Err(_) = operand_info {
+          return Ok(Value::String(String::from("undefined")));
+        }
+      }
+      let mut operand_info = operand_info?;
       match &expression.operator {
         Token::Typeof => {
           Ok(Value::String(operand_info.value.type_of()))
@@ -552,6 +574,7 @@ impl Context {
           Ok(Value::Undefined)
         },
         Token::Not => {
+
           Ok(Value::Boolean(!operand_info.value.to_boolean(self)))
         },
         // TODO: delete
@@ -559,9 +582,6 @@ impl Context {
         //   Ok(Value::Undefined)
         // },
         // TODO: await
-        // Token::Void => {
-        //   Ok(Value::Undefined)
-        // },
         _ => {
           let value_number = operand_info.value.to_number(self);
           let value = if let Some(new_value) = value_number {
@@ -829,6 +849,7 @@ impl Context {
       Ok(array)
     }
 
+    // 调用方法
     pub fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
       // 获取 function 定义
       let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
@@ -870,6 +891,19 @@ impl Context {
         }
       }
       self.switch_scope(define_scope_value);
+
+      let argument_object = create_object(self, ClassType::Object, None);
+      {
+        let argument_object_rc = Rc::clone(&argument_object);
+        let mut argument_object_mut = argument_object_rc.borrow_mut();
+        argument_object_mut.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(arguments.len() as f64) });
+        let mut arguments_index = 0;
+        for value in arguments.iter() { 
+          argument_object_mut.define_property(arguments_index.to_string(), Property { enumerable: true, value: value.clone() });
+          arguments_index += 1
+        }
+      }
+      (*self.cur_scope).borrow_mut().set_value(String::from("arguments"), Value::Object(argument_object), false);
       // 绑定参数
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {
@@ -879,10 +913,10 @@ impl Context {
           (*self.cur_scope).borrow_mut().set_value(function_declaration.parameters[parameter_index].name.literal.clone(), Value::Undefined, false);
         }
       }
-       // 执行 body
-       let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements)?;
-       self.close_scope();
-       Ok(result.0)
+      // 执行 body
+      let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements)?;
+      self.close_scope();
+      Ok(result.0)
     }
 
     // 切换作用域

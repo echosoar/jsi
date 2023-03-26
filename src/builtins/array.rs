@@ -17,6 +17,21 @@ use super::{object::{create_object, Property}, function::builtin_function, globa
   Value::Array(array)
 }
 
+pub fn create_array_from_values(ctx: &mut Context, values: Vec<Value>) -> Value {
+  let new_array = create_array(ctx, 0);
+  if let Value::Array(arr_obj) = &new_array {
+
+    let mut arr = arr_obj.borrow_mut();
+    arr.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(values.len() as f64) });
+    let mut index = 0;
+    for value in values.iter() { 
+      arr.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
+      index += 1
+    }
+  }
+  new_array
+}
+
 pub fn bind_global_array(ctx: &mut Context) {
   let arr_rc = get_global_object(ctx, String::from("Array"));
   let mut arr = (*arr_rc).borrow_mut();
@@ -99,3 +114,4 @@ fn array_push(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> 
   }
   Err(JSIError::new(JSIErrorType::RangeError, format!("Invalid array length"), 0, 0))
 }
+

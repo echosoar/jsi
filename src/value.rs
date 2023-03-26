@@ -274,7 +274,7 @@ impl Value {
     match self_value {
         Value::Undefined | Value::Null => false,
         Value::String(str) => {
-          return str.to_owned() == String::from("");
+          return str.len() > 0;
         },
         Value::Number(num) => {
           return num.to_owned() != 0f64;
@@ -358,6 +358,20 @@ impl Value {
       _ => {
         self.clone()
       }
+    }
+  }
+
+  pub fn is_primitive_value(&self) -> bool {
+    match self {
+      Value::String(_) => true,
+      Value::StringObj(_) => true,
+      Value::Number(_) => true,
+      Value::NumberObj(_) => true,
+      Value::Boolean(_) => true,
+      Value::BooleanObj(_) => true,
+      Value::Undefined => true,
+      Value::Null => true,
+      _ => false
     }
   }
 
@@ -464,7 +478,12 @@ impl Value {
         (Value::Number(a), Value::Number(b)) => *a == *b,
         (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
         (Value::Null, Value::Null) | (Value::Undefined, Value::Undefined) => true,
-        _ => false,
+        _ => {
+          if self_value.is_primitive_value() && other_value.is_primitive_value() {
+            return self_value.to_number(ctx) == other_value.to_number(ctx);
+          }
+          return false;
+        },
     }
   }
 

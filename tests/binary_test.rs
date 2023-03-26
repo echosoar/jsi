@@ -51,6 +51,12 @@ fn run_binary_equal() {
     ("'0' == false", true),
     ("'0' === false", false),  // strict equal
     ("'false' == false", false),
+    ("!0", true),
+    ("!1", false),
+    ("!''", true),
+    ("!'0'", false),
+    ("!false", true),
+    ("!true", false),
     // TODO: Object/Array/Function
     
   ];

@@ -1,12 +1,14 @@
+use std::collections::HashMap;
 // AST
 // mod super::token::TokenKeywords;
 use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
+  strict: bool,
   // 当前字符
   char: char,
   // 下一个字符的索引
@@ -29,6 +31,8 @@ pub struct AST {
   pre_token_need_semicolon: bool,
   // 当碰到换行时，是否需要自动添加 semicolon
   auto_semicolon_when_new_line: bool,
+  // 不声明方法到作用域，当方法定义咋 while 的条件中
+  not_declare_function_to_scope: bool,
 }
 
 impl AST{
@@ -36,6 +40,7 @@ impl AST{
     let chars: Vec<char> = code.chars().collect();
     let len = chars.len();
     AST {
+      strict: true,
       char: ' ',
       next_char_index: 0,
       cur_char_index: 0,
@@ -47,8 +52,13 @@ impl AST{
       scope: ASTScope::new(),
       pre_token_need_semicolon: false,
       auto_semicolon_when_new_line: false,
+      not_declare_function_to_scope: false,
     }
   }
+
+  pub fn set_strict(&mut self,strict: bool) {
+      self.strict = strict;
+    }
 
   // 解析生成 Program
   pub fn parse(&mut self) -> JSIResult<Program> {
@@ -105,7 +115,7 @@ impl AST{
   // 解析生成 statement
   fn parse_statement(&mut self) -> JSIResult<Statement> {
     // println!("parse_statement: {:?} {:?}", self.token,  self.literal);
-    match self.token {
+    let statment = match self.token {
         Token::Var | Token::Let | Token::Const => self.parse_variable_statement(),
         Token::If => self.parse_if_statement(),
         Token::Switch => self.parse_switch_statement(),
@@ -134,7 +144,7 @@ impl AST{
         },
         _ => {
           let expression = self.parse_expression()?;
-
+          // println!("statement expression {:?}", expression);
           // label:
           if self.token == Token::Colon {
             if let Expression::Identifier(identifier) = expression {
@@ -160,7 +170,16 @@ impl AST{
               }
           }
         },
+    };
+
+    loop {
+      if self.token == Token::Semicolon {
+        self.next();
+      } else {
+        break;
+      }
     }
+    return statment;
   }
 
   // 解析 let / var
@@ -298,7 +317,9 @@ impl AST{
       initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
       self.check_token_and_next(Token::Semicolon)?;
     }
+    self.not_declare_function_to_scope = true;
     let condition = self.parse_expression()?;
+    self.not_declare_function_to_scope = false;
     self.check_token_and_next(Token::Semicolon)?;
     let incrementor = self.parse_expression()?;
     self.check_token_and_next(Token::RightParenthesis)?;
@@ -318,7 +339,9 @@ impl AST{
   fn parse_while_statement(&mut self)  -> JSIResult<Statement> {
     self.check_token_and_next(Token::While)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
+    self.not_declare_function_to_scope = true;
     let condition = self.parse_expression()?;
+    self.not_declare_function_to_scope = false;
     self.check_token_and_next(Token::RightParenthesis)?;
 
     let block = self.parse_block_statement()?;
@@ -339,7 +362,9 @@ impl AST{
     let block = self.parse_block_statement()?;
     self.check_token_and_next(Token::While)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
+    self.not_declare_function_to_scope = true;
     let condition = self.parse_expression()?;
+    self.not_declare_function_to_scope = false;
     self.check_token_and_next(Token::RightParenthesis)?;
     let statement = ForStatement {
       initializer: Box::new(Statement::Unknown),
@@ -422,11 +447,14 @@ impl AST{
     // 解析参数
     // 左括号
     let mut parameters: Vec<Parameter> = vec![];
+    let mut parameters_names: HashMap<String, bool> = HashMap::new();
     self.check_token_and_next(Token::LeftParenthesis)?;
     while self.token != Token::RightParenthesis && self.token != Token::EOF {
       if self.token == Token::Identifier {
+        let literal = self.literal.clone();
+        self.check_function_parameters_duplicate(&mut parameters_names, &literal)?;
         parameters.push(Parameter{
-          name: IdentifierLiteral { literal: self.literal.clone() },
+          name: IdentifierLiteral { literal: literal },
           initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
         });
         self.next()
@@ -451,15 +479,89 @@ impl AST{
     self.close_scope();
     let func = FunctionDeclaration {
       is_anonymous,
+      is_arrow: false,
       name: IdentifierLiteral { literal: name },
       parameters,
       body,
       declarations,
     };
-    if variable_lifting && !is_anonymous {
+    if variable_lifting && !is_anonymous && !self.not_declare_function_to_scope {
       self.scope.declare(Declaration::Function(func.clone()));
     }
     return Ok(func);
+  }
+
+  // 检测函数参数是否重名
+  fn check_function_parameters_duplicate(&mut self, parameters_name: &mut HashMap<String, bool>, parameter_name: &String) -> JSIResult<bool> {
+    if !self.strict {
+      return Ok(true);
+    }
+    if let Some(_) = parameters_name.get(parameter_name) {
+      return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Duplicate parameter name not allowed in this context"), 0, 0));
+    } else {
+      parameters_name.insert(parameter_name.clone(), true);
+    }
+    return Ok(true);
+  }
+
+  fn parse_arrow_function(&mut self, params: Expression) -> JSIResult<Expression> {
+    let mut parameters: Vec<Parameter> = vec![];
+    let mut parameters_names: HashMap<String, bool> = HashMap::new();
+    match  params {
+      Expression::Identifier(iden) => {
+        self.check_function_parameters_duplicate(&mut parameters_names, &iden.literal)?;
+        parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
+      },
+      // TODO: assign
+      Expression::Sequence(sequence) => {
+        for expr in sequence.expressions.iter() {
+          match expr {
+            Expression::Identifier(iden) => {
+              self.check_function_parameters_duplicate(&mut parameters_names, &iden.literal)?;
+              parameters.push(Parameter { name: iden.to_owned(), initializer: Box::new(Expression::Keyword(Keywords::Undefined)) });
+            },
+            // TODO: assign
+            _ => {}
+          }
+        }
+      },
+      _ => {}
+    }
+   
+    // 解析方法体
+    if self.token == Token::LeftBrace {
+      self.new_scope();
+      let body_statement = self.parse_block_statement()?;
+      let body = match body_statement {
+        Statement::Block(block) => block,
+        _ => BlockStatement { statements: vec![] }
+      };
+      let declarations = self.scope.declarations.clone();
+      self.close_scope();
+      let func = FunctionDeclaration {
+        is_anonymous: true,
+        is_arrow: true,
+        name: IdentifierLiteral { literal: String::new() },
+        parameters,
+        body,
+        declarations,
+      };
+      Ok(Expression::Function(func))
+    } else {
+      let expr = self.parse_expression()?;
+      let func = FunctionDeclaration {
+        is_anonymous: true,
+        is_arrow: true,
+        name: IdentifierLiteral { literal: String::new() },
+        parameters,
+        body: BlockStatement { statements: vec![
+          Statement::Return(ReturnStatement { expression: expr }),
+        ] },
+        declarations: vec![],
+      };
+      Ok(Expression::Function(func))
+    }
+    
   }
 
   // 解析 class(ES2015)
@@ -1175,7 +1277,28 @@ impl AST{
   // 解析表达式
   fn parse_expression(&mut self) -> JSIResult<Expression>  {
     let res = self.parse_assignment_expression();
+    // println!("parse_expression {:?}", res);
     res
+  }
+
+  // 解析逗号运算符，虽然优先级最高，但是一般只在匹配到左括号/左中括号时调用
+  fn parse_comma_expression(&mut self) -> JSIResult<Expression> {
+    let left = self.parse_expression()?;
+    if self.token == Token::Comma {
+      let mut exprs: Vec<Expression> = vec![left];
+      loop {
+        if self.token != Token::Comma {
+          break
+        }
+        self.next();
+        let next_expr = self.parse_expression()?;
+        exprs.push(next_expr);
+      }
+      return Ok(Expression::Sequence(SequenceExpression {
+        expressions: exprs
+      }));
+    }
+    return Ok(left);
   }
 
   // 解析赋值运算符，优先级 2，从右到左
@@ -1184,6 +1307,11 @@ impl AST{
     let left = self.parse_conditional_expression()?;
     match self.token {
       Token::Assign | Token::AddAssign | Token::SubtractAssign | Token::MultiplyAssign | Token::SlashAssign | Token::RemainderAssign | Token::ShiftLeftAssign | Token::ShiftRightAssign | Token::UnsignedShiftRightAssign | Token::OrAssign | Token::AndAssign | Token::ExclusiveOrAssign | Token::LogicalAndAssign | Token::LogicalOrAssign | Token::ExponentiationAssign | Token::NullishCoalescingAssign =>  {
+
+        if !left.is_assignment_target_type() {
+          return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid left-hand side in assignment"), 0, 0))
+        }
+
         // 跳过各种赋值运算符
         let oper = self.token.clone();
         self.next();
@@ -1196,7 +1324,6 @@ impl AST{
         }));
       },
       _ => Ok(left)
-      
     }
   }
 
@@ -1415,6 +1542,14 @@ impl AST{
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
   fn parse_left_hand_side_expression(&mut self) -> JSIResult<Expression> {
     let mut left = self.parse_group_expression()?;
+    if self.token == Token::Assign && self.char == '>' {
+      if self.auto_semicolon_when_new_line {
+        return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '=>'"), 0, 0));
+      }
+      self.next();
+      self.next();
+      return self.parse_arrow_function(left);
+    }
     loop {
       self.cur_expr = left.clone();
       let new_left = match self.token {
@@ -1496,8 +1631,11 @@ impl AST{
   fn parse_group_expression(&mut self) -> JSIResult<Expression> {
      if self.token == Token::LeftParenthesis {
       self.next();
-      let expr = self.parse_expression()?;
+      let expr = self.parse_comma_expression()?;
       self.check_token_and_next(Token::RightParenthesis)?;
+      if let Expression::Sequence(_) = &expr {
+        return Ok(expr);
+      }
       return Ok(Expression::Group(GroupExpression {
         expression: Box::new(expr),
       }))
@@ -1791,7 +1929,7 @@ impl AST{
       Token::String => String::from("Unexpected string"),
       _ => format!("Unexpected token {:?}", self.token),
     };
-    println!("token:{:?}", self.literal);
+    // panic!("token:{:?}", self.literal);
     // TODO: line column
     JSIError::new(JSIErrorType::SyntaxError, message, 0, 0)
   }
