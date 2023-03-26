@@ -1288,6 +1288,11 @@ impl AST{
     let left = self.parse_conditional_expression()?;
     match self.token {
       Token::Assign | Token::AddAssign | Token::SubtractAssign | Token::MultiplyAssign | Token::SlashAssign | Token::RemainderAssign | Token::ShiftLeftAssign | Token::ShiftRightAssign | Token::UnsignedShiftRightAssign | Token::OrAssign | Token::AndAssign | Token::ExclusiveOrAssign | Token::LogicalAndAssign | Token::LogicalOrAssign | Token::ExponentiationAssign | Token::NullishCoalescingAssign =>  {
+
+        if !left.is_assignment_target_type() {
+          return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid left-hand side in assignment"), 0, 0))
+        }
+
         // 跳过各种赋值运算符
         let oper = self.token.clone();
         self.next();

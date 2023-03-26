@@ -131,7 +131,7 @@ fn run_const_error() {
 
 
 #[test]
-fn run_arrow_function_error() {
+fn run_arrow_function_ast_error() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   var af = x;
@@ -152,6 +152,19 @@ fn run_arrow_function_duplicates_error_error() {
   if let Err(jsi_error) = result {
     assert_eq!(jsi_error.error_type, JSIErrorType::SyntaxError);
     assert_eq!(jsi_error.message , String::from("Duplicate parameter name not allowed in this context"));
+  } else {
+    assert!(false , "need SyntaxError");
+  }
+}
+
+#[test]
+fn run_arrow_function_error() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  (x => x) = 1"));
+  if let Err(jsi_error) = result {
+    assert_eq!(jsi_error.error_type, JSIErrorType::SyntaxError);
+    assert_eq!(jsi_error.message , String::from("Invalid left-hand side in assignment"));
   } else {
     assert!(false , "need SyntaxError");
   }

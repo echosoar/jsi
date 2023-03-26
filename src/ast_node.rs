@@ -95,6 +95,20 @@ pub enum Expression {
   ClassMethod(ClassMethodDeclaration),
   Unknown,
 }
+impl Expression {
+  // https://tc39.es/ecma262/multipage/syntax-directed-operations.html#sec-static-semantics-assignmenttargettype
+  pub fn is_assignment_target_type(&self) -> bool {
+    match self {
+      Expression::Identifier(_) => true,
+      Expression::PropertyAccess(_) => true,
+      Expression::ElementAccess(_) => true,
+      Expression::Group(group) => {
+        return  group.expression.is_assignment_target_type();
+      },
+      _ => false
+    }
+  }
+}
 
 #[derive(Debug,Clone, PartialEq)]
 pub enum Keywords {
