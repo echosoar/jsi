@@ -1,21 +1,26 @@
 use std::{rc::Rc};
+use crate::constants::{PROTO_PROPERTY_NAME, GLOBAL_STRING_NAME};
 use crate::context::{Context};
 use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}, error::JSIResult};
 
-use super::{object::{create_object, Property}, global::get_global_object, function::builtin_function};
+use super::global::{get_global_object_prototype_by_name, get_global_object_by_name};
+use super::{object::{create_object, Property}, function::builtin_function};
 
  pub fn create_string(ctx: &mut Context, init: Value) -> Value {
-  let global_string = get_global_object(ctx, String::from("String"));
+  let global_string = get_global_object_by_name(ctx, GLOBAL_STRING_NAME);
   let string = create_object(ctx, ClassType::String, None);
   let string_clone = Rc::clone(&string);
   let mut string_mut = (*string_clone).borrow_mut();
   string_mut.constructor = Some(Rc::downgrade(&global_string));
   string_mut.set_inner_property_value(String::from("value"), init);
+
+  let global_prototype = get_global_object_prototype_by_name(ctx, GLOBAL_STRING_NAME);
+  string_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&global_prototype)));
   Value::StringObj(string)
 }
 
 pub fn bind_global_string(ctx: &mut Context) {
-  let string_rc = get_global_object(ctx, String::from("String"));
+  let string_rc = get_global_object_by_name(ctx, GLOBAL_STRING_NAME);
   let mut string = (*string_rc).borrow_mut();
   let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
   string.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);

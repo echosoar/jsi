@@ -1,18 +1,22 @@
 use std::{rc::Rc};
+use crate::constants::{PROTO_PROPERTY_NAME, GLOBAL_ARRAY_NAME};
 use crate::context::{Context};
 use crate::{value::Value, ast_node::{CallContext, ClassType}, error::{JSIResult, JSIError, JSIErrorType}};
 
-use super::{object::{create_object, Property}, function::builtin_function, global::get_global_object};
+use super::global::{get_global_object_prototype_by_name, get_global_object_by_name};
+use super::{object::{create_object, Property}, function::builtin_function};
 
  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
  pub fn create_array(ctx: &mut Context, length: usize) -> Value {
-  let global_array = get_global_object(ctx, String::from("Array"));
+  let global_array = get_global_object_by_name(ctx, GLOBAL_ARRAY_NAME);
   let array = create_object(ctx, ClassType::Array, None);
   let array_clone = Rc::clone(&array);
   let mut array_mut = (*array_clone).borrow_mut();
   array_mut.define_property(String::from("length"),  Property { enumerable: true, value: Value::Number(length as f64) });
-  // 绑定 fun.constructor = global.Array
   
+  let global_prototype = get_global_object_prototype_by_name(ctx, GLOBAL_ARRAY_NAME);
+  array_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&global_prototype)));
+  // 绑定 fun.constructor = global.Array
   array_mut.constructor = Some(Rc::downgrade(&global_array));
   Value::Array(array)
 }
@@ -33,7 +37,7 @@ pub fn create_array_from_values(ctx: &mut Context, values: Vec<Value>) -> Value 
 }
 
 pub fn bind_global_array(ctx: &mut Context) {
-  let arr_rc = get_global_object(ctx, String::from("Array"));
+  let arr_rc = get_global_object_by_name(ctx, GLOBAL_ARRAY_NAME);
   let mut arr = (*arr_rc).borrow_mut();
   let name = String::from("isArray");
   arr.property.insert(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, array_static_is_array) });

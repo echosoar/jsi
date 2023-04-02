@@ -18,3 +18,5 @@ pub const GLOBAL_OBJECT_NAME_LIST: [&str;7] = [
 
     GLOBAL_ERROR_NAME,
 ];
+
+pub const PROTO_PROPERTY_NAME: &str = "[[Property]]";

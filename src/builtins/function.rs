@@ -1,14 +1,15 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
-use crate::context::{Context};
+use crate::{context::{Context}, constants::{GLOBAL_FUNCTION_NAME, PROTO_PROPERTY_NAME}};
 use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope, error::JSIResult};
 
-use super::{object::{create_object, Property, Object}, global::{get_global_object}};
+use super::{object::{create_object, Property, Object}, global::{get_global_object_prototype_by_name, get_global_object_by_name}};
 
 // 初始化一个方法
 // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
  pub fn create_function(ctx: &mut Context, function_declaration: &FunctionDeclaration, define_scope: Weak<RefCell<Scope>>) -> Value {
-  let global_function = get_global_object(ctx, String::from("Function"));
+  let global_function = get_global_object_by_name(ctx, GLOBAL_FUNCTION_NAME);
   let function = create_object(ctx,ClassType::Function, Some(Box::new(Statement::Function((*function_declaration).clone()))));
+  
   let function_clone = Rc::clone(&function);
   let mut function_mut = (*function_clone).borrow_mut();
   // 绑定 fun.constructor = global.Function
@@ -24,6 +25,9 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
     value: Value::Number(function_declaration.parameters.len() as f64)
   });
   
+  let global_prototype = get_global_object_prototype_by_name(ctx, GLOBAL_FUNCTION_NAME);
+  function_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&global_prototype)));
+
   // define_scope
   function_mut.set_inner_property_value(String::from("define_scope"), Value::Scope(define_scope));
   Value::Function(function)
@@ -31,7 +35,7 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
 
 // 构建内置方法
 pub fn builtin_function(ctx: &mut Context, name: String, length: f64, fun: BuiltinFunction) -> Value {
-  let global_function = get_global_object(ctx, String::from("Function"));
+  let global_function = get_global_object_by_name(ctx, GLOBAL_FUNCTION_NAME);
   let function = create_object(ctx, ClassType::Function, Some(Box::new(Statement::BuiltinFunction(fun))));
   let function_clone = Rc::clone(&function);
   let mut function_mut = (*function_clone).borrow_mut();
@@ -47,12 +51,17 @@ pub fn builtin_function(ctx: &mut Context, name: String, length: f64, fun: Built
     enumerable: false,
     value: Value::Number(length)
   });
+
+  let global_prototype = get_global_object_prototype_by_name(ctx, GLOBAL_FUNCTION_NAME);
+  function_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&global_prototype)));
   Value::Function(function)
 }
 
 
 pub fn bind_global_function(ctx: &mut Context) {
-  let fun_rc = get_global_object(ctx, String::from("Function"));
+  let call_fun = builtin_function(ctx,  String::from("call"), 1f64, function_call);
+  let bind_fun = builtin_function(ctx, String::from("bind"), 1f64, function_bind);
+  let fun_rc = get_global_object_by_name(ctx, GLOBAL_FUNCTION_NAME);
   let fun = (*fun_rc).borrow_mut();
   if let Some(prop)= &fun.prototype {
     let prototype_rc = Rc::clone(prop);
@@ -60,9 +69,9 @@ pub fn bind_global_function(ctx: &mut Context) {
     // let name = String::from("toString");
     // prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 0f64, function_to_string) });
     let name = String::from("call");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, function_call) });
+    prototype.define_property(name.clone(), Property { enumerable: true, value: call_fun});
     let name = String::from("bind");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, function_bind) });
+    prototype.define_property(name.clone(), Property { enumerable: true, value: bind_fun});
   }
 }
 
