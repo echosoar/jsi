@@ -1,9 +1,11 @@
+use std::cell::RefCell;
 use std::{rc::Rc};
 use crate::constants::{PROTO_PROPERTY_NAME, GLOBAL_ARRAY_NAME};
 use crate::context::{Context};
 use crate::{value::Value, ast_node::{CallContext, ClassType}, error::{JSIResult, JSIError, JSIErrorType}};
 
 use super::global::{get_global_object_prototype_by_name, get_global_object_by_name};
+use super::object::Object;
 use super::{object::{create_object, Property}, function::builtin_function};
 
  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
@@ -45,12 +47,14 @@ pub fn bind_global_array(ctx: &mut Context) {
   if let Some(prop)= &arr.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = prototype_rc.borrow_mut();
-    let name = String::from("toString");
-    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, array_to_string) });
+    let name = String::from("concat");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, array_concat) });
     let name = String::from("join");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, array_join) });
     let name = String::from("push");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, array_push) });
+    let name = String::from("toString");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, array_to_string) });
   }
 }
 
@@ -67,10 +71,17 @@ fn array_static_is_array(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Valu
 }
 
 
-// Array.prototype.toString
-fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
-  array_join(ctx, vec![])
+// Array.prototype.concat
+fn array_concat(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  // 插入值
+  let this_rc = call_ctx.this.upgrade().unwrap();
+  let new_array = array_clone(call_ctx.ctx, this_rc)?;
+
+  Ok(new_array)
 }
+
+
+
 
 // Array.prototype.join
 fn array_join(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
@@ -119,3 +130,27 @@ fn array_push(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> 
   Err(JSIError::new(JSIErrorType::RangeError, format!("Invalid array length"), 0, 0))
 }
 
+
+
+// Array.prototype.toString
+fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
+  array_join(ctx, vec![])
+}
+
+fn array_clone(ctx: &mut Context, arr: Rc<RefCell<Object>>) -> JSIResult<Value> {
+  let new_arr = match create_array(ctx, 0) {
+    Value::Array(arr) => Some(arr),
+    _ => None
+  }.unwrap();
+  let new_arr_rc = Rc::clone(&new_arr);
+  let mut new_arr_borrowed = new_arr_rc.borrow_mut();
+  let this = arr.borrow_mut();
+  let len = this.get_property_value(String::from("length"));
+  if let Value::Number(len) = len {
+    for index in 0..(len as i32) {
+      let value = this.get_property_value(index.to_string());
+      new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
+    }
+  }
+  Ok(Value::Array(new_arr))
+}
