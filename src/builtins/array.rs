@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell};
 use std::{rc::Rc};
 use crate::constants::{PROTO_PROPERTY_NAME, GLOBAL_ARRAY_NAME};
 use crate::context::{Context};
@@ -70,14 +70,32 @@ fn array_static_is_array(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Valu
   }
 }
 
-
 // Array.prototype.concat
 fn array_concat(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   // 插入值
   let this_rc = call_ctx.this.upgrade().unwrap();
-  let new_array = array_clone(call_ctx.ctx, this_rc)?;
-
-  Ok(new_array)
+  let new_arr_info = array_clone(call_ctx.ctx, this_rc)?;
+  let mut len = new_arr_info.1;
+  let new_array = new_arr_info.0;
+  let new_array_clone = Rc::clone(&new_array);
+  let mut new_array_borrowed = new_array_clone.borrow_mut();
+  for arg in args.iter() {
+    match arg {
+      Value::Array(arr) => {
+        let iter = |_: i32, value: &Value, _: &mut Context| {
+          new_array_borrowed.define_property(format!("{}", len), Property { enumerable: true, value: value.clone() });
+          len += 1;
+        };
+        array_iter_mut(call_ctx, &arr,  iter);
+      },
+      _ => {
+        new_array_borrowed.define_property(format!("{}", len), Property { enumerable: true, value: arg.clone() });
+        len += 1;
+      }
+    }
+  }
+  new_array_borrowed.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(len.clone() as f64) });
+  Ok(Value::Array(new_array))
 }
 
 
@@ -95,21 +113,12 @@ fn array_join(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> 
   let iter = |_: i32, value: &Value, ctx: &mut Context| {
     string_list.push(value.to_string(ctx));
   };
-  array_iter_mut(call_ctx, iter);
+  let arr = call_ctx.this.upgrade().unwrap();
+  array_iter_mut(call_ctx, &arr,  iter);
   Ok(Value::String(string_list.join(join)))
 }
 
-fn array_iter_mut<F: FnMut(i32, &Value, &mut Context)>(call_ctx: &mut CallContext, mut callback: F) {
-  let this_origin = call_ctx.this.upgrade();
-  let this_rc = this_origin.unwrap();
-  let this = this_rc.borrow_mut();
-  let len = this.get_property_value(String::from("length"));
-  if let Value::Number(len) = len {
-    for index in 0..(len as i32) {
-      (callback)(index, &this.get_property_value(index.to_string()), call_ctx.ctx);
-    }
-  }
-}
+
 
 // Array.prototype.push
 fn array_push(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
@@ -137,7 +146,17 @@ fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   array_join(ctx, vec![])
 }
 
-fn array_clone(ctx: &mut Context, arr: Rc<RefCell<Object>>) -> JSIResult<Value> {
+fn array_iter_mut<F: FnMut(i32, &Value, &mut Context)>(call_ctx: &mut CallContext, arr_rc: &Rc<RefCell<Object>>, mut callback: F) {
+  let arr = arr_rc.borrow_mut();
+  let len = arr.get_property_value(String::from("length"));
+  if let Value::Number(len) = len {
+    for index in 0..(len as i32) {
+      (callback)(index, &arr.get_property_value(index.to_string()), call_ctx.ctx);
+    }
+  }
+}
+
+fn array_clone(ctx: &mut Context, arr: Rc<RefCell<Object>>) -> JSIResult<(Rc<RefCell<Object>>, i32)> {
   let new_arr = match create_array(ctx, 0) {
     Value::Array(arr) => Some(arr),
     _ => None
@@ -146,11 +165,14 @@ fn array_clone(ctx: &mut Context, arr: Rc<RefCell<Object>>) -> JSIResult<Value> 
   let mut new_arr_borrowed = new_arr_rc.borrow_mut();
   let this = arr.borrow_mut();
   let len = this.get_property_value(String::from("length"));
-  if let Value::Number(len) = len {
-    for index in 0..(len as i32) {
-      let value = this.get_property_value(index.to_string());
-      new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
-    }
+  let length = match len {
+    Value::Number(len) => len as i32,
+    _ => 0,
+  };
+  for index in 0..(length as i32) {
+    let value = this.get_property_value(index.to_string());
+    new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
   }
-  Ok(Value::Array(new_arr))
+  new_arr_borrowed.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(length.clone() as f64) });
+  Ok((new_arr, length))
 }
