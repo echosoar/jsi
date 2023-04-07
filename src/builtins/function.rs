@@ -2,7 +2,7 @@ use std::{rc::{Rc, Weak}, cell::RefCell};
 use crate::{context::{Context}, constants::{GLOBAL_FUNCTION_NAME, PROTO_PROPERTY_NAME}};
 use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope, error::JSIResult};
 
-use super::{object::{create_object, Property, Object}, global::{get_global_object_prototype_by_name, get_global_object_by_name}};
+use super::{object::{create_object, Property, Object}, global::{get_global_object_prototype_by_name, get_global_object_by_name}, array::create_list_from_array_list};
 
 // 初始化一个方法
 // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
@@ -59,8 +59,10 @@ pub fn builtin_function(ctx: &mut Context, name: String, length: f64, fun: Built
 
 
 pub fn bind_global_function(ctx: &mut Context) {
-  let call_fun = builtin_function(ctx,  String::from("call"), 1f64, function_call);
+
+  let apply_fun = builtin_function(ctx, String::from("apply"), 1f64, function_apply);
   let bind_fun = builtin_function(ctx, String::from("bind"), 1f64, function_bind);
+  let call_fun = builtin_function(ctx,  String::from("call"), 1f64, function_call);
   let fun_rc = get_global_object_by_name(ctx, GLOBAL_FUNCTION_NAME);
   let fun = (*fun_rc).borrow_mut();
   if let Some(prop)= &fun.prototype {
@@ -68,6 +70,8 @@ pub fn bind_global_function(ctx: &mut Context) {
     let mut prototype = prototype_rc.borrow_mut();
     // let name = String::from("toString");
     // prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(global, name, 0f64, function_to_string) });
+    let name = String::from("apply");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: apply_fun});
     let name = String::from("call");
     prototype.define_property(name.clone(), Property { enumerable: true, value: call_fun});
     let name = String::from("bind");
@@ -75,6 +79,19 @@ pub fn bind_global_function(ctx: &mut Context) {
   }
 }
 
+// Function.prototype.apply
+fn function_apply(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let mut this = Value::Undefined;
+  let mut new_args: Vec<Value> = vec![];
+  if args.len() > 0 {
+    this = args[0].clone();
+    if args.len() > 1 {
+      new_args = create_list_from_array_list(call_ctx, &args[1])?;
+    }
+  }
+  let new_fun = function_bind(call_ctx, vec![this])?;
+  Ok(Value::FunctionNeedToCall(new_fun.to_object(call_ctx.ctx), new_args))
+}
 
 // Function.prototype.call
 fn function_call(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {

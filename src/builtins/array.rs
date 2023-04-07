@@ -176,3 +176,24 @@ fn array_clone(ctx: &mut Context, arr: Rc<RefCell<Object>>) -> JSIResult<(Rc<Ref
   new_arr_borrowed.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(length.clone() as f64) });
   Ok((new_arr, length))
 }
+
+pub fn create_list_from_array_list(call_ctx: &mut CallContext,value: &Value) -> JSIResult<Vec<Value>> {
+  let mut list: Vec<Value> = vec![];
+  match value {
+    Value::Boolean(_) | Value::Number(_) | Value::String(_) | Value::NAN => Err(JSIError::new(JSIErrorType::TypeError, format!("eateListFromArrayLike called on non-object
+    "), 0, 0)),
+    Value::Null | Value::Undefined => Ok(list),
+    _ => {
+      let obj = value.to_object(call_ctx.ctx);
+      let obj_borrow = obj.borrow();
+      let len = obj_borrow.get_property_value(String::from("length"));
+      if let Value::Number(len) = len {
+        for index in 0..(len as i32) {
+          let value = obj_borrow.get_property_value(index.to_string());
+          list.push(value);
+        }
+      }
+      Ok(list)
+    },
+  }
+}
