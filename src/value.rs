@@ -448,6 +448,19 @@ impl Value {
       Value::BooleanObj(_) => ValueType::Boolean,
       Value::Null => ValueType::Null,
       Value::Undefined => ValueType::Undefined,
+      Value::RefObject(refobj) => {
+        let origin = refobj.upgrade();
+        if let Some(origin) = &origin {
+          let origin_clone = Rc::clone(&origin);
+          let origin_borrow = origin_clone.borrow();
+          return match &origin_borrow.class_type {
+            // TODO: more type
+            ClassType::Function => ValueType::Function,
+            _ => ValueType::Object
+          }
+        }
+        ValueType::Object
+      },
       _ => {
         // TODO: more
         ValueType::NAN

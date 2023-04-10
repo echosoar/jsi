@@ -15,6 +15,7 @@ use crate::value::{Value, INSTANTIATE_OBJECT_METHOD_NAME};
 #[derive(Debug,Clone)]
 // 对象
 pub struct Object {
+  // 值类型，用作类型检测，如 Array.isArray
   pub class_type: ClassType,
   // 静态属性，比如 Object.keys
   pub property: HashMap<String, Property>,

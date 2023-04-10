@@ -34,5 +34,5 @@ fn run_string_xxx() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   !('')")).unwrap();
-  assert_eq!(result , Value::String(String::from("xxx")));
+  assert_eq!(result , Value::Boolean(true));
 }

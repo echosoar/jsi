@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}};
 
 
 use super::ast::AST;
@@ -328,6 +328,14 @@ impl Context {
               Keywords::False => Value::Boolean(false),
               Keywords::True => Value::Boolean(true),
               Keywords::Null => Value::Null,
+              Keywords::This => {
+                let scope = self.cur_scope.borrow();
+                if let Some(this) = &scope.this {
+                  this.clone()
+                } else {
+                  Value::Undefined
+                }
+              },
               _ => Value::Undefined,
             },
             name: None,
@@ -360,7 +368,6 @@ impl Context {
     // 执行基础四则运算
     fn execute_binary_expression(&mut self, expression: &BinaryExpression) -> JSIResult<Value> {
       let left = self.execute_expression(expression.left.as_ref())?;
-      
       // 逻辑运算 左值
       if expression.operator == Token::LogicalAnd {
         // false &&
@@ -386,7 +393,6 @@ impl Context {
           return Ok(Value::Boolean(true));
         }
       }
-
       match expression.operator {
         Token::Equal => {
           return Ok(Value::Boolean(left.is_equal_to(self, &right, false)));
@@ -793,15 +799,40 @@ impl Context {
     fn execute_new_expression(&mut self, new_object: &NewExpression) -> JSIResult<Value> {
       let constructor = self.execute_expression_info(new_object.expression.as_ref())?;
       let mut arguments: Vec<Value> = vec![];
-        for element in &new_object.arguments {
-          arguments.push(self.execute_expression(element)?);
+      for element in &new_object.arguments {
+        arguments.push(self.execute_expression(element)?);
+      }
+
+      // new function
+      if let Value::Function(function_declare) = &constructor.value {
+       
+        let prototype = {
+          let func_clone = Rc::clone(function_declare);
+          let func_borrow = func_clone.borrow();
+          func_borrow.prototype.clone()
+        };
+        
+        if let Some(proto) = prototype {
+          let obj = create_object(self, ClassType::Object, None);
+           // 绑定当前对象的原型
+           {
+            let obj_clone = Rc::clone(&obj);
+            let mut obj_borrowed = obj_clone.borrow_mut();
+            obj_borrowed.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&proto)));
+           }
+           
+           // 执行构造函数
+          self.call_function_object(Rc::clone(function_declare), Some(Value::Object(Rc::clone(&obj))), None, arguments)?;
+          return Ok(Value::Object(obj))
         }
+      }
+
       let obj = constructor.value.instantiate_object(self, arguments);
       if let Ok(obj) = obj {
-        Ok(obj)
-      } else {
-        Err(JSIError::new(JSIErrorType::TypeError, format!("{} is not a constructor", constructor.access_path), 0, 0))
+        return Ok(obj)
       }
+
+      return Err(JSIError::new(JSIErrorType::TypeError, format!("{} is not a constructor", constructor.access_path), 0, 0))
     }
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> JSIResult<Value> {
@@ -910,6 +941,7 @@ impl Context {
         }
       }
       (*self.cur_scope).borrow_mut().set_value(String::from("arguments"), Value::Object(argument_object), false);
+      (*self.cur_scope).borrow_mut().this = Some(Value::Object(Rc::clone(&this_obj)));
       // 绑定参数
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {

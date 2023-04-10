@@ -30,6 +30,18 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
 
   // define_scope
   function_mut.set_inner_property_value(String::from("define_scope"), Value::Scope(define_scope));
+  
+
+  // function prototype
+  let prototype =  Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
+  let prototype_clone = Rc::clone(&prototype);
+  let mut prototype_mut = prototype_clone.borrow_mut();
+  // function.prototype.constructor 指向自己
+  prototype_mut.define_property(String::from("constructor"), Property {
+    enumerable: false,
+    value: Value::RefObject(Rc::downgrade(&function)),
+  });
+  function_mut.prototype = Some(prototype);
   Value::Function(function)
 }
 
