@@ -43,12 +43,12 @@ fn boolean_to_string(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Val
 
 // Boolean.prototype.valueOf
 fn value_of(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
-  let this_origin = call_ctx.this.upgrade();
-  let this_rc = this_origin.unwrap();
-  let init = this_rc.borrow().get_inner_property_value(String::from("value"));
-  if let Some(value) = init {
-    return Ok(Value::Boolean(value.to_boolean(call_ctx.ctx)))
-  }
+  // let this_origin = call_ctx.this.upgrade();
+  // let this_rc = this_origin.unwrap();
+  // let init = this_rc.borrow().get_inner_property_value(String::from("value"));
+  // if let Some(value) = init {
+  //   return Ok(Value::Boolean(value.to_boolean(call_ctx.ctx)))
+  // }
   Ok(Value::Boolean(false))
 }
 

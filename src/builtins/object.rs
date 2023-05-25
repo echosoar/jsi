@@ -148,20 +148,6 @@ impl Object {
               }
               break;
             }
-            // loop {
-            //   let broow = Rc::clone(&cur);
-            //   let cur_mut = broow.borrow();
-            //   let prop = cur_mut.property.get(&name);
-            //   if let Some(prop) = prop {
-            //     return prop.value.clone()
-            //   } else {
-            //     if let Some(constructor) = &cur_mut.prototype {
-            //       cur = Rc::clone(constructor);
-            //     } else {
-            //       break;
-            //     }
-            //   }
-            // }
           }
         }
         
@@ -171,13 +157,11 @@ impl Object {
   }
 
   pub fn call(call_ctx: &mut CallContext, name: String, arguments:Vec<Value>) -> JSIResult<Value> {
-    let this = call_ctx.this.upgrade().unwrap();
     let fun = {
-      //  处理临时借用
-      let this_mut = (*this).borrow_mut();
+      let obj = call_ctx.this.to_object(call_ctx.ctx);
+      let this_mut = (*obj).borrow_mut();
       this_mut.get_value(name.clone())
     };
-   
     if let Value::Function(function_define) = &fun {
       // 获取 function 定义
       let function_define_value = {
@@ -278,11 +262,10 @@ fn object_keys(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
   if args.len() < 1 {
     return Ok(Value::Array(array_obj));
   }
-  let weak = Rc::downgrade(&array_obj);
   let obj_rc= args[0].to_object(call_ctx.ctx);
   let new_call_ctx = &mut CallContext {
     ctx: call_ctx.ctx,
-    this: weak,
+    this: Value::Array(Rc::clone(&array_obj)),
     reference: None,
   };
   let obj = obj_rc.borrow();
@@ -308,11 +291,10 @@ fn object_get_own_property_names(call_ctx: &mut CallContext, args: Vec<Value>) -
   if args.len() < 1 {
     return Ok(Value::Array(array_obj));
   }
-  let weak = Rc::downgrade(&array_obj);
   let obj_rc= args[0].to_object(call_ctx.ctx);
   let new_call_ctx = &mut CallContext {
     ctx: call_ctx.ctx,
-    this: weak,
+    this: Value::Array(Rc::clone(&array_obj)),
     reference: None,
   };
   let obj = obj_rc.borrow();
@@ -346,10 +328,9 @@ fn object_get_prototype_of(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIR
 }
 
 // Object.prototype.toString
-fn to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
-  let this_origin = ctx.this.upgrade();
-  let this_rc = this_origin.unwrap();
-  let this = this_rc.borrow();
+fn to_string(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
+  let this_origin = call_ctx.this.to_object(call_ctx.ctx);
+  let this = this_origin.borrow();
   let mut obj_type : String = "[object ".to_owned();
   obj_type.push_str(this.class_type.to_string().as_str());
   obj_type.push(']');

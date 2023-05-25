@@ -399,7 +399,7 @@ pub struct CallContext<'a> {
   // 全局对象，globalThis
   pub ctx: &'a mut Context,
   // 调用时的 this
-  pub this: Weak<RefCell<Object>>,
+  pub this: Value,
   // 引用，调用的发起方，比如  a.call()，reference 就是 a
   // 当直接调用 call() 的时候，refererce 是 None
   pub reference: Option<Weak<RefCell<Object>>>,

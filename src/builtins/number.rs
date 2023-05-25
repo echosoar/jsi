@@ -1,6 +1,7 @@
 use std::{rc::Rc};
 use crate::constants::{GLOBAL_NUMBER_NAME, PROTO_PROPERTY_NAME};
 use crate::context::{Context};
+use crate::error::{JSIError, JSIErrorType};
 use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{ClassType, CallContext}, error::JSIResult};
 
 use super::global::{get_global_object_prototype_by_name, get_global_object_by_name};
@@ -43,16 +44,32 @@ fn to_string(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
 
 // Number.prototype.valueOf
 fn value_of(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
-  let this_origin = call_ctx.this.upgrade();
-  let this_rc = this_origin.unwrap();
-  let init = this_rc.borrow().get_inner_property_value(String::from("value"));
-  if let Some(value) = init {
-    let res = value.to_number(call_ctx.ctx);
-    if let Some(num) = res {
-      return Ok(Value::Number(num))
+  if let Value::Number(_) = &call_ctx.this {
+    return Ok(call_ctx.this.clone())
+  }
+
+  let number_obj = match &call_ctx.this {
+    Value::Object(number) => {
+      if let ClassType::Number = number.borrow().class_type  {
+        Some(number)
+      } else {
+        None
+      }
+    },
+    Value::NumberObj(number) => Some(number),
+    _ => None,
+  };
+
+  if let Some(number) = number_obj {
+    let init = number.borrow().get_inner_property_value(String::from("value"));
+    if let Some(value) = init {
+      let res = value.to_number(call_ctx.ctx);
+      if let Some(num) = res {
+        return Ok(Value::Number(num))
+      }
     }
   }
-  Ok(Value::NAN)
+  Err(JSIError::new(JSIErrorType::TypeError, format!("Number.prototype.valueOf requires that 'this' be a Number"), 0, 0))
 }
 
 fn create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {

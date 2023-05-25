@@ -258,11 +258,12 @@ impl Context {
           if left.is_equal_to(self, &Value::Undefined, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of undefined (reading '{}')", property_access.name.literal), 0, 0))
           }
+          let left_clone = left.clone();
           let left_obj = left.to_object(self);
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
           // println!("PropertyAccess: {:?} {:?}",left_obj, right);
-          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: String::from(""), reference: Some(Value::Object(left_obj)) })
+          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: String::from(""), reference: Some(left_clone) })
         },
         Expression::ComputedPropertyName(property_name) => {
           Ok(ValueInfo { is_const: false, value: self.execute_expression(&property_name.expression)?, name: None, access_path: String::from(""), reference: None })
@@ -502,11 +503,13 @@ impl Context {
           if let Some(call_ref) = &callee.reference {
             reference = call_ref.to_weak_rc_object();
           }
+          // TODO: call this
           return self.call_function_object(function_object.to_owned(), callee.reference, reference, arguments);
         },
         Value::RefObject(obj_ref) => {
           let obj = obj_ref.upgrade();
           if let Some(obj_rc) = obj {
+            // 全局对象调用，可以认为是 new 
             let is_global_object = {
               let function_mut = obj_rc.borrow_mut();
               function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
@@ -875,10 +878,9 @@ impl Context {
         for element in &expression.elements {
           arguments.push(self.execute_expression(element)?);
         }
-        let weak = Rc::downgrade(arr_obj);
         let call_ctx = &mut CallContext {
           ctx: self,
-          this: weak,
+          this: Value::Array(Rc::clone(arr_obj)),
           reference: None,
         };
         Object::call(call_ctx, String::from("push"), arguments)?;
@@ -891,21 +893,15 @@ impl Context {
       // 获取 function 定义
       let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
       // 获取 function 调用的 this
-      let mut this_obj = Rc::clone(&function_define);
+      let mut this_obj = Value::Undefined;
       if let Some(call_this_value) = call_this {
-        if let Value::Object(obj) = call_this_value {
-          this_obj = obj;
-        } else if let Value::Array(obj) = call_this_value {
-          this_obj = obj;
-        } else if let Value::Function(func) = call_this_value {
-          this_obj = get_function_this(self, func);
-        }
+        this_obj = call_this_value;
       }
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         let mut ctx = CallContext{
           ctx: self,
-          this: Rc::downgrade(&this_obj),
+          this: this_obj,
           reference: reference,
         };
         let result = (builtin_function)(&mut ctx, arguments)?;
@@ -941,7 +937,7 @@ impl Context {
         }
       }
       (*self.cur_scope).borrow_mut().set_value(String::from("arguments"), Value::Object(argument_object), false);
-      (*self.cur_scope).borrow_mut().this = Some(Value::Object(Rc::clone(&this_obj)));
+      (*self.cur_scope).borrow_mut().this = Some(this_obj);
       // 绑定参数
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {

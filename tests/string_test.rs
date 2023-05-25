@@ -35,4 +35,4 @@ fn run_string_xxx() {
   let result = jsi.run(String::from("\
   !('')")).unwrap();
   assert_eq!(result , Value::Boolean(true));
-}
+} 

@@ -218,10 +218,9 @@ impl Value {
           _ => None
         };
         if let Some(obj) = object {
-          let weak = Rc::downgrade(obj);
           let call_ctx = &mut CallContext {
             ctx,
-            this: weak,
+            this: Value::Object(Rc::clone(obj)),
             reference: None,
           };
           let value = Object::call(call_ctx, String::from("toString"), vec![]);
@@ -306,7 +305,7 @@ impl Value {
             if let Statement::BuiltinFunction(builtin_function) = function_define_value.as_ref() {
               let mut call_ctx = CallContext{
                 ctx,
-                this: Rc::downgrade(&function_define),
+                this: Value::Function(Rc::clone(function_define)),
                 reference: None,
               };
               return (builtin_function)(&mut call_ctx, args);
@@ -387,7 +386,7 @@ impl Value {
     if let Some(type_obj) = base_type_obj {
       let mut call_ctx = CallContext{
         ctx,
-        this: Rc::downgrade(&type_obj.1),
+        this: self.clone(),
         reference: None,
       };
       // 不会出错
