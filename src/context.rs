@@ -251,7 +251,8 @@ impl Context {
         },
         Expression::PropertyAccess(property_access) => {
           // expression.name
-          let left = self.execute_expression(&property_access.expression)?;
+          let left_info = self.execute_expression_info(&property_access.expression)?;
+          let left = left_info.value;
           if left.is_equal_to(self, &Value::Null, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", property_access.name.literal), 0, 0))
           }
@@ -262,8 +263,7 @@ impl Context {
           let left_obj = left.to_object(self);
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
-          // println!("PropertyAccess: {:?} {:?}",left_obj, right);
-          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: String::from(""), reference: Some(left_clone) })
+          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: format!("{}.{}", left_info.access_path, property_access.name.literal), reference: Some(left_clone) })
         },
         Expression::ComputedPropertyName(property_name) => {
           Ok(ValueInfo { is_const: false, value: self.execute_expression(&property_name.expression)?, name: None, access_path: String::from(""), reference: None })
@@ -496,7 +496,6 @@ impl Context {
       for arg in expression.arguments.iter() {
         arguments.push(self.execute_expression(arg)?);
       }
-
       match &callee.value {
         Value::Function(function_object) => {
           let mut reference = None;
@@ -847,7 +846,9 @@ impl Context {
       let mut normal_propertys: Vec<(String, Value)> = vec![];
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
+        let x = self.execute_expression(&property.name);
         let name = self.execute_expression(&property.name)?.to_string(self);
+        println!("new object name {:?}", x);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
         // ComputedPropertyName 优先级更高，影响 object 的属性顺序

@@ -43,12 +43,28 @@ fn boolean_to_string(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Val
 
 // Boolean.prototype.valueOf
 fn value_of(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
-  // let this_origin = call_ctx.this.upgrade();
-  // let this_rc = this_origin.unwrap();
-  // let init = this_rc.borrow().get_inner_property_value(String::from("value"));
-  // if let Some(value) = init {
-  //   return Ok(Value::Boolean(value.to_boolean(call_ctx.ctx)))
-  // }
+  if let Value::Boolean(_) = &call_ctx.this {
+    return Ok(call_ctx.this.clone())
+  }
+
+  let bool_obj = match &call_ctx.this {
+    Value::Object(bool) => {
+      if let ClassType::Boolean = bool.borrow().class_type  {
+        Some(bool)
+      } else {
+        None
+      }
+    },
+    Value::BooleanObj(boolobj) => Some(boolobj),
+    _ => None,
+  };
+  if let Some(bool) = bool_obj {
+    let init = bool.borrow().get_inner_property_value(String::from("value"));
+    if let Some(value) = init {
+      let res: bool = value.to_boolean(call_ctx.ctx);
+      return Ok(Value::Boolean(res))
+    }
+  }
   Ok(Value::Boolean(false))
 }
 

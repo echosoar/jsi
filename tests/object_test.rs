@@ -123,6 +123,7 @@ fn run_object_with_array_key() {
   let result = jsi.run(String::from("\
   let a = [1,2]\n
   let b = {[a]: 3}\n
+  console.log(b)
   Object.keys(b).toString()")).unwrap();
   assert_eq!(result , Value::String(String::from("1,2")));
 }

@@ -7,7 +7,7 @@ use super::array::create_array;
 // use super::array::new_array;
 use super::function::builtin_function;
 use super::global::{get_global_object, get_global_object_prototype_by_name, get_global_object_by_name};
-use crate::ast_node::{Statement, CallContext, ClassType};
+use crate::ast_node::{Statement, CallContext, ClassType, BuiltinFunction};
 use crate::constants::{GLOBAL_OBJECT_NAME, PROTO_PROPERTY_NAME};
 use crate::error::{JSIResult, JSIError};
 use crate::value::{Value, INSTANTIATE_OBJECT_METHOD_NAME};
@@ -84,6 +84,11 @@ impl Object {
     }
     self.property.insert(name, property);
     return true;
+  }
+
+  // 定义内置方法属性
+  pub fn define_builtin_function_property(&mut self, ctx: &mut Context, name: String, length: i32, fun: BuiltinFunction) -> bool {
+    return self.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, length as f64, fun) });
   }
 
   pub fn get_property_value(&self, name: String) -> Value {
