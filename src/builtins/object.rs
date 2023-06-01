@@ -217,15 +217,21 @@ pub fn bind_global_object(ctx: &mut Context) {
 
   // 绑定实例化方法
   let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
+  let object_has_own_fun = builtin_function(ctx, String::from("hasOwn"), 2f64, object_has_own);
   let object_keys_fun = builtin_function(ctx, String::from("keys"), 1f64, object_keys);
   let object_get_own_property_names_fun = builtin_function(ctx, String::from("getOwnPropertyNames"), 1f64, object_get_own_property_names);
   let object_get_prototype_of_fun = builtin_function(ctx, String::from("getPrototypeOf"), 1f64, object_get_prototype_of);
+  let has_own_property_fun = builtin_function(ctx, String::from("hasOwnProperty"), 0f64, has_own_property);
   let object_to_string_fun = builtin_function(ctx, String::from("toString"), 0f64, to_string);
 
 
   let mut obj = (*obj_rc).borrow_mut();
   obj.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
   let property = obj.property.borrow_mut();
+
+  // Object.hasOwn
+  let name = String::from("hasOwn");
+  property.insert(name.clone(), Property { enumerable: true, value: object_has_own_fun  });
 
   // Object.keys
   let name = String::from("keys");
@@ -247,6 +253,10 @@ pub fn bind_global_object(ctx: &mut Context) {
     // 原型对象的原型 [[Property]] 为 null // Object.prototype.__proto__ == null
     prototype.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::Null);
 
+    // Object.prototype.hasOwnProperty
+    let name = String::from("hasOwnProperty");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: has_own_property_fun });
+
     // Object.prototype.toString
     let name = String::from("toString");
     prototype.define_property(name.clone(), Property { enumerable: true, value: object_to_string_fun });
@@ -254,7 +264,21 @@ pub fn bind_global_object(ctx: &mut Context) {
  
 }
 
-
+// Object.hasOwn()
+fn object_has_own(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let mut obj = &Value::Undefined;
+  if args.len() >= 1 {
+    obj = &args[0]
+  }
+  let obj_rc= obj.to_object(call_ctx.ctx);
+  if args.len() > 1 {
+    let property_name = args[1].to_string(call_ctx.ctx);
+    let obj = obj_rc.borrow();
+    return Ok(Value::Boolean(obj.property.contains_key(&property_name)));
+  }
+  
+  return Ok(Value::Boolean(false));
+}
 
 // Object.keys()
 fn object_keys(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
@@ -330,6 +354,18 @@ fn object_get_prototype_of(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIR
   }
   // item.prototype
   Ok(obj_rc.get_value(String::from("prototype")))
+}
+
+// Object.prototype.hasOwnProperty
+fn has_own_property(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let obj_rc = call_ctx.this.to_object(call_ctx.ctx);
+  if args.len() > 0 {
+    let property_name = args[0].to_string(call_ctx.ctx);
+    let obj = obj_rc.borrow();
+    return Ok(Value::Boolean(obj.property.contains_key(&property_name)));
+  }
+  
+  return Ok(Value::Boolean(false));
 }
 
 // Object.prototype.toString

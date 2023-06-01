@@ -129,12 +129,7 @@ fn array_join(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> 
 // Array.prototype.push
 fn array_push(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
 
-  let this_array_obj = match &call_ctx.this {
-    Value::Array(array) => {
-      Some(array)
-    },
-    _ => None,
-  };
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
 
   if let Some(this_ref) = this_array_obj {
     let mut this = this_ref.borrow_mut();
@@ -181,13 +176,7 @@ fn clone_array_object(call_ctx: &mut CallContext) -> JSIResult<(Rc<RefCell<Objec
   let mut new_arr_borrowed = new_arr_rc.borrow_mut();
   
   let mut length: i32 = 0;
-  let this_array_obj = match &call_ctx.this {
-    Value::Array(array) => {
-      Some(array)
-    },
-    _ => None,
-  };
-
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
   if let Some(this_ref) = this_array_obj {
     let this = this_ref.borrow_mut();
     let length_value = this.get_property_value(String::from("length"));
@@ -229,5 +218,14 @@ pub fn create_list_from_array_list(call_ctx: &mut CallContext,value: &Value) -> 
       }
       Ok(list)
     },
+  }
+}
+
+fn get_array_object_from_this<'a>(this_value: &'a Value) -> Option<&'a Rc<RefCell<Object>>>{
+  match &this_value {
+    Value::Array(array) | Value::Object(array) => {
+      Some(array)
+    },
+    _ => None,
   }
 }

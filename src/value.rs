@@ -310,6 +310,7 @@ impl Value {
   }
 
   pub fn to_object(&self, ctx: &mut Context) -> Rc<RefCell<Object>> {
+    // TODO: Cannot convert undefined or null to object
     let obj_value = self.to_object_value(ctx);
     match obj_value {
       Value::StringObj(obj) => {
