@@ -561,7 +561,7 @@ impl Context {
       }
       match oper {
         Token::Assign => {
-          left_info.set_value(right_value.clone())?;
+          left_info.set_value(self, right_value.clone())?;
           Ok(left_info.value)
         },
         _ => {
@@ -620,7 +620,7 @@ impl Context {
             }
             let value = Value::Number(new_value);
             if is_need_set_value {
-              operand_info.set_value(value.clone())?;
+              operand_info.set_value(self, value.clone())?;
             }
             value
           } else {
@@ -654,7 +654,7 @@ impl Context {
       } else {
         Value::NAN
       };
-      operand_info.set_value(value)?;
+      operand_info.set_value(self, value)?;
       Ok(origin_value)
     }
 

@@ -228,7 +228,7 @@ fn test_all_262() {
         make_dir(&String::from("test262/test/intl402")),
     ];
     let only_list: Vec<PathBuf> =vec![
-        // make_dir(&String::from("test262/test/built-ins/Number/15.7.3-1.js")),
+        // make_dir(&String::from("test262/test/built-ins/Array/isArray/15.4.3.2-0-2.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);
@@ -237,6 +237,9 @@ fn test_all_262() {
     let mut file = File::create(file_name).unwrap();
     file.write_all(serialized_result.as_bytes()).unwrap();
     println!("result: passed {:?} / total {:?} at {}", test262.passed, test262.cases, file_name);
+    if only_list.len() > 0 {
+        return;
+    }
     let old_file_name = "./tests/262_result_data.json";
     let old_exists = Path::new(old_file_name).exists();
     if old_exists {

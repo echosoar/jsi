@@ -25,7 +25,7 @@ pub struct ValueInfo {
 }
 
 impl ValueInfo {
-  pub fn set_value(&mut self, value: Value) -> JSIResult<Option<String>> {
+  pub fn set_value(&mut self, ctx: &mut Context,value: Value) -> JSIResult<Option<String>> {
     if self.name == None {
       return  Err(JSIError::new(JSIErrorType::SyntaxError, format!("Invalid left-hand side in assignment"), 0, 0));
     }
@@ -39,13 +39,6 @@ impl ValueInfo {
     };
     if let Some(reference) = &self.reference {
       match reference {
-          Value::Object(object) => {
-            object.borrow_mut().define_property( name.clone(), Property {
-              enumerable: false,
-              value: value,
-            });
-            Ok(None)
-          },
           Value::Scope(scope) => {
             let scope_rc = scope.upgrade();
             if let Some(scope)= scope_rc {
@@ -53,7 +46,14 @@ impl ValueInfo {
             }
             Ok(None)
           },
-          _ => Ok(Some(name.clone()))
+          _ => {
+            let object = reference.to_object(ctx);
+            object.borrow_mut().define_property( name.clone(), Property {
+              enumerable: false,
+              value: value,
+            });
+            Ok(None)
+          }
       }
     } else {
       // TODO: no reference set value
