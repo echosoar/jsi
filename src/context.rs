@@ -848,7 +848,6 @@ impl Context {
         let property = &expression.properties[property_index];
         let x = self.execute_expression(&property.name);
         let name = self.execute_expression(&property.name)?.to_string(self);
-        println!("new object name {:?}", x);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
         // ComputedPropertyName 优先级更高，影响 object 的属性顺序
@@ -890,14 +889,23 @@ impl Context {
     }
 
     // 调用方法
+    // call_this 指向调用时的 this
+    // reference 指向
     pub fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
       // 获取 function 定义
-      let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
+      let function_define_value =(*function_define).borrow_mut().get_initializer().unwrap();
       // 获取 function 调用的 this
-      let mut this_obj = Value::Undefined;
-      if let Some(call_this_value) = call_this {
-        this_obj = call_this_value;
-      }
+      let this_obj = match (*function_define).borrow_mut().get_inner_property_value(String::from("this")) {
+        Some(bind_this_value) => bind_this_value,
+        _ =>{
+          if let Some(call_this_value) = call_this {
+            call_this_value
+          } else {
+            Value::Undefined
+          }
+        }
+      };
+     
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         let mut ctx = CallContext{
@@ -905,11 +913,7 @@ impl Context {
           this: this_obj,
           reference: reference,
         };
-        let result = (builtin_function)(&mut ctx, arguments)?;
-        if let Value::FunctionNeedToCall(function_define, args) = result {
-          return self.call_function_object(function_define.clone(), Some(Value::Function(function_define)), None, args);
-        }
-        return Ok(result);
+        return (builtin_function)(&mut ctx, arguments);
       }
 
       let function_declaration =  match *function_define_value {
@@ -917,7 +921,7 @@ impl Context {
         _ => None,
       }.unwrap();
       // 创建新的执行作用域
-      let define_scope =  (*function_define).borrow_mut().get_inner_property_value(String::from("define_scope"));
+      let define_scope = (*function_define).borrow_mut().get_inner_property_value(String::from("define_scope"));
       let mut define_scope_value = None;
       if let Some(scope_value) = define_scope {
         if let Value::Scope(scope) = scope_value {

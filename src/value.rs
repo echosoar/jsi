@@ -82,7 +82,6 @@ pub enum Value {
   NAN,
   RefObject(Weak<RefCell<Object>>),
   Scope(Weak<RefCell<Scope>>),
-  FunctionNeedToCall(Rc<RefCell<Object>>,Vec<Value>),
   // 中断
   Interrupt(Token,Expression),
 }
@@ -210,17 +209,10 @@ impl Value {
       },
       Value::NAN => String::from("NaN"),
       _ => {
-        // object
-        let object: Option<&Rc<RefCell<Object>>> = match self {
-          Value::Array(obj) => Some(obj),
-          Value::Function(obj) => Some(obj),
-          Value::Object(obj) => Some(obj),
-          _ => None
-        };
-        if let Some(obj) = object {
+        if let Value::Object(_) | Value::Array(_) | Value::Function(_) = self {
           let call_ctx = &mut CallContext {
             ctx,
-            this: Value::Object(Rc::clone(obj)),
+            this: self.clone(),
             reference: None,
           };
           let value = Object::call(call_ctx, String::from("toString"), vec![]);

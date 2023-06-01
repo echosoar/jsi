@@ -164,7 +164,6 @@ fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
 fn array_iter_mut<F: FnMut(i32, &Value, &mut Context)>(call_ctx: &mut CallContext, arr_rc: &Rc<RefCell<Object>>, mut callback: F) {
   let arr = arr_rc.borrow_mut();
   let len = arr.get_property_value(String::from("length"));
-  println!("len {:?}", len);
   if let Value::Number(len) = len {
     for index in 0..(len as i32) {
       (callback)(index, &arr.get_property_value(index.to_string()), call_ctx.ctx);

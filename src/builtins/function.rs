@@ -1,5 +1,5 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
-use crate::{context::{Context}, constants::{GLOBAL_FUNCTION_NAME, PROTO_PROPERTY_NAME}};
+use crate::{context::{Context}, constants::{GLOBAL_FUNCTION_NAME, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType}};
 use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope, error::JSIResult};
 
 use super::{object::{create_object, Property, Object}, global::{get_global_object_prototype_by_name, get_global_object_by_name}, array::create_list_from_array_list};
@@ -102,7 +102,11 @@ fn function_apply(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Val
     }
   }
   let new_fun = function_bind(call_ctx, vec![this])?;
-  Ok(Value::FunctionNeedToCall(new_fun.to_object(call_ctx.ctx), new_args))
+  let call_function_define = match new_fun {
+    Value::Function(function) => Some(function),
+    _ => None,
+  }.unwrap();
+  return call_ctx.call_function(call_function_define, None, None, new_args);
 }
 
 // Function.prototype.call
@@ -114,7 +118,11 @@ fn function_call(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Valu
     new_args = args[1..].to_vec();
   }
   let new_fun = function_bind(call_ctx, vec![this])?;
-  Ok(Value::FunctionNeedToCall(new_fun.to_object(call_ctx.ctx), new_args))
+  let call_function_define = match new_fun {
+    Value::Function(function) => Some(function),
+    _ => None,
+  }.unwrap();
+  return call_ctx.call_function(call_function_define, None, None, new_args);
 }
 
 // Function.prototype.bind
@@ -123,13 +131,15 @@ fn function_bind(ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   if args.len() > 0 {
     this = args[0].clone();
   }
-  let reference = &ctx.reference;
-  let ref_fun_wk = reference.as_ref().unwrap();
-  let fun = ref_fun_wk.upgrade().unwrap();
-  let fun_obj = fun.borrow();
-  let mut new_fun = fun_obj.force_copy();
-  new_fun.set_inner_property_value(String::from("this"), this);
-  Ok(Value::Function(Rc::new(RefCell::new(new_fun))))
+  if let Value::Function(function_object) = &ctx.this {
+    let fun_obj = function_object.borrow();
+    let mut new_fun = fun_obj.force_copy();
+    new_fun.set_inner_property_value(String::from("this"), this);
+    Ok(Value::Function(Rc::new(RefCell::new(new_fun))))
+  } else {
+    Err(JSIError::new(JSIErrorType::TypeError, format!("Bind must be called on a function
+    "), 0, 0))
+  }
 }
 
 pub fn get_function_this(ctx: &mut Context, func: Rc<RefCell<Object>>)-> Rc<RefCell<Object>> {
