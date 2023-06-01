@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array, create_array_from_values}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}};
 
 
 use super::ast::AST;
@@ -251,15 +251,19 @@ impl Context {
         },
         Expression::PropertyAccess(property_access) => {
           // expression.name
-          let left = self.execute_expression(&property_access.expression)?;
+          let left_info = self.execute_expression_info(&property_access.expression)?;
+          let left = left_info.value;
           if left.is_equal_to(self, &Value::Null, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", property_access.name.literal), 0, 0))
           }
+          if left.is_equal_to(self, &Value::Undefined, true) {
+            return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of undefined (reading '{}')", property_access.name.literal), 0, 0))
+          }
+          let left_clone = left.clone();
           let left_obj = left.to_object(self);
           let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
-          // println!("PropertyAccess: {:?} {:?}",left_obj, right);
-          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: String::from(""), reference: Some(Value::Object(left_obj)) })
+          Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: format!("{}.{}", left_info.access_path, property_access.name.literal), reference: Some(left_clone) })
         },
         Expression::ComputedPropertyName(property_name) => {
           Ok(ValueInfo { is_const: false, value: self.execute_expression(&property_name.expression)?, name: None, access_path: String::from(""), reference: None })
@@ -272,6 +276,9 @@ impl Context {
           let right = self.execute_expression(&element_access.argument)?.to_string(self);
           if left.is_equal_to(self, &Value::Null, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", right), 0, 0))
+          }
+          if left.is_equal_to(self, &Value::Undefined, true) {
+            return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of undefined (reading '{}')", right), 0, 0))
           }
           let value = (*left_obj).borrow().get_value(right.clone());
           Ok(ValueInfo { is_const: false, value, name: Some(right.clone()),  access_path: String::from(""),reference: Some(Value::Object(left_obj)) })
@@ -322,6 +329,14 @@ impl Context {
               Keywords::False => Value::Boolean(false),
               Keywords::True => Value::Boolean(true),
               Keywords::Null => Value::Null,
+              Keywords::This => {
+                let scope = self.cur_scope.borrow();
+                if let Some(this) = &scope.this {
+                  this.clone()
+                } else {
+                  Value::Undefined
+                }
+              },
               _ => Value::Undefined,
             },
             name: None,
@@ -354,7 +369,6 @@ impl Context {
     // 执行基础四则运算
     fn execute_binary_expression(&mut self, expression: &BinaryExpression) -> JSIResult<Value> {
       let left = self.execute_expression(expression.left.as_ref())?;
-      
       // 逻辑运算 左值
       if expression.operator == Token::LogicalAnd {
         // false &&
@@ -380,7 +394,6 @@ impl Context {
           return Ok(Value::Boolean(true));
         }
       }
-
       match expression.operator {
         Token::Equal => {
           return Ok(Value::Boolean(left.is_equal_to(self, &right, false)));
@@ -483,18 +496,19 @@ impl Context {
       for arg in expression.arguments.iter() {
         arguments.push(self.execute_expression(arg)?);
       }
-
       match &callee.value {
         Value::Function(function_object) => {
           let mut reference = None;
           if let Some(call_ref) = &callee.reference {
             reference = call_ref.to_weak_rc_object();
           }
+          // TODO: call this
           return self.call_function_object(function_object.to_owned(), callee.reference, reference, arguments);
         },
         Value::RefObject(obj_ref) => {
           let obj = obj_ref.upgrade();
           if let Some(obj_rc) = obj {
+            // 全局对象调用，可以认为是 new 
             let is_global_object = {
               let function_mut = obj_rc.borrow_mut();
               function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
@@ -547,7 +561,7 @@ impl Context {
       }
       match oper {
         Token::Assign => {
-          left_info.set_value(right_value.clone())?;
+          left_info.set_value(self, right_value.clone())?;
           Ok(left_info.value)
         },
         _ => {
@@ -606,7 +620,7 @@ impl Context {
             }
             let value = Value::Number(new_value);
             if is_need_set_value {
-              operand_info.set_value(value.clone())?;
+              operand_info.set_value(self, value.clone())?;
             }
             value
           } else {
@@ -640,7 +654,7 @@ impl Context {
       } else {
         Value::NAN
       };
-      operand_info.set_value(value)?;
+      operand_info.set_value(self, value)?;
       Ok(origin_value)
     }
 
@@ -787,15 +801,40 @@ impl Context {
     fn execute_new_expression(&mut self, new_object: &NewExpression) -> JSIResult<Value> {
       let constructor = self.execute_expression_info(new_object.expression.as_ref())?;
       let mut arguments: Vec<Value> = vec![];
-        for element in &new_object.arguments {
-          arguments.push(self.execute_expression(element)?);
+      for element in &new_object.arguments {
+        arguments.push(self.execute_expression(element)?);
+      }
+
+      // new function
+      if let Value::Function(function_declare) = &constructor.value {
+       
+        let prototype = {
+          let func_clone = Rc::clone(function_declare);
+          let func_borrow = func_clone.borrow();
+          func_borrow.prototype.clone()
+        };
+        
+        if let Some(proto) = prototype {
+          let obj = create_object(self, ClassType::Object, None);
+           // 绑定当前对象的原型
+           {
+            let obj_clone = Rc::clone(&obj);
+            let mut obj_borrowed = obj_clone.borrow_mut();
+            obj_borrowed.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&proto)));
+           }
+           
+           // 执行构造函数
+          self.call_function_object(Rc::clone(function_declare), Some(Value::Object(Rc::clone(&obj))), None, arguments)?;
+          return Ok(Value::Object(obj))
         }
+      }
+
       let obj = constructor.value.instantiate_object(self, arguments);
       if let Ok(obj) = obj {
-        Ok(obj)
-      } else {
-        Err(JSIError::new(JSIErrorType::TypeError, format!("{} is not a constructor", constructor.access_path), 0, 0))
+        return Ok(obj)
       }
+
+      return Err(JSIError::new(JSIErrorType::TypeError, format!("{} is not a constructor", constructor.access_path), 0, 0))
     }
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> JSIResult<Value> {
@@ -807,6 +846,7 @@ impl Context {
       let mut normal_propertys: Vec<(String, Value)> = vec![];
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
+        let x = self.execute_expression(&property.name);
         let name = self.execute_expression(&property.name)?.to_string(self);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
@@ -838,10 +878,9 @@ impl Context {
         for element in &expression.elements {
           arguments.push(self.execute_expression(element)?);
         }
-        let weak = Rc::downgrade(arr_obj);
         let call_ctx = &mut CallContext {
           ctx: self,
-          this: weak,
+          this: Value::Array(Rc::clone(arr_obj)),
           reference: None,
         };
         Object::call(call_ctx, String::from("push"), arguments)?;
@@ -850,32 +889,31 @@ impl Context {
     }
 
     // 调用方法
+    // call_this 指向调用时的 this
+    // reference 指向
     pub fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
       // 获取 function 定义
-      let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
+      let function_define_value =(*function_define).borrow_mut().get_initializer().unwrap();
       // 获取 function 调用的 this
-      let mut this_obj = Rc::clone(&function_define);
-      if let Some(call_this_value) = call_this {
-        if let Value::Object(obj) = call_this_value {
-          this_obj = obj;
-        } else if let Value::Array(obj) = call_this_value {
-          this_obj = obj;
-        } else if let Value::Function(func) = call_this_value {
-          this_obj = get_function_this(self, func);
+      let this_obj = match (*function_define).borrow_mut().get_inner_property_value(String::from("this")) {
+        Some(bind_this_value) => bind_this_value,
+        _ =>{
+          if let Some(call_this_value) = call_this {
+            call_this_value
+          } else {
+            Value::Undefined
+          }
         }
-      }
+      };
+     
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
         let mut ctx = CallContext{
           ctx: self,
-          this: Rc::downgrade(&this_obj),
+          this: this_obj,
           reference: reference,
         };
-        let result = (builtin_function)(&mut ctx, arguments)?;
-        if let Value::FunctionNeedToCall(function_define, args) = result {
-          return self.call_function_object(function_define.clone(), Some(Value::Function(function_define)), None, args);
-        }
-        return Ok(result);
+        return (builtin_function)(&mut ctx, arguments);
       }
 
       let function_declaration =  match *function_define_value {
@@ -883,7 +921,7 @@ impl Context {
         _ => None,
       }.unwrap();
       // 创建新的执行作用域
-      let define_scope =  (*function_define).borrow_mut().get_inner_property_value(String::from("define_scope"));
+      let define_scope = (*function_define).borrow_mut().get_inner_property_value(String::from("define_scope"));
       let mut define_scope_value = None;
       if let Some(scope_value) = define_scope {
         if let Value::Scope(scope) = scope_value {
@@ -904,6 +942,7 @@ impl Context {
         }
       }
       (*self.cur_scope).borrow_mut().set_value(String::from("arguments"), Value::Object(argument_object), false);
+      (*self.cur_scope).borrow_mut().this = Some(this_obj);
       // 绑定参数
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {

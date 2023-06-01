@@ -35,6 +35,6 @@ fn run_array_typeof() {
   let mut jsi = JSI::new();
   let result = jsi.run(String::from("\
   let num = [1,2];
-  typeof num")).unwrap();
-  assert_eq!(result , Value::String(String::from("object")));
+  num.concat([2,3], 4).join(',') + typeof num")).unwrap();
+  assert_eq!(result , Value::String(String::from("1,2,2,3,4object")));
 }

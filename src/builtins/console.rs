@@ -16,6 +16,7 @@ pub fn create_console(ctx: &mut Context) -> Rc<RefCell<Object>> {
 
 // console.log
 fn console_log(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  println!("args {:?}", args);
   let mut strs: Vec<String> = vec![];
   for arg in args.iter() {
     strs.push(arg.to_string(call_ctx.ctx));

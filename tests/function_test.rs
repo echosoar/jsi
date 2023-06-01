@@ -74,3 +74,18 @@ fn run_arrow_function() {
   a(1, 'a', false) + a.name + b(2) + b.name + c(3) + c.name + d(4,5);")).unwrap();
   assert_eq!(result , Value::String(String::from("11afalsea22b33c2,4,5,5,4")));
 }
+
+#[test]
+fn run_new_function() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run(String::from("\
+  let a = function(a, b ,c) {
+    this.name = a + b + c;
+  }
+  a.prototype.age = 456;
+  let b = new a(1,'2', false);
+  b.age + b.name;
+  ")).unwrap();
+  assert_eq!(result , Value::String(String::from("45612false")));
+}

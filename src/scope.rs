@@ -9,6 +9,8 @@ pub struct Scope {
   pub from: Option<Rc<RefCell<Scope>>>,
   pub childs: Vec<Rc<RefCell<Scope>>>,
   pub labels: Vec<String>,
+  // 当前上下文的 this
+  pub this: Option<Value>,
   variables: HashMap<String, VariableInfo>
 }
 
@@ -26,6 +28,7 @@ impl Scope {
       childs: vec![],
       parent: None,
       from: None,
+      this: None,
       labels: vec![],
       variables: HashMap::new(),
     }

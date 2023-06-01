@@ -25,7 +25,7 @@ pub struct ValueInfo {
 }
 
 impl ValueInfo {
-  pub fn set_value(&mut self, value: Value) -> JSIResult<Option<String>> {
+  pub fn set_value(&mut self, ctx: &mut Context,value: Value) -> JSIResult<Option<String>> {
     if self.name == None {
       return  Err(JSIError::new(JSIErrorType::SyntaxError, format!("Invalid left-hand side in assignment"), 0, 0));
     }
@@ -39,13 +39,6 @@ impl ValueInfo {
     };
     if let Some(reference) = &self.reference {
       match reference {
-          Value::Object(object) => {
-            object.borrow_mut().define_property( name.clone(), Property {
-              enumerable: false,
-              value: value,
-            });
-            Ok(None)
-          },
           Value::Scope(scope) => {
             let scope_rc = scope.upgrade();
             if let Some(scope)= scope_rc {
@@ -53,7 +46,14 @@ impl ValueInfo {
             }
             Ok(None)
           },
-          _ => Ok(Some(name.clone()))
+          _ => {
+            let object = reference.to_object(ctx);
+            object.borrow_mut().define_property( name.clone(), Property {
+              enumerable: false,
+              value: value,
+            });
+            Ok(None)
+          }
       }
     } else {
       // TODO: no reference set value
@@ -82,7 +82,6 @@ pub enum Value {
   NAN,
   RefObject(Weak<RefCell<Object>>),
   Scope(Weak<RefCell<Scope>>),
-  FunctionNeedToCall(Rc<RefCell<Object>>,Vec<Value>),
   // 中断
   Interrupt(Token,Expression),
 }
@@ -210,18 +209,10 @@ impl Value {
       },
       Value::NAN => String::from("NaN"),
       _ => {
-        // object
-        let object: Option<&Rc<RefCell<Object>>> = match self {
-          Value::Array(obj) => Some(obj),
-          Value::Function(obj) => Some(obj),
-          Value::Object(obj) => Some(obj),
-          _ => None
-        };
-        if let Some(obj) = object {
-          let weak = Rc::downgrade(obj);
+        if let Value::Object(_) | Value::Array(_) | Value::Function(_) = self {
           let call_ctx = &mut CallContext {
             ctx,
-            this: weak,
+            this: self.clone(),
             reference: None,
           };
           let value = Object::call(call_ctx, String::from("toString"), vec![]);
@@ -306,7 +297,7 @@ impl Value {
             if let Statement::BuiltinFunction(builtin_function) = function_define_value.as_ref() {
               let mut call_ctx = CallContext{
                 ctx,
-                this: Rc::downgrade(&function_define),
+                this: Value::Function(Rc::clone(function_define)),
                 reference: None,
               };
               return (builtin_function)(&mut call_ctx, args);
@@ -319,6 +310,7 @@ impl Value {
   }
 
   pub fn to_object(&self, ctx: &mut Context) -> Rc<RefCell<Object>> {
+    // TODO: Cannot convert undefined or null to object
     let obj_value = self.to_object_value(ctx);
     match obj_value {
       Value::StringObj(obj) => {
@@ -387,7 +379,7 @@ impl Value {
     if let Some(type_obj) = base_type_obj {
       let mut call_ctx = CallContext{
         ctx,
-        this: Rc::downgrade(&type_obj.1),
+        this: self.clone(),
         reference: None,
       };
       // 不会出错
@@ -448,6 +440,19 @@ impl Value {
       Value::BooleanObj(_) => ValueType::Boolean,
       Value::Null => ValueType::Null,
       Value::Undefined => ValueType::Undefined,
+      Value::RefObject(refobj) => {
+        let origin = refobj.upgrade();
+        if let Some(origin) = &origin {
+          let origin_clone = Rc::clone(&origin);
+          let origin_borrow = origin_clone.borrow();
+          return match &origin_borrow.class_type {
+            // TODO: more type
+            ClassType::Function => ValueType::Function,
+            _ => ValueType::Object
+          }
+        }
+        ValueType::Object
+      },
       _ => {
         // TODO: more
         ValueType::NAN
