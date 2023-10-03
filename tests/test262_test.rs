@@ -228,7 +228,7 @@ fn test_all_262() {
         make_dir(&String::from("test262/test/intl402")),
     ];
     let only_list: Vec<PathBuf> =vec![
-        // make_dir(&String::from("test262/test/built-ins/Object/prototype/hasOwnProperty/S15.2.4.5_A6.js")),
+        make_dir(&String::from("test262/test/built-ins/Object/prototype/hasOwnProperty/S15.2.4.5_A6.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);
