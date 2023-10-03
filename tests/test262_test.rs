@@ -34,7 +34,9 @@ impl Test262Dir {
                 jsi.set_strict(!file.no_strict);
                 // println!("run: {:?}", code);
                 let result = jsi.run(format!("{}\n{}", preload_code, file.code));
-                // println!("result: {:?}", result);
+                if only_list.len() > 0 {
+                    println!("result: {:?}", result);
+                }
                 return result;
             });
             if result.is_err() {
@@ -219,7 +221,7 @@ fn make_dir(dir: &String) -> PathBuf {
 fn test_all_262() {
     let preload_list = vec![
         load_harness("harness/assert.js"),
-        // load_harness("harness/sta.js"),
+        load_harness("harness/sta.js"),
         load_harness("harness/compareArray.js"),
     ];
     let prelaod = preload_list.join("\n");
@@ -228,7 +230,7 @@ fn test_all_262() {
         make_dir(&String::from("test262/test/intl402")),
     ];
     let only_list: Vec<PathBuf> =vec![
-        make_dir(&String::from("test262/test/built-ins/Object/prototype/hasOwnProperty/S15.2.4.5_A6.js")),
+        // make_dir(&String::from("test262/test/built-ins/String/prototype/charAt/pos-coerce-err.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);

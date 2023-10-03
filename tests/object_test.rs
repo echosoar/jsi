@@ -178,3 +178,21 @@ fn run_object_value() {
 ")).unwrap();
   assert_eq!(result , Value::String(String::from("1,2,a,c")));
 }
+
+#[test]
+fn run_object_test() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  const person = {
+    isHuman: false,
+    printIntroduction: function () {
+      return `My name is ${this.name}. Am I human? ${this.isHuman}`;
+    },
+  };
+  const me = Object.create(person);
+  me.name = 'Matthew';
+  me.isHuman = true;
+  me.printIntroduction();
+")).unwrap();
+  assert_eq!(result , Value::String(String::from("My name is Matthew. Am I human? true")));
+}

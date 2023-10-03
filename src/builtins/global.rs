@@ -49,7 +49,10 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
       let mut object_borrow = object_rc.borrow_mut();
       // 绑定当前对象的原型
       object_borrow.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), empty_native_function.clone());
+      // 标记是全局对象
       object_borrow.set_inner_property_value(IS_GLOABL_OBJECT.to_string(), Value::Boolean(true));
+      // 添加对象 name
+      object_borrow.set_inner_property_value(String::from("name"), Value::String(name.to_string()));
       global_obj.property.insert(name.to_string(), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
     }
   }

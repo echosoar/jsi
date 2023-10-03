@@ -53,7 +53,7 @@ impl JSIError {
       if let Some(value) = &self.value {
         return value.to_object(ctx);
       }
-      let new_error = create_error(ctx, Value::String(self.message.clone()));
+      let new_error = create_error(ctx, Value::String(self.message.clone()), String::from(""));
       // TODO: set error line/stack
       let obj = if let Value::Object(obj) = new_error {
         Some(obj)

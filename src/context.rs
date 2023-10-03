@@ -442,7 +442,7 @@ impl Context {
 
     }
 
-    // 执行方法调用表达式
+    // 执行数字运算表达式
     fn execute_number_operator_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
       let left_number: f64;
       let right_number: f64;
