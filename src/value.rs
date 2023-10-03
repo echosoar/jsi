@@ -74,12 +74,13 @@ pub enum Value {
   Object(Rc<RefCell<Object>>),
   Function(Rc<RefCell<Object>>),
   Array(Rc<RefCell<Object>>),
-  // 3 中包装对象
+  // 3 种基础数据类型的包装对象
   StringObj(Rc<RefCell<Object>>),
   NumberObj(Rc<RefCell<Object>>),
   BooleanObj(Rc<RefCell<Object>>),
   // 其他
   NAN,
+  // 一般是指向自己等情况
   RefObject(Weak<RefCell<Object>>),
   Scope(Weak<RefCell<Scope>>),
   // 中断
@@ -363,6 +364,28 @@ impl Value {
       Value::BooleanObj(_) => true,
       Value::Undefined => true,
       Value::Null => true,
+      _ => false
+    }
+  }
+
+  // check value is null of undefined
+  pub fn is_not_strict_null(&self) -> bool {
+    match self {
+      Value::Undefined => true,
+      Value::Null => true,
+      _ => false
+    }
+  }
+
+   // check value is Object
+   pub fn is_object(&self) -> bool {
+    match self {
+      Value::StringObj(_) => true,
+      Value::NumberObj(_) => true,
+      Value::BooleanObj(_) => true,
+      Value::Function(_) => true,
+      Value::Array(_) => true,
+      Value::Object(_) => true,
       _ => false
     }
   }

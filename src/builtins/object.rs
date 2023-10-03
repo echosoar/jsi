@@ -39,7 +39,9 @@ impl Object {
   pub fn new(obj_type: ClassType, value: Option<Box<Statement>>) -> Object {
     Object {
       class_type: obj_type,
+      // 设置或添加的属性
       property: HashMap::new(),
+      // 内置属性
       inner_property: HashMap::new(),
       property_list: vec![],
       prototype: None,
@@ -126,6 +128,12 @@ impl Object {
     if let Some(prop) = prop {
       return prop.value.clone()
     } else {
+      // 先获取内置属性
+      let prop = self.get_inner_property_value(name.clone());
+      if let Some(prop_value) = prop {
+        return prop_value;
+      }
+      // 从 [[Prpperty]] 上获取原型链，从原型链上获取
       let proto = self.get_inner_property_value(PROTO_PROPERTY_NAME.to_string());
       if let Some(proto_value) = &proto{
         if let Value::RefObject(proto_obj) = proto_value {
@@ -140,6 +148,7 @@ impl Object {
               if let Some(property) = prop {
                 return property.value.clone()
               } else {
+                // 从 [[Prpperty]] 上获取
                 let new_proto = proto.get_inner_property_value(PROTO_PROPERTY_NAME.to_string());
                 if let Some(new_proto) = new_proto {
                   if let Value::RefObject(new_proto_obj) = new_proto {
@@ -217,6 +226,9 @@ pub fn bind_global_object(ctx: &mut Context) {
 
   // 绑定实例化方法
   let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
+
+  // prototype
+  let object_create_fun = builtin_function(ctx, String::from("create"), 2f64, object_create);
   let object_has_own_fun = builtin_function(ctx, String::from("hasOwn"), 2f64, object_has_own);
   let object_keys_fun = builtin_function(ctx, String::from("keys"), 1f64, object_keys);
   let object_get_own_property_names_fun = builtin_function(ctx, String::from("getOwnPropertyNames"), 1f64, object_get_own_property_names);
@@ -228,6 +240,11 @@ pub fn bind_global_object(ctx: &mut Context) {
   let mut obj = (*obj_rc).borrow_mut();
   obj.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
   let property = obj.property.borrow_mut();
+
+  // Object.create
+  let name = String::from("create");
+  property.insert(name.clone(), Property { enumerable: true, value: object_create_fun  });
+
 
   // Object.hasOwn
   let name = String::from("hasOwn");
@@ -241,7 +258,7 @@ pub fn bind_global_object(ctx: &mut Context) {
   let name = String::from("getOwnPropertyNames");
   property.insert(name.clone(), Property { enumerable: true, value: object_get_own_property_names_fun });
 
-  // Object.keys
+  // Object.getPrototypeOf
   let name = String::from("getPrototypeOf");
   property.insert(name.clone(), Property { enumerable: true, value: object_get_prototype_of_fun });
 
@@ -262,6 +279,31 @@ pub fn bind_global_object(ctx: &mut Context) {
     prototype.define_property(name.clone(), Property { enumerable: true, value: object_to_string_fun });
   }
  
+}
+
+
+// Object.create()
+fn object_create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  if args.len() == 0 {
+    // undefined
+    return Err(JSIError::new(crate::error::JSIErrorType::TypeError, format!("Object prototype may only be an Object or null: undefined"), 0, 0))
+  }
+
+  let new_object = create_object(call_ctx.ctx, ClassType::Object, None);
+
+  let proto_arg = &args[0];
+  let object_clone = Rc::clone(&new_object);
+  let mut object_mut = (*object_clone).borrow_mut();
+  if proto_arg.is_object() {
+    // 绑定 [[Prototype]] = arg[0]
+    let proto = proto_arg.to_object(call_ctx.ctx);
+    object_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&proto)));
+  } else if proto_arg.is_not_strict_null() {
+    // null
+    object_mut.inner_property.clear();
+  }
+  // TODO: propertiesObject
+  return Ok(Value::Object(new_object));
 }
 
 // Object.hasOwn()
@@ -378,6 +420,7 @@ fn to_string(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
  Ok( Value::String(obj_type))
 }
 
+// 实例化方法 new Object()
 fn create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   if args.len() > 0 {
     let obj = args[0].to_object_value(call_ctx.ctx);
