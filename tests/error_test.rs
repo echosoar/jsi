@@ -169,3 +169,16 @@ fn run_arrow_function_error() {
     assert!(false , "need SyntaxError");
   }
 }
+
+#[test]
+fn run_error_test() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  var e = new Error('123');
+  console.log('e', e.constructor);
+  "));
+  if let Err(jsi_error) = result {
+    assert_eq!(jsi_error.error_type, JSIErrorType::SyntaxError);
+    assert_eq!(jsi_error.message , String::from("Duplicate parameter name not allowed in this context"));
+  }
+}

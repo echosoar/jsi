@@ -136,35 +136,40 @@ impl Object {
       // 从 [[Prpperty]] 上获取原型链，从原型链上获取
       let proto = self.get_inner_property_value(PROTO_PROPERTY_NAME.to_string());
       if let Some(proto_value) = &proto{
-        if let Value::RefObject(proto_obj) = proto_value {
-          // 获取到 __proto__ == Constroctor.prototype
-          let proto_op = proto_obj.upgrade();
-          if let Some(proto) =proto_op {
-            let mut proto_rc = proto;
-            loop {
-              let proto_rc_clone = Rc::clone(&proto_rc);
-              let proto = proto_rc_clone.borrow();
-              let prop = proto.property.get(&name);
-              if let Some(property) = prop {
-                return property.value.clone()
-              } else {
-                // 从 [[Prpperty]] 上获取
-                let new_proto = proto.get_inner_property_value(PROTO_PROPERTY_NAME.to_string());
-                if let Some(new_proto) = new_proto {
-                  if let Value::RefObject(new_proto_obj) = new_proto {
-                    let new_proto_op = new_proto_obj.upgrade();
-                    if let Some(proto) = new_proto_op {
-                      proto_rc = Rc::clone(&proto);
-                      continue;
-                    }
+        let obj = match proto_value {
+          Value::RefObject(proto_obj)=> {
+            proto_obj.upgrade()
+          },
+          Value::Object(obj)=> {
+            Some(Rc::clone(obj))
+          },
+          _ => None,
+        };
+
+        if let Some(proto) = obj {
+          let mut proto_rc = proto;
+          loop {
+            let proto_rc_clone = Rc::clone(&proto_rc);
+            let proto = proto_rc_clone.borrow();
+            let prop = proto.property.get(&name);
+            if let Some(property) = prop {
+              return property.value.clone()
+            } else {
+              // 从 [[Prpperty]] 上获取
+              let new_proto = proto.get_inner_property_value(PROTO_PROPERTY_NAME.to_string());
+              if let Some(new_proto) = new_proto {
+                if let Value::RefObject(new_proto_obj) = new_proto {
+                  let new_proto_op = new_proto_obj.upgrade();
+                  if let Some(proto) = new_proto_op {
+                    proto_rc = Rc::clone(&proto);
+                    continue;
                   }
                 }
               }
-              break;
             }
+            break;
           }
         }
-        
       }
     }
     Value::Undefined

@@ -2,7 +2,7 @@ use std::cell::{RefCell};
 use std::rc::{Rc};
 
 use crate::ast_node::ClassType;
-use crate::constants::{GLOBAL_OBJECT_NAME_LIST, GLOBAL_OBJECT_NAME, PROTO_PROPERTY_NAME};
+use crate::constants::{GLOBAL_OBJECT_NAME_LIST, GLOBAL_OBJECT_NAME, PROTO_PROPERTY_NAME, GLOBAL_ERROR_NAME, GLOBAL_TYPE_ERROR_NAME};
 use crate::value::Value;
 use crate::context::{Context};
 use super::array::bind_global_array;
@@ -21,6 +21,8 @@ pub fn new_global_object() -> Rc<RefCell<Object>> {
   let mut object_mut = (*object_clone).borrow_mut();
 
   // 创建原型对象 prototype
+  // Object.prototype 是所有对象的原型
+  // 原型上面的方法，通过 bind_global_object 挂载
   let prototype =  Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
   let prototype_clone = Rc::clone(&prototype);
   let mut prototype_mut = prototype_clone.borrow_mut();
@@ -32,23 +34,45 @@ pub fn new_global_object() -> Rc<RefCell<Object>> {
   object
 }
 
-
 // 全局对象
 pub fn new_global_this() -> Rc<RefCell<Object>> {
-  // TODO： 需要是一个 functcion
-  let empty_native_function = Value::Undefined;
+  // 先创建全局 Object，以及 Object.prototype
+  let first_obj = new_global_object();
+  let first_obj_clone = Rc::clone(&first_obj);
+  let mut first_obj_borrow = (*first_obj_clone).borrow_mut();
+  first_obj_borrow.set_inner_property_value(IS_GLOABL_OBJECT.to_string(), Value::Boolean(true));
+  first_obj_borrow.set_inner_property_value(String::from("name"), Value::String(GLOBAL_OBJECT_NAME.to_string()));
+  // native function
+  let native_function = new_global_object();
+  {
+    let native_function_rc = Rc::clone(&native_function);
+    let mut native_borrow = native_function_rc.borrow_mut();
+    // 绑定 native_function的原型到全局 Object.prototype
+    // Object['__proto__'] === native_function
+    first_obj_borrow.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&native_function)));
+    // native_function.__proto__ === Object['__proto__'].__proto__ === Object.prototype
+    if let Some(prop) = &first_obj_borrow.prototype {
+      native_borrow.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(prop)));
+    }
+  }
+  
   // Global
   let global = new_global_object();
   let global_clone = Rc::clone(&global);
   {
     let mut global_obj = global_clone.borrow_mut();
-    // 绑定全局对象
+    global_obj.property.insert(GLOBAL_OBJECT_NAME.to_string(), Property { enumerable: true, value: Value::Object(Rc::clone(&first_obj))});
+    // 创建并绑定全局对象
     for name in GLOBAL_OBJECT_NAME_LIST.iter() {
+      if name == &GLOBAL_OBJECT_NAME {
+        continue;
+      }
       let object = new_global_object();
       let object_rc = Rc::clone(&object);
       let mut object_borrow = object_rc.borrow_mut();
       // 绑定当前对象的原型
-      object_borrow.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), empty_native_function.clone());
+      object_borrow.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::Object(Rc::clone(&native_function)));
+
       // 标记是全局对象
       object_borrow.set_inner_property_value(IS_GLOABL_OBJECT.to_string(), Value::Boolean(true));
       // 添加对象 name
@@ -71,10 +95,11 @@ pub fn bind_global(ctx: &mut Context) {
   bind_global_string(ctx);
   // 绑定  Boolean 的 静态方法 和 原型链方法
   bind_global_boolean(ctx);
-   // 绑定  Number 的 静态方法 和 原型链方法
-   bind_global_number(ctx);
+  // 绑定  Number 的 静态方法 和 原型链方法
+  bind_global_number(ctx);
   // 绑定  Error 的 静态方法 和 原型链方法
-  bind_global_error(ctx);
+  bind_global_error(ctx, GLOBAL_ERROR_NAME);
+  bind_global_error(ctx, GLOBAL_TYPE_ERROR_NAME);
 
   let obj_rc = get_global_object(ctx, GLOBAL_OBJECT_NAME.to_string());
   let obj_rc =  obj_rc.borrow();

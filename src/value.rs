@@ -210,10 +210,23 @@ impl Value {
       },
       Value::NAN => String::from("NaN"),
       _ => {
-        if let Value::Object(_) | Value::Array(_) | Value::Function(_) = self {
+        let call_this = match self {
+          Value::Object(_) | Value::Array(_) | Value::Function(_) => Some(self.clone()),
+          Value::RefObject(_ref) => {
+            let origin = _ref.upgrade();
+            if let Some(obj)= &origin {
+              let obj = Rc::clone(obj);
+              Some(Value::Object(obj))
+            } else {
+              None
+            }
+          }
+          _=> None
+        };
+        if let Some(this) = call_this {
           let call_ctx = &mut CallContext {
             ctx,
-            this: self.clone(),
+            this,
             reference: None,
           };
           let value = Object::call(call_ctx, String::from("toString"), vec![]);

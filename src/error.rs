@@ -1,4 +1,5 @@
 use std::{result, rc::Rc, cell::RefCell};
+use crate::constants::{GLOBAL_ERROR_NAME, GLOBAL_TYPE_ERROR_NAME};
 use crate::context::{Context};
 use crate::{builtins::{object::Object, error::create_error}, value::Value};
 
@@ -27,6 +28,13 @@ impl JSIErrorType {
         JSIErrorType::Unknown => String::from("Unknown"),
     }
   }
+  // 转换为全局错误对象名称
+  pub fn to_global_error_type(&self) -> &str {
+    match self {
+        JSIErrorType::TypeError => GLOBAL_TYPE_ERROR_NAME,
+        _ => GLOBAL_ERROR_NAME,
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +61,7 @@ impl JSIError {
       if let Some(value) = &self.value {
         return value.to_object(ctx);
       }
-      let new_error = create_error(ctx, Value::String(self.message.clone()), String::from(""));
+      let new_error = create_error(ctx, Value::String(self.message.clone()), self.error_type.to_global_error_type());
       // TODO: set error line/stack
       let obj = if let Value::Object(obj) = new_error {
         Some(obj)
