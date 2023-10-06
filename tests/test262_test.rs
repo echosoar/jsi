@@ -223,6 +223,7 @@ fn test_all_262() {
         load_harness("harness/assert.js"),
         load_harness("harness/sta.js"),
         load_harness("harness/compareArray.js"),
+        load_harness("harness/propertyHelper.js"),
     ];
     let prelaod = preload_list.join("\n");
     let ignore_list: Vec<PathBuf> =vec![
@@ -230,7 +231,8 @@ fn test_all_262() {
         make_dir(&String::from("test262/test/intl402")),
     ];
     let only_list: Vec<PathBuf> =vec![
-        // make_dir(&String::from("test262/test/built-ins/String/prototype/charAt/pos-coerce-err.js")),
+        make_dir(&String::from("test262/test/built-ins/String/prototype/charAt/name.js")),
+        // make_dir(&String::from("test262/test/language/arguments-object/10.6-13-a-2.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);

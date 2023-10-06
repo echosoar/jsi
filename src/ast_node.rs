@@ -177,6 +177,12 @@ pub struct LabeledStatement {
   pub statement: Box<Statement>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForOper {
+  For,
+  In,
+  Of
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ForStatement {
@@ -184,7 +190,9 @@ pub struct ForStatement {
   pub condition: Expression,
   pub incrementor: Expression,
   pub statement: Box<Statement>,
+  // 是否为后置检查
   pub post_judgment: bool,
+  pub oper: ForOper,
 }
 
 
@@ -389,7 +397,7 @@ pub struct  PropertyAssignment {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VariableDeclaration {
   pub name: String,
-  pub initializer: Box<Expression>
+  pub initializer: Box<Expression>,
 }
 
 

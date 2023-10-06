@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression, ForOper};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -194,12 +194,19 @@ impl AST{
     } else {
       self.check_token_and_next(Token::Var)?;
     }
-    
     let var_statement = VariableDeclarationStatement {
       list: self.parse_variable_declarations()?,
       flag: variable_flag,
     };
-    self.semicolon()?;
+    let mut is_need_skip_check_semicolon = false;
+    // for in 和 for of 
+    if self.token == Token::In || self.token == Token::Of {
+      is_need_skip_check_semicolon = true;
+    }
+    if !is_need_skip_check_semicolon {
+      self.semicolon()?;
+    }
+
     return Ok(Statement::Var(var_statement));
   }
 
@@ -306,22 +313,37 @@ impl AST{
   // 解析 for 循环
   // TODO: for in/ of
   fn parse_for_statement(&mut self)  -> JSIResult<Statement> {
+    println!("for");
     self.check_token_and_next(Token::For)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
     // 解析 initializer
     // 需要额外处理 var 的情况
     let mut initializer = Statement::Unknown;
     if self.token == Token::Var || self.token == Token::Let || self.token == Token::Const {
-        initializer = self.parse_variable_statement()?;
+      initializer = self.parse_variable_statement()?;
     } else if self.token != Token::Semicolon {
       initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
       self.check_token_and_next(Token::Semicolon)?;
     }
-    self.not_declare_function_to_scope = true;
-    let condition = self.parse_expression()?;
-    self.not_declare_function_to_scope = false;
-    self.check_token_and_next(Token::Semicolon)?;
-    let incrementor = self.parse_expression()?;
+    let mut condition = Expression::Unknown;
+    let mut incrementor = Expression::Unknown;
+    let mut oper = ForOper::For;
+    if self.token == Token::In || self.token == Token::Of {
+      if self.token == Token::In {
+        oper = ForOper::In;
+      } else {
+        oper = ForOper::Of;
+      }
+      self.next();
+      condition = self.parse_expression()?;
+    } else {
+      self.not_declare_function_to_scope = true;
+      condition = self.parse_expression()?;
+      self.not_declare_function_to_scope = false;
+      self.check_token_and_next(Token::Semicolon)?;
+      incrementor = self.parse_expression()?;
+    }
+
     self.check_token_and_next(Token::RightParenthesis)?;
 
     let block = self.parse_block_statement()?;
@@ -331,6 +353,7 @@ impl AST{
       incrementor: incrementor,
       statement: Box::new(block),
       post_judgment: false,
+      oper,
     };
     return  Ok(Statement::For(statement));
   }
@@ -351,6 +374,7 @@ impl AST{
       incrementor: Expression::Unknown,
       statement: Box::new(block),
       post_judgment: false,
+      oper: ForOper::For
     };
     return  Ok(Statement::For(statement));
   }
@@ -372,6 +396,7 @@ impl AST{
       incrementor: Expression::Unknown,
       statement: Box::new(block),
       post_judgment: true,
+      oper: ForOper::For
     };
     return  Ok(Statement::For(statement));
   }
