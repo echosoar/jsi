@@ -7,12 +7,14 @@ use super::global::{get_global_object_prototype_by_name, get_global_object_by_na
 use super::{object::{create_object, Property},function::builtin_function};
 
  // ref:https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-error-objects
+ // 实例化 Error 对象
  pub fn create_error(ctx: &mut Context, init: Value, error_type: &str) -> Value {
   let global_error = get_global_object_by_name(ctx, error_type);
   let error = create_object(ctx, ClassType::Error, None);
   let error_clone = Rc::clone(&error);
   let mut error_mut = (*error_clone).borrow_mut();
 
+  // 将实例化的 error 对象的 __proto__ 指向全局的 Error.prototype
   let global_prototype = get_global_object_prototype_by_name(ctx, error_type);
   error_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&global_prototype)));
 
@@ -26,18 +28,14 @@ use super::{object::{create_object, Property},function::builtin_function};
 
 pub fn bind_global_error(ctx: &mut Context, error_type: &str) {
   // Error
-  
-  let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create);
+  let create_function = builtin_function(ctx, error_type.to_string(), 1f64, create);
 
   let error_rc = get_global_object_by_name(ctx, error_type);
   let mut error = (*error_rc).borrow_mut();
   error.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
-  // // TypeError
-  // let type_error_rc = get_global_object_by_name(ctx, GLOBAL_TYPE_ERROR_NAME);
-  // let mut type_error = (*type_error_rc).borrow_mut();
-  // let create_type_error_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, create_type_error);
-  // type_error.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_type_error_function);
-
+  if error_type != GLOBAL_ERROR_NAME {
+    return
+  }
   if let Some(prop)= &error.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = prototype_rc.borrow_mut();
@@ -52,17 +50,8 @@ fn create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   if args.len() > 0 {
     param = args[0].clone();
   }
-  Ok(create_error(call_ctx.ctx, param, GLOBAL_ERROR_NAME))
+  Ok(create_error(call_ctx.ctx, param, call_ctx.func_name.as_str()))
 }
-// create other global error type， e.g. TypeError
-// fn create_type_error(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
-//   let mut param = Value::Undefined;
-//   if args.len() > 0 {
-//     param = args[0].clone();
-//   }
-//   Ok(create_error(call_ctx.ctx, param, GLOBAL_TYPE_ERROR_NAME))
-// }
-
 
 // Error.prototype.toString
 fn to_string(_: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {

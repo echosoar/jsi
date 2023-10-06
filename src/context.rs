@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}};
+use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this, get_builtin_function_name}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}};
 
 
 use super::ast::AST;
@@ -882,6 +882,7 @@ impl Context {
           ctx: self,
           this: Value::Array(Rc::clone(arr_obj)),
           reference: None,
+          func_name: String::from("push")
         };
         Object::call(call_ctx, String::from("push"), arguments)?;
       }
@@ -893,7 +894,7 @@ impl Context {
     // reference 指向
     pub fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
       // 获取 function 定义
-      let function_define_value =(*function_define).borrow_mut().get_initializer().unwrap();
+      let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
       // 获取 function 调用的 this
       let this_obj = match (*function_define).borrow_mut().get_inner_property_value(String::from("this")) {
         Some(bind_this_value) => bind_this_value,
@@ -908,10 +909,12 @@ impl Context {
      
       // 内置方法
       if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
+        let func_name = get_builtin_function_name(self, &function_define);
         let mut ctx = CallContext{
           ctx: self,
           this: this_obj,
           reference: reference,
+          func_name,
         };
         return (builtin_function)(&mut ctx, arguments);
       }

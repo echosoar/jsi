@@ -149,3 +149,13 @@ pub fn get_function_this(ctx: &mut Context, func: Rc<RefCell<Object>>)-> Rc<RefC
   }
   return func
 }
+
+pub fn get_builtin_function_name(ctx: &mut Context, function_define: &Rc<RefCell<Object>>) -> String {
+  let fun_clone = Rc::clone(function_define);
+    let fun_obj = (*fun_clone).borrow_mut();
+    let name = fun_obj.get_property_value(String::from("name"));
+    if let Value::String(name) = name {
+      return name;
+    }
+    return String::from("")
+}

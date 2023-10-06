@@ -85,7 +85,9 @@ fn run_new_function() {
   }
   a.prototype.age = 456;
   let b = new a(1,'2', false);
-  b.age + b.name;
+  let c = a;
+  let d = a.bind(123);
+  b.age + b.name + (a === c) + (a === d);
   ")).unwrap();
-  assert_eq!(result , Value::String(String::from("45612false")));
+  assert_eq!(result , Value::String(String::from("45612falsetruefalse")));
 }

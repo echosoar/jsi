@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use crate::context::{Context};
 use super::array::create_array;
+use std::sync::atomic::{AtomicUsize, Ordering};
 // use super::array::new_array;
 use super::function::builtin_function;
 use super::global::{get_global_object, get_global_object_prototype_by_name, get_global_object_by_name};
@@ -11,6 +12,8 @@ use crate::ast_node::{Statement, CallContext, ClassType, BuiltinFunction};
 use crate::constants::{GLOBAL_OBJECT_NAME, PROTO_PROPERTY_NAME};
 use crate::error::{JSIResult, JSIError};
 use crate::value::{Value, INSTANTIATE_OBJECT_METHOD_NAME};
+
+static OBJECT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug,Clone)]
 // 对象
@@ -33,10 +36,14 @@ pub struct Object {
   pub constructor: Option<Weak<RefCell<Object>>>,
   // 对象的值
   value: Option<Box<Statement>>,
+  // 对象 id
+  id: usize,
 }
 
 impl Object {
   pub fn new(obj_type: ClassType, value: Option<Box<Statement>>) -> Object {
+    OBJECT_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let id = OBJECT_ID_COUNTER.load(Ordering::SeqCst);
     Object {
       class_type: obj_type,
       // 设置或添加的属性
@@ -47,11 +54,15 @@ impl Object {
       prototype: None,
       constructor: None,
       value,
+      id,
     }
   }
 
   // 强制拷贝
+  // 用于 function.bind，但是不能拷贝 id
   pub fn force_copy(&self) -> Object {
+    OBJECT_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let id = OBJECT_ID_COUNTER.load(Ordering::SeqCst);
     Object {
       class_type: self.class_type.clone(),
       property: self.property.clone(),
@@ -60,6 +71,7 @@ impl Object {
       prototype: self.prototype.clone(),
       constructor: self.constructor.clone(),
       value: self.value.clone(),
+      id
     }
   }
 
@@ -86,6 +98,10 @@ impl Object {
     }
     self.property.insert(name, property);
     return true;
+  }
+
+  pub fn get_id(&self) -> usize {
+    return self.id;
   }
 
   // 定义内置方法属性
@@ -343,6 +359,7 @@ fn object_keys(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
     ctx: call_ctx.ctx,
     this: Value::Array(Rc::clone(&array_obj)),
     reference: None,
+    func_name: String::from("push"),
   };
   let obj = obj_rc.borrow();
   for key in obj.property_list.iter() {
@@ -372,6 +389,7 @@ fn object_get_own_property_names(call_ctx: &mut CallContext, args: Vec<Value>) -
     ctx: call_ctx.ctx,
     this: Value::Array(Rc::clone(&array_obj)),
     reference: None,
+    func_name: String::from("push"),
   };
   let obj = obj_rc.borrow();
   for key in obj.property_list.iter() {

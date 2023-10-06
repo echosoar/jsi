@@ -144,7 +144,7 @@ pub fn get_global_object_by_name(ctx: &mut Context, name: &str) -> Rc<RefCell<Ob
   let obj = value.to_object(ctx);
   return obj;
 }
-
+// 获取全局对象的 prototype
 pub fn get_global_object_prototype_by_name(ctx: &mut Context, name: &str) -> Rc<RefCell<Object>> {
   let obj = get_global_object_by_name(ctx, name);
   let obj_clone = Rc::clone(&obj);

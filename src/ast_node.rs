@@ -395,6 +395,7 @@ pub struct VariableDeclaration {
 
 
 pub type BuiltinFunction = fn(&mut CallContext, Vec<Value>) -> JSIResult<Value>;
+// 方法调用的上下文
 pub struct CallContext<'a> {
   // 全局对象，globalThis
   pub ctx: &'a mut Context,
@@ -403,6 +404,7 @@ pub struct CallContext<'a> {
   // 引用，调用的发起方，比如  a.call()，reference 就是 a
   // 当直接调用 call() 的时候，refererce 是 None
   pub reference: Option<Weak<RefCell<Object>>>,
+  pub func_name: String,
 }
 
 impl <'a>CallContext<'a> {

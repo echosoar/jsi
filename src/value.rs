@@ -3,6 +3,7 @@ use std::rc::{Weak, Rc};
 use crate::ast_node::{Statement, IdentifierLiteral, ClassType, CallContext, Expression};
 use crate::ast_token::Token;
 use crate::builtins::boolean::create_boolean;
+use crate::builtins::function::get_builtin_function_name;
 use crate::builtins::number::create_number;
 use crate::builtins::object::{Object, Property};
 use crate::builtins::string::create_string;
@@ -228,6 +229,7 @@ impl Value {
             ctx,
             this,
             reference: None,
+            func_name: String::from("toString"),
           };
           let value = Object::call(call_ctx, String::from("toString"), vec![]);
           if let Ok(value) = value {
@@ -304,6 +306,7 @@ impl Value {
         if let Some(create_method) = &create_method {
           if let Value::Function(function_define) = create_method {
             // 获取 function 定义
+            let func_name = get_builtin_function_name(ctx, function_define);
             let fun_clone = Rc::clone(function_define);
             let fun_obj = (*fun_clone).borrow_mut();
             let function_define_value = fun_obj.get_initializer().unwrap();
@@ -313,6 +316,7 @@ impl Value {
                 ctx,
                 this: Value::Function(Rc::clone(function_define)),
                 reference: None,
+                func_name,
               };
               return (builtin_function)(&mut call_ctx, args);
             }
@@ -417,6 +421,7 @@ impl Value {
         ctx,
         this: self.clone(),
         reference: None,
+        func_name: String::from("valueOf"),
       };
       // 不会出错
       let value = Object::call(&mut call_ctx, String::from("valueOf"), vec![]).unwrap();
@@ -523,7 +528,10 @@ impl Value {
           if self_value.is_primitive_value() && other_value.is_primitive_value() {
             return self_value.to_number(ctx) == other_value.to_number(ctx);
           }
-          return false;
+          let left_obj_id = self_value.to_object(ctx).borrow().get_id();
+          let right_obj_id: Rc<RefCell<Object>> = other_value.to_object(ctx);
+          
+          return left_obj_id == right_obj_id.borrow().get_id();
         },
     }
   }
