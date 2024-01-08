@@ -82,7 +82,7 @@ fn run_for_in() {
   for(var name in obj) {
     a.push(name);
   }
-  a.join(':')")).unwrap();
+  a.join(',')")).unwrap();
   assert_eq!(result , Value::String(String::from("name,age")));
 }
 

@@ -688,6 +688,27 @@ impl Context {
 
       // TODO: for in / for of
       if for_statment.oper == ForOper::In || for_statment.oper == ForOper::Of {
+        //  创建迭代器，迭代器的返回值
+        /*
+         iterator.next = (index) => {
+            var xxx = indexList[i]
+            if (for_statment.oper == ForOper::In) {
+              return xxx;
+            }
+            return obj[indexList[i]];
+         }
+
+         iterator.iterator = () => {
+          index = index + 1;
+         }
+
+        for(let i; i < indexList.length;i ++) {
+          // for in === var xxx = indexList[i];
+          // for of === var xxx = obj[indexList[i]];
+        }
+        */
+       
+        println!("{:?}", for_statment);
         return Ok(true)
       }
 
