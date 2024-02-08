@@ -25,6 +25,7 @@ pub enum Token {
   In,
   Instanceof,
   New,
+  Of,
   Return,
   Super,
   Switch,

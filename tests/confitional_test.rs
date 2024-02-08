@@ -72,6 +72,20 @@ fn run_for_break_continue_label() {
   assert_eq!(result , Value::String(String::from("0:0:0:0:0:0:2:4")));
 }
 
+
+#[test]
+fn run_for_in() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  const obj = { name: 'abc', age: 123};
+  const a = [];
+  for(var name in obj) {
+    a.push(name);
+  }
+  a.join(',')")).unwrap();
+  assert_eq!(result , Value::String(String::from("name,age")));
+}
+
 #[test]
 fn run_while_break_continue_label() {
   let mut jsi = JSI::new();

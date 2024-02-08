@@ -283,7 +283,6 @@ fn ast_lexer_priority_between_exponentiation_shift() {
   })]);
 }
 
-
 #[test]
 fn ast_lexer_complex() {
   let mut jsi_vm = JSI::new();
