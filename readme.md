@@ -1,12 +1,13 @@
 ## JSI
 
-JSI is a JavaScript Interpreter written in Rust.
+JSI is a JavaScript interpreter written in Rust that supports bytecode similar to quickjs.
 
 
 <img src="https://img.shields.io/badge/Test262-4280%20Passed-brightgreen.svg" alt="test262 passed" />
 <img src="https://img.shields.io/badge/Test262-46442%20Total-blue.svg" alt="test262 total" />
 
 ---
+
 ### Usage
 ```rust
 use jsi::JSI;
@@ -45,6 +46,9 @@ assert_eq!(result , Value::String(String::from("2:4")));
 
 + Ecma Standard: https://tc39.es/ecma262/multipage/#sec-intro
 + Test262: https://github.com/tc39/test262
+
+### License
+MIT
 
 ---
 by [echosoar](https://github.com/echosoar)
