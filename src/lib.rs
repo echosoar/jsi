@@ -8,6 +8,7 @@ pub mod scope;
 pub mod error;
 pub mod builtins;
 pub mod constants;
+pub mod bytecode;
 
 use ast::Program;
 use context::Context;

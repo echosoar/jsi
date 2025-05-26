@@ -6,6 +6,7 @@ use std::{io};
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
 use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
+use crate::bytecode::{ByteCode, EByteCodeop};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
   strict: bool,
@@ -33,6 +34,8 @@ pub struct AST {
   auto_semicolon_when_new_line: bool,
   // 不声明方法到作用域，当方法定义咋 while 的条件中
   not_declare_function_to_scope: bool,
+  // bytecode
+  bytecode: Vec<ByteCode>,
 }
 
 impl AST{
@@ -53,6 +56,7 @@ impl AST{
       pre_token_need_semicolon: false,
       auto_semicolon_when_new_line: false,
       not_declare_function_to_scope: false,
+      bytecode: vec![],
     }
   }
 
@@ -72,6 +76,7 @@ impl AST{
     let body = self.parse_statements()?;
     let declarations = self.scope.declarations.clone();
     self.close_scope();
+    print!("AST bytecode: {:?}", self.bytecode);
     Ok(Program {
       body,
       declarations,
@@ -694,9 +699,25 @@ impl AST{
       initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
     };
 
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpUndefined,
+      arg: Some(node.name.clone()),
+      line: 0,
+    });
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpScopePutVarInit,
+      arg: Some(node.name.clone()),
+      line: 0,
+    });
+
     if self.token == Token::Assign {
       self.next();
       node.initializer = Box::new(self.parse_expression()?);
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpScopePutVar,
+        arg: Some(node.name.clone()),
+        line: 0,
+      });
     }
     return Ok(Expression::Var(node))
   }
