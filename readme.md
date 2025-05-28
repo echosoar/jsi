@@ -13,6 +13,7 @@ JSI is a JavaScript interpreter written in Rust that supports bytecode similar t
 use jsi::JSI;
 
 let mut jsi = JSI::new();
+// Run with ast
 let result = jsi.run(String::from("\
   let a = [];
   let i = 0;
@@ -35,6 +36,14 @@ let result = jsi.run(String::from("\
   a.join(':')")
 ).unwrap();
 assert_eq!(result , Value::String(String::from("2:4")));
+
+// Run with bytecode
+let result2 = jsi.run_with_bytecode(String::from("\
+  let a = '123';
+  let b = 'abc';
+  a + b
+  ")).unwrap();
+assert_eq!(result , Value::String(String::from("123abc")));
 ```
 
 ### Development

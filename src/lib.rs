@@ -34,6 +34,10 @@ impl JSI {
       return self.context.run(code)
   }
 
+  pub fn run_with_bytecode(&mut self, code: String) -> JSIResult<Value> {
+    return self.context.run_with_bytecode(code)
+  }
+
   pub fn parse(&mut self, code: String) -> JSIResult<Program> {
     return self.context.parse(code)
   }

@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{Statement, Declaration, ObjectLiteral, AssignExpression, CallContext, ArrayLiteral, ClassType, ForStatement, VariableFlag, PostfixUnaryExpression, IdentifierLiteral, PrefixUnaryExpression, SwitchStatement}, ast_node::{Expression, CallExpression, Keywords, BinaryExpression, NewExpression}, value::{Value, ValueInfo, CallStatementOptions}, scope::{Scope, get_value_and_scope}, ast_token::Token, builtins::{object::{Object, Property, create_object}, function::{create_function, get_function_this, get_builtin_function_name}, global::{new_global_this, get_global_object, IS_GLOABL_OBJECT, bind_global}, array::{create_array}, console::create_console}, error::{JSIResult, JSIError, JSIErrorType}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}};
+use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
 
 
 use super::ast::AST;
@@ -9,6 +9,8 @@ pub struct Context {
   pub strict: bool,
   scope: Rc<RefCell<Scope>>,
   cur_scope: Rc<RefCell<Scope>>,
+  // 调用栈
+  stack: Vec<Value>,
 }
 
 impl Context {
@@ -21,6 +23,7 @@ impl Context {
         strict: true,
         scope,
         cur_scope,
+        stack: vec![],
       };
       bind_global(&mut ctx);
       ctx.init();
@@ -36,6 +39,95 @@ impl Context {
       let program = self.parse(code)?;
       // print!("program: {:?}", program);
       self.call(program)
+    }
+
+    pub fn run_with_bytecode(&mut self, code: String) -> JSIResult<Value> {
+      let program = self.parse(code)?;
+      let bytecode = program.bytecode;
+
+      println!("AST bytecode: {:?}", bytecode);
+      for bytecode_item in bytecode.iter() {
+        println!("cur_stack {:?}", self.stack);
+        match bytecode_item.op {
+          EByteCodeop::OpUndefined => {
+            self.stack.push(Value::Undefined);
+          },
+          EByteCodeop::OpNull => {
+            self.stack.push(Value::Null);
+          },
+          EByteCodeop::OpTrue => {
+            self.stack.push(Value::Boolean(true));
+          },
+          EByteCodeop::OpFalse => {
+            self.stack.push(Value::Boolean(false));
+          },
+          EByteCodeop::OpString => {
+            if let Some(arg) = &bytecode_item.arg {
+              self.stack.push(Value::String(arg.clone()));
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("string arg is required"), 0, 0));
+            }
+          },
+          EByteCodeop::OpNumber => {
+            if let Some(arg) = &bytecode_item.arg {
+              if let Ok(num) = arg.parse::<f64>() {
+                self.stack.push(Value::Number(num));
+              } else {
+                return Err(JSIError::new(JSIErrorType::SyntaxError, format!("number arg is invalid: {}", arg), 0, 0));
+              }
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("number arg is required"), 0, 0));
+            }
+          },
+          EByteCodeop::OpScopePutVarInit | EByteCodeop::OpScopePutVar => {
+            if let Some(arg) = &bytecode_item.arg {
+              // 获取栈顶的值
+              let value = self.stack.pop().unwrap();
+              let name = arg.clone();
+              // 设置到当前作用域
+              // TODO: const
+              (*self.cur_scope).borrow_mut().set_value(name, value, false);
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("variable name arg is required"), 0, 0));
+            }
+          },
+          EByteCodeop::OpScopeGetVar => {
+            if let Some(arg) = &bytecode_item.arg {
+              // 获取当前作用域的值
+              let name = arg.to_string();
+              let (value, _, _) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
+              if let Some(val) = value {
+                self.stack.push(val);
+              } else {
+                return Err(JSIError::new(JSIErrorType::ReferenceError, format!("{} is not defined", name), 0, 0));
+              }
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("variable name arg is required"), 0, 0));
+            }
+          },
+          EByteCodeop::OpAdd => {
+            let right = self.stack.pop().unwrap();
+            let left = self.stack.pop().unwrap();
+            // 执行加法运算
+            let result = self.execute_binary_expression(&BinaryExpression {
+              left: Box::new(Expression::Value(Box::new(left))),
+              right: Box::new(Expression::Value(Box::new(right))),
+              operator: Token::Plus,
+            })?;
+            self.stack.push(result);
+          },
+          _ => {
+            println!("Unsupported bytecode operation: {:?}", bytecode_item.op);
+          }
+        }
+      }
+
+      if self.stack.is_empty() {
+        return Ok(Value::Undefined);
+      }
+      // 返回栈顶的值
+      let result = self.stack.pop().unwrap();
+      Ok(result)
     }
 
     pub fn dump_byte_code(&mut self, code: String) -> JSIResult<String> {
@@ -243,6 +335,10 @@ impl Context {
     fn execute_expression_info(&mut self, expression: &Expression) -> JSIResult<ValueInfo> {
       // println!("expression: {:?}", expression);
       match expression {
+        Expression::Value(valuebox) => {
+          let value = *valuebox.clone();
+          Ok(ValueInfo { is_const: false, value, name: None, access_path: String::from(""), reference: None })
+        },
         Expression::Binary(binary) => {
           Ok(ValueInfo { is_const: false, value:self.execute_binary_expression(binary)?, name: None, access_path: String::from(""), reference: None })
         },

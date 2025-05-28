@@ -76,7 +76,6 @@ impl AST{
     let body = self.parse_statements()?;
     let declarations = self.scope.declarations.clone();
     self.close_scope();
-    print!("AST bytecode: {:?}", self.bytecode);
     Ok(Program {
       body,
       declarations,
@@ -1700,7 +1699,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpString,
-          arg: Some(literal.clone()),
+          arg: Some(slice.clone()),
           line: 0,
         });
         Ok(Expression::String(StringLiteral{

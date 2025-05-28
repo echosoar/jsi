@@ -93,6 +93,8 @@ pub enum Expression {
   Class(ClassDeclaration),
   Constructor(FunctionDeclaration),
   ClassMethod(ClassMethodDeclaration),
+  // Expression::Value
+  Value(Box<Value>),
   Unknown,
 }
 impl Expression {
