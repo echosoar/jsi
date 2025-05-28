@@ -80,6 +80,7 @@ impl AST{
     Ok(Program {
       body,
       declarations,
+      bytecode: self.bytecode.clone(),
     })
   }
 
@@ -701,7 +702,7 @@ impl AST{
 
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpUndefined,
-      arg: Some(node.name.clone()),
+      arg: None,
       line: 0,
     });
     self.bytecode.push(ByteCode {
@@ -1671,6 +1672,11 @@ impl AST{
     match self.token {
       Token::Identifier => {
         self.next();
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpScopeGetVar,
+          arg: Some(literal.clone()),
+          line: 0,
+        });
         Ok(Expression::Identifier(IdentifierLiteral{
           literal
         }))
@@ -1678,6 +1684,11 @@ impl AST{
       Token::Number => {
         let value = self.parse_number_literal_expression()?;
         self.next();
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpNumber,
+          arg: Some(literal.clone()),
+          line: 0,
+        });
         Ok(Expression::Number(NumberLiteral {
           literal,
           value,
@@ -1687,6 +1698,11 @@ impl AST{
         let str_len = literal.len();
         let slice = String::from(&self.literal[1..str_len-1]);
         self.next();
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpString,
+          arg: Some(literal.clone()),
+          line: 0,
+        });
         Ok(Expression::String(StringLiteral{
           literal,
           value: slice
@@ -1697,18 +1713,38 @@ impl AST{
       },
       Token::False => {
         self.next();
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpFalse,
+          arg: None,
+          line: 0,
+        });
         Ok(Expression::Keyword(Keywords::False))
       },
       Token::True => {
         self.next();
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpTrue,
+          arg: None,
+          line: 0,
+        });
         Ok(Expression::Keyword(Keywords::True))
       },
       Token::Null => {
         self.next();
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpNull,
+          arg: None,
+          line: 0,
+        });
         Ok(Expression::Keyword(Keywords::Null))
       },
       Token::Undefined => {
         self.next();
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpUndefined,
+          arg: None,
+          line: 0,
+        });
         Ok(Expression::Keyword(Keywords::Undefined))
       },
       Token::This => {
@@ -1912,6 +1948,37 @@ impl AST{
         // 跳过当前的运算符
         self.next();
         let right = next(self)?;
+        match operator {
+          Token::Plus => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpAdd,
+              arg: None,
+              line: 0,
+            });
+          },
+          Token::Subtract => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpSub,
+              arg: None,
+              line: 0,
+            });
+          },
+          Token::Multiply => {
+            self.bytecode.push(ByteCode {
+              op: EByteCodeop::OpMul,
+              arg: None,
+              line: 0,
+            });
+          },
+          Token::Slash => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpDiv,
+              arg: None,
+              line: 0,
+            });
+          },
+          _ => {},
+        }
         left = Expression::Binary(BinaryExpression{
           left: Box::new(left),
           operator,
@@ -1962,7 +2029,8 @@ impl AST{
 #[derive(Debug)]
 pub struct Program {
   pub body: Vec<Statement>,
-  pub declarations: Vec<Declaration>
+  pub declarations: Vec<Declaration>,
+  pub bytecode: Vec<ByteCode>,
 }
 
 

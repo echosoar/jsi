@@ -37,4 +37,8 @@ impl JSI {
   pub fn parse(&mut self, code: String) -> JSIResult<Program> {
     return self.context.parse(code)
   }
+
+  pub fn dump_byte_code(&mut self, code: String) -> JSIResult<String> {
+    return self.context.dump_byte_code(code)
+  }
 }

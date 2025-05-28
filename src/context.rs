@@ -38,6 +38,22 @@ impl Context {
       self.call(program)
     }
 
+    pub fn dump_byte_code(&mut self, code: String) -> JSIResult<String> {
+      let program = self.parse(code)?;
+      let bytecode = program.bytecode;
+      // 遍历 bytecode，生成文本
+      let mut result = String::new();
+      for (_, byte) in bytecode.iter().enumerate() {
+       // 如果 arg 有值
+        if let Some(arg) = &byte.arg {
+          result.push_str(&format!("{} {}\n", byte.op.to_string(), arg));
+        } else {
+          result.push_str(&format!("{}\n", byte.op.to_string()));
+        }
+      }
+      Ok(result)
+    }
+
     // 运行一段 JS 代码
     pub fn parse(&mut self, code: String) -> JSIResult<Program> {
       let mut ast = AST::new(code);
