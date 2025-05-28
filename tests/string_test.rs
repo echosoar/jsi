@@ -3,7 +3,7 @@ use jsi::{JSI, value::Value};
 #[test]
 fn run_string() {
   let mut jsi = JSI::new();
-  let result = jsi.run(String::from("\
+  let result = jsi.run_with_bytecode(String::from("\
   let a = '123';
   let b = 'abc';
   a + b
