@@ -76,6 +76,7 @@ impl AST{
     let body = self.parse_statements()?;
     let declarations = self.scope.declarations.clone();
     self.close_scope();
+    print!("AST bytecode: {:?}", self.bytecode);
     Ok(Program {
       body,
       declarations,
