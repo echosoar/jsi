@@ -23,7 +23,14 @@ pub enum EByteCodeop {
     OpSub,
     OpMul,
     OpDiv,
-    // 函数调用，弹出 n 个值作为参数，结果入栈
+    // function xxx 函数定义，匿名函数的名称为 `""`
+    OpFuncStart,
+    OpFuncEnd,
+    // 获取函数参数，弹出一个值作为参数名，推入栈
+    OpGetArg,
+    // 将函数入栈，传入的是函数名，如果是匿名函数, 函数名是 `""`
+    OpGetFunc,
+    // 函数调用，弹出 n 个值作为参数、弹出一个值作为 function，进行执行，结果入栈
     OpCall,
 }
 
@@ -46,6 +53,7 @@ impl fmt::Display for EByteCodeop {
             EByteCodeop::OpMul => write!(f, "Mul"),
             EByteCodeop::OpDiv => write!(f, "Div"),
             EByteCodeop::OpCall => write!(f, "Call"),
+            _ => write!(f, "Unknown"),
         }
     }
 }
@@ -56,7 +64,7 @@ pub struct ByteCode {
     // 指令
     pub op: EByteCodeop,
     // 操作数
-    pub arg: Option<String>,
+    pub args: Vec<String>,
     // 行号
     pub line: usize,
 }

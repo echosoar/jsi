@@ -62,14 +62,14 @@ impl Context {
             self.stack.push(Value::Boolean(false));
           },
           EByteCodeop::OpString => {
-            if let Some(arg) = &bytecode_item.arg {
+            if let Some(arg) = bytecode_item.args.get(0) {
               self.stack.push(Value::String(arg.clone()));
             } else {
               return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("string arg is required"), 0, 0));
             }
           },
           EByteCodeop::OpNumber => {
-            if let Some(arg) = &bytecode_item.arg {
+            if let Some(arg) = bytecode_item.args.get(0) {
               if let Ok(num) = arg.parse::<f64>() {
                 self.stack.push(Value::Number(num));
               } else {
@@ -80,7 +80,7 @@ impl Context {
             }
           },
           EByteCodeop::OpScopePutVarInit | EByteCodeop::OpScopePutVar => {
-            if let Some(arg) = &bytecode_item.arg {
+            if let Some(arg) = bytecode_item.args.get(0) {
               // 获取栈顶的值
               let value = self.stack.pop().unwrap();
               let name = arg.clone();
@@ -92,7 +92,7 @@ impl Context {
             }
           },
           EByteCodeop::OpScopeGetVar => {
-            if let Some(arg) = &bytecode_item.arg {
+            if let Some(arg) = bytecode_item.args.get(0) {
               // 获取当前作用域的值
               let name = arg.to_string();
               let (value, _, _) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
@@ -137,7 +137,7 @@ impl Context {
       let mut result = String::new();
       for (_, byte) in bytecode.iter().enumerate() {
        // 如果 arg 有值
-        if let Some(arg) = &byte.arg {
+        if let Some(arg) = byte.args.get(0) {
           result.push_str(&format!("{} {}\n", byte.op.to_string(), arg));
         } else {
           result.push_str(&format!("{}\n", byte.op.to_string()));

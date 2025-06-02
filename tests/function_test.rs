@@ -1,5 +1,18 @@
 use jsi::{JSI, value::Value, error::JSIErrorType};
 
+
+#[test]
+fn run_function_base() {
+  let mut jsi_vm = JSI::new();
+  let value = jsi_vm.run_with_bytecode(String::from("\n
+  function add(x, y) {
+    return x + y;
+  };
+  add(1, 'a')")).unwrap();
+  assert_eq!(value , Value::String(String::from("1a")));
+}
+
+
 #[test]
 fn run_function_scope1() {
   let mut jsi_vm = JSI::new();

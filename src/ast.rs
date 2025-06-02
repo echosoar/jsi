@@ -36,6 +36,11 @@ pub struct AST {
   not_declare_function_to_scope: bool,
   // bytecode
   bytecode: Vec<ByteCode>,
+  // global functions index
+  global_functions_index: usize,
+  // function_bytecode
+  function_bytecode: HashMap<usize, Vec<ByteCode>>,
+
 }
 
 impl AST{
@@ -57,6 +62,8 @@ impl AST{
       auto_semicolon_when_new_line: false,
       not_declare_function_to_scope: false,
       bytecode: vec![],
+      global_functions_index: 0,
+      function_bytecode: HashMap::new(),
     }
   }
 
@@ -76,7 +83,6 @@ impl AST{
     let body = self.parse_statements()?;
     let declarations = self.scope.declarations.clone();
     self.close_scope();
-    print!("AST bytecode: {:?}", self.bytecode);
     Ok(Program {
       body,
       declarations,
@@ -450,6 +456,13 @@ impl AST{
       name = self.literal.clone();
       self.next();
     }
+    let function_index = self.global_functions_index + 1;
+    self.global_functions_index = function_index;
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpFuncStart,
+      args: vec![name.clone(), function_index.to_string()],
+      line: 0,
+    });
     // 解析参数
     // 左括号
     let mut parameters: Vec<Parameter> = vec![];
@@ -460,8 +473,18 @@ impl AST{
         let literal = self.literal.clone();
         self.check_function_parameters_duplicate(&mut parameters_names, &literal)?;
         parameters.push(Parameter{
-          name: IdentifierLiteral { literal: literal },
+          name: IdentifierLiteral { literal: literal.clone() },
           initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
+        });
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpGetArg,
+          args: vec![],
+          line: 0,
+        });
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpScopePutVarInit,
+          args: vec![literal.clone()],
+          line: 0,
         });
         self.next()
       } else {
@@ -494,6 +517,12 @@ impl AST{
     if variable_lifting && !is_anonymous && !self.not_declare_function_to_scope {
       self.scope.declare(Declaration::Function(func.clone()));
     }
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpFuncEnd,
+      args: vec![function_index.to_string()],
+      line: 0,
+    });
+
     return Ok(func);
   }
 
@@ -702,12 +731,12 @@ impl AST{
 
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpUndefined,
-      arg: None,
+      args: vec![],
       line: 0,
     });
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpScopePutVarInit,
-      arg: Some(node.name.clone()),
+      args: vec![node.name.clone()],
       line: 0,
     });
 
@@ -716,7 +745,7 @@ impl AST{
       node.initializer = Box::new(self.parse_expression()?);
       self.bytecode.push(ByteCode {
         op: EByteCodeop::OpScopePutVar,
-        arg: Some(node.name.clone()),
+        args: vec![node.name.clone()],
         line: 0,
       });
     }
@@ -1627,6 +1656,11 @@ impl AST{
     let arguments = self.parse_arguments()?;
     // CallExpression {}
     self.check_token_and_next(Token::RightParenthesis)?;
+    self.bytecode.push(ByteCode{
+      op: EByteCodeop::OpCall,
+      args: vec![arguments.len().to_string()],
+      line: 0,
+    });
     return Ok(Expression::Call(CallExpression {
       expression,
       arguments
@@ -1674,7 +1708,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpScopeGetVar,
-          arg: Some(literal.clone()),
+          args: vec![literal.clone()],
           line: 0,
         });
         Ok(Expression::Identifier(IdentifierLiteral{
@@ -1686,7 +1720,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpNumber,
-          arg: Some(literal.clone()),
+          args: vec![literal.clone()],
           line: 0,
         });
         Ok(Expression::Number(NumberLiteral {
@@ -1700,7 +1734,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpString,
-          arg: Some(slice.clone()),
+          args: vec![slice.clone()],
           line: 0,
         });
         Ok(Expression::String(StringLiteral{
@@ -1715,7 +1749,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpFalse,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::False))
@@ -1724,7 +1758,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpTrue,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::True))
@@ -1733,7 +1767,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpNull,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::Null))
@@ -1742,7 +1776,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpUndefined,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::Undefined))
@@ -1952,28 +1986,28 @@ impl AST{
           Token::Plus => {
             self.bytecode.push(ByteCode{
               op: EByteCodeop::OpAdd,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
           Token::Subtract => {
             self.bytecode.push(ByteCode{
               op: EByteCodeop::OpSub,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
           Token::Multiply => {
             self.bytecode.push(ByteCode {
               op: EByteCodeop::OpMul,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
           Token::Slash => {
             self.bytecode.push(ByteCode{
               op: EByteCodeop::OpDiv,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
@@ -2039,7 +2073,7 @@ impl Program {}
 #[derive(Debug, Clone)]
 pub struct ASTScope {
   pub parent: Option<Box<ASTScope>>,
-  pub declarations: Vec<Declaration>
+  pub declarations: Vec<Declaration>,
 }
 
 impl  ASTScope {
