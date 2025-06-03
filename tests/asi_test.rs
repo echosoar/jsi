@@ -52,6 +52,7 @@ fn asi_after_keyword_return() {
         ]
       },
       declarations: vec![],
+      bytecode: vec![],
     }),
   ]);
 }

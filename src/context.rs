@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 
-use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
+use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
 
 
 use super::ast::AST;
@@ -46,8 +46,12 @@ impl Context {
       let bytecode = program.bytecode;
 
       println!("AST bytecode: {:?}", bytecode);
-      for bytecode_item in bytecode.iter() {
-        println!("cur_stack {:?}", self.stack);
+      let mut bytecode_index = 0;
+      // for bytecode_item in bytecode.iter() {
+      while bytecode_index < bytecode.len() {
+        let bytecode_item = &bytecode[bytecode_index];
+        bytecode_index += 1;
+        println!("cur_stack {:?} {:?}", self.stack, bytecode_item.op);
         match bytecode_item.op {
           EByteCodeop::OpUndefined => {
             self.stack.push(Value::Undefined);
@@ -116,6 +120,12 @@ impl Context {
             })?;
             self.stack.push(result);
           },
+          EByteCodeop::OpFuncStart => {
+            bytecode_index = self.run_function_bytecode(bytecode_index, bytecode_item, &bytecode);
+          },
+          EByteCodeop::OpCall => {
+
+          },
           _ => {
             println!("Unsupported bytecode operation: {:?}", bytecode_item.op);
           }
@@ -151,6 +161,45 @@ impl Context {
       let mut ast = AST::new(code);
       ast.set_strict(self.strict);
       ast.parse()
+    }
+
+
+    pub fn run_function_bytecode(&mut self, next_bytecode_index: usize, cur_bytecode: &ByteCode, bytecode_list: &Vec<ByteCode>) -> usize {
+      let mut function_name = String::new();
+      if let Some(name) = cur_bytecode.args.get(0) {
+        function_name = name.clone();
+      }
+      // if let Some(index) = cur_bytecode.args.get(1) {
+      //   function_index = index.clone();
+      // }
+
+      let mut function_bytecode = vec![];
+      let mut bytecode_index = next_bytecode_index;
+
+      while bytecode_index < bytecode_list.len() {
+        let next_bytecode = &bytecode_list[bytecode_index];
+        bytecode_index += 1;
+        match next_bytecode.op {
+          EByteCodeop::OpFuncStart => {
+            // 嵌套函数，递归调用
+            let next_index = self.run_function_bytecode(bytecode_index, 
+              next_bytecode, bytecode_list);
+            bytecode_index = next_index;
+          },
+          EByteCodeop::OpFuncEnd => {
+            // 结束函数
+            break;
+          },
+          _ => {
+            // 将当前 bytecode 添加到函数的 bytecode 中
+            function_bytecode.push(next_bytecode.clone());
+          }
+        }
+      }
+
+      let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::downgrade(&self.cur_scope));
+      (*self.cur_scope).borrow_mut().set_value(function_name, function, false);
+      return bytecode_index
     }
 
     fn call(&mut self, program: Program) -> JSIResult<Value> {

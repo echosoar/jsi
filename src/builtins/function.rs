@@ -1,5 +1,5 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
-use crate::{context::{Context}, constants::{GLOBAL_FUNCTION_NAME, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType}};
+use crate::{ast_node::{BlockStatement, IdentifierLiteral, Parameter}, bytecode::ByteCode, constants::{GLOBAL_FUNCTION_NAME, PROTO_PROPERTY_NAME}, context::Context, error::{JSIError, JSIErrorType}};
 use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope, error::JSIResult};
 
 use super::{object::{create_object, Property, Object}, global::{get_global_object_prototype_by_name, get_global_object_by_name}, array::create_list_from_array_list};
@@ -43,6 +43,24 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
   });
   function_mut.prototype = Some(prototype);
   Value::Function(function)
+}
+
+
+pub fn create_function_with_bytecode(ctx: &mut Context, name: String, parameters: Vec<Parameter>, bytecode: Vec<ByteCode>, define_scope: Weak<RefCell<Scope>>) -> Value {
+  let function_declaration = FunctionDeclaration {
+    is_anonymous: false,
+    is_arrow: false,
+    name: IdentifierLiteral {
+      literal: name,
+    },
+    parameters,
+    body: BlockStatement {
+      statements: vec![],
+    },
+    declarations: vec![],
+    bytecode
+  };
+  create_function(ctx, &function_declaration, define_scope)
 }
 
 // 构建内置方法

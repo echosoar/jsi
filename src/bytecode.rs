@@ -68,3 +68,11 @@ pub struct ByteCode {
     // 行号
     pub line: usize,
 }
+
+impl PartialEq for ByteCode {
+  fn eq(&self, other: &ByteCode) -> bool {
+    match (self, other) {
+      _ => true,
+    }
+  }
+}

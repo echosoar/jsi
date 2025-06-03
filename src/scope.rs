@@ -1,6 +1,6 @@
 use std::{collections::HashMap, cell::RefCell, rc::Rc};
 
-use crate::{value::Value};
+use crate::{bytecode::ByteCode, value::Value};
 // 上下文环境
 #[derive(Debug, Clone)]
 pub struct Scope {
@@ -11,7 +11,8 @@ pub struct Scope {
   pub labels: Vec<String>,
   // 当前上下文的 this
   pub this: Option<Value>,
-  variables: HashMap<String, VariableInfo>
+  variables: HashMap<String, VariableInfo>,
+  pub function_call_args: Vec<Value>,
 }
 
 
@@ -19,6 +20,7 @@ pub struct Scope {
 pub struct VariableInfo {
   pub value: Value,
   pub is_const: bool,
+  pub bytecode: Vec<ByteCode>,
 }
 
 impl Scope {
@@ -31,11 +33,16 @@ impl Scope {
       this: None,
       labels: vec![],
       variables: HashMap::new(),
+      function_call_args: vec![],
     }
   }
 
   pub fn set_value(&mut self, name: String, value: Value, is_const: bool) {
-    self.variables.insert(name, VariableInfo{value, is_const});
+    self.variables.insert(name, VariableInfo{value, is_const, bytecode: vec![]});
+  }
+
+  pub fn set_bytecode(&mut self, name: String, value: Value, is_const: bool, bytecode: Vec<ByteCode>) {
+    self.variables.insert(name, VariableInfo{value, is_const, bytecode});
   }
 }
 

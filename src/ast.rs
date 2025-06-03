@@ -38,9 +38,6 @@ pub struct AST {
   bytecode: Vec<ByteCode>,
   // global functions index
   global_functions_index: usize,
-  // function_bytecode
-  function_bytecode: HashMap<usize, Vec<ByteCode>>,
-
 }
 
 impl AST{
@@ -63,7 +60,6 @@ impl AST{
       not_declare_function_to_scope: false,
       bytecode: vec![],
       global_functions_index: 0,
-      function_bytecode: HashMap::new(),
     }
   }
 
@@ -513,6 +509,7 @@ impl AST{
       parameters,
       body,
       declarations,
+      bytecode: vec![],
     };
     if variable_lifting && !is_anonymous && !self.not_declare_function_to_scope {
       self.scope.declare(Declaration::Function(func.clone()));
@@ -580,6 +577,7 @@ impl AST{
         parameters,
         body,
         declarations,
+        bytecode: vec![],
       };
       Ok(Expression::Function(func))
     } else {
@@ -593,6 +591,7 @@ impl AST{
           Statement::Return(ReturnStatement { expression: expr }),
         ] },
         declarations: vec![],
+        bytecode: vec![],
       };
       Ok(Expression::Function(func))
     }
