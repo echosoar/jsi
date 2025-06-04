@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EByteCodeop {
     // 将 undefined 推入栈
     OpUndefined,
@@ -32,6 +32,13 @@ pub enum EByteCodeop {
     OpGetFunc,
     // 函数调用，弹出 n 个值作为参数、弹出一个值作为 function，进行执行，结果入栈
     OpCall,
+    OpReturn,
+    // 标签
+    OpLabel,
+    OpGoto,
+    // 跳转到指定标签
+    OpIfFalse,
+    OpIfTrue,
 }
 
 impl fmt::Display for EByteCodeop {
@@ -72,7 +79,7 @@ pub struct ByteCode {
 impl PartialEq for ByteCode {
   fn eq(&self, other: &ByteCode) -> bool {
     match (self, other) {
-      _ => true,
+      _ => self.op == other.op,
     }
   }
 }

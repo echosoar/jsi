@@ -36,8 +36,10 @@ pub struct AST {
   not_declare_function_to_scope: bool,
   // bytecode
   bytecode: Vec<ByteCode>,
-  // global functions index
-  global_functions_index: usize,
+  // global bytecode index
+  global_bc_index: usize,
+  // 是否在多层循环解析内
+  is_in_deep_parse: bool,
 }
 
 impl AST{
@@ -59,7 +61,8 @@ impl AST{
       auto_semicolon_when_new_line: false,
       not_declare_function_to_scope: false,
       bytecode: vec![],
-      global_functions_index: 0,
+      global_bc_index: 0,
+      is_in_deep_parse: false,
     }
   }
 
@@ -241,11 +244,25 @@ impl AST{
   fn parse_if_statement(&mut self)  -> JSIResult<Statement> {
     self.check_token_and_next(Token::If)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
+    
+    
+
+    let is_if_start = !self.is_in_deep_parse;
+    let start_bc_index = self.bytecode.len() - 1;
+    self.is_in_deep_parse = true;
+    
+    let next_label_index = self.global_bc_index + 1;
+    self.global_bc_index = next_label_index.clone();
     let mut statement = IfStatement {
       condition: self.parse_expression()?,
       then_statement: Box::new(Statement::Unknown),
       else_statement: Box::new(Statement::Unknown),
     };
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpIfFalse,
+      args: vec![next_label_index.to_string()],
+      line: 0,
+    });
     self.check_token_and_next(Token::RightParenthesis)?;
     // 判断是否是 单行if
     if self.token == Token::LeftBrace {
@@ -254,9 +271,42 @@ impl AST{
       statement.then_statement = Box::new(self.parse_statement()?);
     }
 
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpGoto,
+      args: vec![], 
+      line: 0
+    });
+
     if self.token == Token::Else {
+       self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpLabel,
+        args: vec![next_label_index.to_string()], 
+        line: 0
+      });
+      self.global_bc_index = next_label_index;
       self.next();
       statement.else_statement = Box::new(self.parse_statement()?);
+    }
+    
+    if is_if_start {
+      self.is_in_deep_parse = false;
+      // if end
+      let end_label_index = self.global_bc_index + 1;
+      self.global_bc_index = end_label_index.clone();
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpLabel,
+        args: vec![end_label_index.to_string()], 
+        line: 0
+      });
+      let mut cur_bc_index = self.bytecode.len() - 1;
+      while cur_bc_index > start_bc_index {
+        cur_bc_index -= 1;
+        let bc_ref = &self.bytecode[cur_bc_index];
+        if bc_ref.op == EByteCodeop::OpGoto {
+          // 修噶 bc_ref 的值
+          self.bytecode[cur_bc_index].args = vec![end_label_index.to_string()];
+        }
+      }
     }
     return Ok(Statement::If(statement))
   }
@@ -452,8 +502,8 @@ impl AST{
       name = self.literal.clone();
       self.next();
     }
-    let function_index = self.global_functions_index + 1;
-    self.global_functions_index = function_index;
+    let function_index = self.global_bc_index + 1;
+    self.global_bc_index = function_index;
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpFuncStart,
       args: vec![name.clone(), function_index.to_string()],
