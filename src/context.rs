@@ -1,6 +1,6 @@
-use std::{rc::{Rc, Weak}, cell::RefCell};
+use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
+use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, get_value_info_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
 
 
 use super::ast::AST;
@@ -8,9 +8,11 @@ pub struct Context {
   pub global: Rc<RefCell<Object>>,
   pub strict: bool,
   scope: Rc<RefCell<Scope>>,
-  cur_scope: Rc<RefCell<Scope>>,
+  pub cur_scope: Rc<RefCell<Scope>>,
   // 调用栈
-  stack: Vec<Value>,
+  stack: Vec<ValueInfo>,
+  // label index map
+  label_index_map: HashMap<String, usize>,
 }
 
 impl Context {
@@ -24,6 +26,7 @@ impl Context {
         scope,
         cur_scope,
         stack: vec![],
+        label_index_map: HashMap::new(),
       };
       bind_global(&mut ctx);
       ctx.init();
@@ -42,32 +45,46 @@ impl Context {
     }
 
     pub fn run_with_bytecode(&mut self, code: String) -> JSIResult<Value> {
-      let program = self.parse(code)?;
-      let bytecode = program.bytecode;
+       let program = self.parse(code)?;
+        let bytecode = program.bytecode;
 
-      println!("AST bytecode: {:?}", bytecode);
-      let mut bytecode_index = 0;
+        println!("AST bytecode: {:?}", bytecode);
+
+        self.run_with_bytecode_list(0, &bytecode)?;
+
+        if self.stack.is_empty() {
+          return Ok(Value::Undefined);
+        }
+        // 返回栈顶的值
+        let result = self.stack.pop().unwrap();
+        Ok(result.value)
+    }
+
+    pub fn run_with_bytecode_list(&mut self, cur_index: usize, bytecode: &Vec<ByteCode>) -> JSIResult<Value> {
+     
+      let mut bytecode_index = cur_index;
       // for bytecode_item in bytecode.iter() {
       while bytecode_index < bytecode.len() {
-        let bytecode_item = &bytecode[bytecode_index];
+        let cur_index = bytecode_index;
+        let bytecode_item = &bytecode[cur_index];
         bytecode_index += 1;
         println!("cur_stack {:?} {:?}", self.stack, bytecode_item.op);
         match bytecode_item.op {
           EByteCodeop::OpUndefined => {
-            self.stack.push(Value::Undefined);
+            self.stack.push(Value::Undefined.to_value_info());
           },
           EByteCodeop::OpNull => {
-            self.stack.push(Value::Null);
+            self.stack.push(Value::Null.to_value_info());
           },
           EByteCodeop::OpTrue => {
-            self.stack.push(Value::Boolean(true));
+            self.stack.push(Value::Boolean(true).to_value_info());
           },
           EByteCodeop::OpFalse => {
-            self.stack.push(Value::Boolean(false));
+            self.stack.push(Value::Boolean(false).to_value_info());
           },
           EByteCodeop::OpString => {
             if let Some(arg) = bytecode_item.args.get(0) {
-              self.stack.push(Value::String(arg.clone()));
+              self.stack.push(Value::String(arg.clone()).to_value_info());
             } else {
               return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("string arg is required"), 0, 0));
             }
@@ -75,7 +92,7 @@ impl Context {
           EByteCodeop::OpNumber => {
             if let Some(arg) = bytecode_item.args.get(0) {
               if let Ok(num) = arg.parse::<f64>() {
-                self.stack.push(Value::Number(num));
+                self.stack.push(Value::Number(num).to_value_info());
               } else {
                 return Err(JSIError::new(JSIErrorType::SyntaxError, format!("number arg is invalid: {}", arg), 0, 0));
               }
@@ -90,7 +107,7 @@ impl Context {
               let name = arg.clone();
               // 设置到当前作用域
               // TODO: const
-              (*self.cur_scope).borrow_mut().set_value(name, value, false);
+              (*self.cur_scope).borrow_mut().set_value(name, value.value, false);
             } else {
               return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("variable name arg is required"), 0, 0));
             }
@@ -99,7 +116,7 @@ impl Context {
             if let Some(arg) = bytecode_item.args.get(0) {
               // 获取当前作用域的值
               let name = arg.to_string();
-              let (value, _, _) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
+              let (value, _, _) = get_value_info_and_scope(Rc::clone(&self.cur_scope), name.clone());
               if let Some(val) = value {
                 self.stack.push(val);
               } else {
@@ -114,11 +131,16 @@ impl Context {
             let left = self.stack.pop().unwrap();
             // 执行加法运算
             let result = self.execute_binary_expression(&BinaryExpression {
-              left: Box::new(Expression::Value(Box::new(left))),
-              right: Box::new(Expression::Value(Box::new(right))),
+              left: Box::new(Expression::Value(Box::new(left.value))),
+              right: Box::new(Expression::Value(Box::new(right.value))),
               operator: Token::Plus,
             })?;
-            self.stack.push(result);
+            self.stack.push(result.to_value_info());
+          },
+          EByteCodeop::OpAssign => {
+            let right = self.stack.pop().unwrap();
+            let mut left = self.stack.pop().unwrap();
+            left.set_value(self, right.value)?;
           },
           EByteCodeop::OpFuncStart => {
             bytecode_index = self.run_function_bytecode(bytecode_index, bytecode_item, &bytecode);
@@ -126,18 +148,42 @@ impl Context {
           EByteCodeop::OpCall => {
 
           },
+          EByteCodeop::OpIfFalse => {
+            // 从栈顶获取一个数据，转换为布尔值
+            let condition = self.stack.pop().unwrap();
+            let bool_value = condition.value.to_boolean(self);
+            if !bool_value {
+              // 如果是 false，那么跳转到下一个 bytecode_index
+              if let Some(label) = bytecode_item.args.get(0) {
+                // 将 label 和当前 bytecode_index 绑定
+                return self.run_goto(cur_index, label.to_owned(), &bytecode);
+              } else {
+                return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("if false label arg is required"), 0, 0));
+              }
+            }
+          },
+          EByteCodeop::OpLabel => {
+            if let Some(label) = bytecode_item.args.get(0) {
+              // 将 label 和当前 bytecode_index 绑定
+              self.label_index_map.insert(label.clone(), cur_index);
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("label arg is required"), 0, 0));
+            }
+          },
+          EByteCodeop::OpGoto => {
+            if let Some(label) = bytecode_item.args.get(0) {
+              // 将 label 和当前 bytecode_index 绑定
+              return self.run_goto(cur_index, label.to_owned(), &bytecode)
+            }
+            return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("goto label arg is required"), 0, 0));
+          }
           _ => {
             println!("Unsupported bytecode operation: {:?}", bytecode_item.op);
           }
         }
       }
+      return Ok(Value::Undefined);
 
-      if self.stack.is_empty() {
-        return Ok(Value::Undefined);
-      }
-      // 返回栈顶的值
-      let result = self.stack.pop().unwrap();
-      Ok(result)
     }
 
     pub fn dump_byte_code(&mut self, code: String) -> JSIResult<String> {
@@ -200,6 +246,34 @@ impl Context {
       let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::downgrade(&self.cur_scope));
       (*self.cur_scope).borrow_mut().set_value(function_name, function, false);
       return bytecode_index
+    }
+
+
+    fn run_goto(&mut self, cur_index: usize, label: String, bytecode: &Vec<ByteCode>) -> JSIResult<Value> {
+      println!("goto label: {}", label);
+      // hashMap 中寻找不到
+      let label_start_index: usize = match self.label_index_map.get(&label) {
+        Some(index) => *index,
+        None => {
+          let mut tmp_index = cur_index + 1;
+          let mut found = false;
+          while tmp_index < bytecode.len() {
+            let tmp_bytecode = &bytecode[tmp_index];
+            if tmp_bytecode.op == EByteCodeop::OpLabel && tmp_bytecode.args.get(0).map_or(false, |arg| arg == &label) {
+              found = true;
+              break;
+            }
+            tmp_index += 1;
+          }
+          if found {
+            self.label_index_map.insert(label.clone(), tmp_index);
+            tmp_index
+          } else {
+            return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("label not found"), 0, 0));
+          }
+        }
+      };
+      self.run_with_bytecode_list(label_start_index, bytecode)
     }
 
     fn call(&mut self, program: Program) -> JSIResult<Value> {

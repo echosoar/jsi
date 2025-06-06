@@ -1417,6 +1417,15 @@ impl AST{
         self.next();
         // from right to left
         let right = self.parse_expression()?;
+        
+
+        match oper {
+          Token::Assign => {
+            self.bytecode.push(ByteCode { op: EByteCodeop::OpAssign, args: vec![], line: 0 });
+          },
+          _ => {}
+        }
+
         return Ok(Expression::Assign(AssignExpression {
           left: Box::new(left),
           operator: oper,

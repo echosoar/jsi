@@ -9,7 +9,7 @@ use crate::builtins::object::{Object, Property};
 use crate::builtins::string::create_string;
 use crate::context::{Context};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
-use crate::scope::Scope;
+use crate::scope::{self, Scope};
 
 
 #[derive(Debug)]
@@ -57,7 +57,10 @@ impl ValueInfo {
           }
       }
     } else {
-      // TODO: no reference set value
+      // no reference set value
+      if name.len() > 0 {
+        ctx.cur_scope.borrow_mut().set_value(name.clone(), value, self.is_const);
+      }
       return Ok(Some(name.clone()))
     }
   }
@@ -440,6 +443,10 @@ impl Value {
     }
 
     return None;
+  }
+
+  pub fn to_value_info(&self) -> ValueInfo {
+    return ValueInfo { name: None, value: self.clone(), access_path: String::from(""), reference: None, is_const: true }
   }
 
 
