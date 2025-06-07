@@ -12,7 +12,7 @@ pub struct Scope {
   // 当前上下文的 this
   pub this: Option<Value>,
   variables: HashMap<String, VariableInfo>,
-  pub function_call_args: Vec<Value>,
+  pub function_call_args: Vec<ValueInfo>,
 }
 
 

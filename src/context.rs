@@ -68,7 +68,9 @@ impl Context {
         let cur_index = bytecode_index;
         let bytecode_item = &bytecode[cur_index];
         bytecode_index += 1;
-        println!("cur_stack {:?} {:?}", self.stack, bytecode_item.op);
+        println!("");
+        // println!(">>>> cur_stack {:?} {:?} {:?}", self.stack.len(), self.stack.iter().map(|item| item.name.clone().unwrap_or(String::from(""))).collect::<Vec<String>>(), bytecode_item.op);
+        println!(">>>> cur_stack {:?} {:?}", self.stack, bytecode_item.op);
         match bytecode_item.op {
           EByteCodeop::OpUndefined => {
             self.stack.push(Value::Undefined.to_value_info());
@@ -138,7 +140,47 @@ impl Context {
             bytecode_index = self.run_function_def_bytecode(1, bytecode_index, bytecode_item, &bytecode);
           },
           EByteCodeop::OpCall => {
-            // TODO
+            // 函数调用
+            let mut args = vec![];
+            // 从栈中弹出参数
+            let arg_count = bytecode_item.args.get(0).unwrap().parse::<usize>().unwrap_or(0);
+            for _ in 0..arg_count {
+              if let Some(arg) = self.stack.pop() {
+                args.push(arg);
+              } else {
+                return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("call args not enough"), 0, 0));
+              }
+            }
+            // 从栈中弹出函数
+            if let Some(callee) = self.stack.pop() {
+                match &callee.value {
+                  Value::Function(function_object) => {
+                    let mut reference = None;
+                    if let Some(call_ref) = &callee.reference {
+                      reference = call_ref.to_weak_rc_object();
+                    }
+                    return self.call_function_with_bytecode(function_object.to_owned(), callee.reference, reference, args);
+                  },
+                  _ => {}
+                }
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("call args not enough"), 0, 0));
+            }
+            
+          },
+          EByteCodeop::OpGetArg => {
+            // 因为 OpCall 的时候 arg 是按照从右到左的顺序入栈的，所以这里需要反向获取
+            let arg = self.cur_scope.borrow_mut().function_call_args.pop().unwrap_or(Value::Undefined.to_value_info());
+            self.stack.push(arg);
+          },
+          EByteCodeop::OpReturn => {
+            // 从栈中弹出一个值作为返回值
+            if self.stack.len() > 0 {
+              // 中断执行
+              return Ok(Value::Interrupt(Token::Return, Expression::Unknown));
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("return value is required"), 0, 0));
+            }
           },
           EByteCodeop::OpIfFalse => {
             // 从栈顶获取一个数据，转换为布尔值
@@ -276,13 +318,6 @@ impl Context {
         let function_bytecode = bytecode_list[next_bytecode_index..bytecode_index - 1].to_vec();
         let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::downgrade(&self.cur_scope));
         (*self.cur_scope).borrow_mut().set_value(function_name.clone(), function.clone(), false);
-        self.stack.push(ValueInfo {
-          name: Some(function_name.clone()),
-          value: function.clone(),
-          is_const: false,
-          access_path: String::from(""),
-          reference: None,
-        });
       }
       
       return bytecode_index
@@ -1222,6 +1257,71 @@ impl Context {
         Object::call(call_ctx, String::from("push"), arguments)?;
       }
       Ok(array)
+    }
+
+    pub fn call_function_with_bytecode(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, args: Vec<ValueInfo>) -> JSIResult<Value> {
+      // 获取 function 定义
+      let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
+      // 获取 function 调用的 this
+      let this_obj = match (*function_define).borrow_mut().get_inner_property_value(String::from("this")) {
+        Some(bind_this_value) => bind_this_value,
+        _ =>{
+          if let Some(call_this_value) = call_this {
+            call_this_value
+          } else {
+            Value::Undefined
+          }
+        }
+      };
+      // 内置方法
+      if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
+        let func_name = get_builtin_function_name(self, &function_define);
+        let mut ctx = CallContext{
+          ctx: self,
+          this: this_obj,
+          reference: reference,
+          func_name,
+        };
+        let arguments = args.iter().map(|info| info.value.clone()).collect::<Vec<Value>>();
+        let builtin_res = (builtin_function)(&mut ctx, arguments)?;
+        self.stack.push(builtin_res.to_value_info());
+        return Ok(Value::Undefined);
+      }
+      // 获取 function 的 bytecode
+      let bytecode_list_value =  (*function_define).borrow_mut().get_inner_property_value(String::from("bytecode")).unwrap();
+      let bytecode_list = match bytecode_list_value {
+        Value::ByteCode(bytecode_list) => bytecode_list,
+        _ => vec![],
+      };
+       // 创建新的执行作用域
+      let define_scope = (*function_define).borrow_mut().get_inner_property_value(String::from("define_scope"));
+      let mut define_scope_value = None;
+      if let Some(scope_value) = define_scope {
+        if let Value::Scope(scope) = scope_value {
+          define_scope_value = scope.upgrade();
+        }
+      }
+      self.switch_scope(define_scope_value);
+
+      let argument_object = create_object(self, ClassType::Object, None);
+      {
+        let argument_object_rc = Rc::clone(&argument_object);
+        let mut argument_object_mut = argument_object_rc.borrow_mut();
+        argument_object_mut.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(args.len() as f64) });
+        let mut arguments_index = 0;
+        for value_info in args.iter() { 
+          argument_object_mut.define_property(arguments_index.to_string(), Property { enumerable: true, value: value_info.value.clone() });
+          arguments_index += 1
+        }
+      }
+
+      (*self.cur_scope).borrow_mut().set_value(String::from("arguments"), Value::Object(argument_object), false);
+      (*self.cur_scope).borrow_mut().this = Some(this_obj);
+      (*self.cur_scope).borrow_mut().function_call_args = args.clone();
+      let _ =  self.run_with_bytecode_list(0, &bytecode_list);
+      self.close_scope();
+      // 这个return 其实没啥用，都是走 stack 
+      Ok(Value::Undefined)
     }
 
     // 调用方法

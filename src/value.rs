@@ -7,12 +7,13 @@ use crate::builtins::function::get_builtin_function_name;
 use crate::builtins::number::create_number;
 use crate::builtins::object::{Object, Property};
 use crate::builtins::string::create_string;
+use crate::bytecode::ByteCode;
 use crate::context::{Context};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 use crate::scope::{self, Scope};
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValueInfo {
   // 变量名
   pub name: Option<String>,
@@ -89,6 +90,8 @@ pub enum Value {
   Scope(Weak<RefCell<Scope>>),
   // 中断
   Interrupt(Token,Expression),
+  // bytecode
+  ByteCode(Vec<ByteCode>),
 }
 
 #[derive(PartialEq, Debug)]
@@ -154,6 +157,9 @@ impl Clone for Value {
       },
       Value::Interrupt(token, expr) => {
         return Value::Interrupt(token.clone(), expr.clone());
+      },
+      Value::ByteCode(bytecode) => {
+        return Value::ByteCode(bytecode.clone());
       },
       _ => Value::Undefined,
     }

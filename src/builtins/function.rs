@@ -30,7 +30,7 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
 
   // define_scope
   function_mut.set_inner_property_value(String::from("define_scope"), Value::Scope(define_scope));
-  
+  function_mut.set_inner_property_value(String::from("bytecode"), Value::ByteCode(function_declaration.bytecode.clone()));
 
   // function prototype
   let prototype =  Rc::new(RefCell::new(Object::new(ClassType::Object, None)));

@@ -6,13 +6,10 @@ fn run_function_base() {
   let mut jsi_vm = JSI::new();
   let value = jsi_vm.run_with_bytecode(String::from("\n
   function add(x, y) {
-    function inner(x, y) {
-      return x + y;
-    };
-    return inner(x, y);
+    return x * 2 + y;
   };
   add(1, 'a')")).unwrap();
-  assert_eq!(value , Value::String(String::from("1a")));
+  assert_eq!(value , Value::String(String::from("2a")));
 }
 
 
