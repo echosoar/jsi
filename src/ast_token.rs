@@ -126,6 +126,25 @@ pub enum Token {
   EOF,
 }
 
+// to_string
+impl ToString for Token {
+  fn to_string(&self) -> String {
+    match self {
+      Token::Await => String::from("await"),
+      Token::BitwiseNot => String::from("~"),
+      Token::Decrement => String::from("--"),
+      Token::Delete => String::from("delete"),
+      Token::Increment => String::from("++"),
+      Token::Not => String::from("!"),
+      Token::Plus => String::from("+"),
+      Token::Subtract => String::from("-"),
+      Token::Typeof => String::from("typeof"),
+      Token::Void => String::from("void"),
+      _ => String::from("unsupported to_string token"),
+    }
+  }
+}
+
 
 pub fn get_token_keyword(literal: &String, is_strict: bool) -> Token {
   let str = literal.as_str();

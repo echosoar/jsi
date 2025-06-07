@@ -7,12 +7,13 @@ use crate::builtins::function::get_builtin_function_name;
 use crate::builtins::number::create_number;
 use crate::builtins::object::{Object, Property};
 use crate::builtins::string::create_string;
+use crate::bytecode::ByteCode;
 use crate::context::{Context};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
-use crate::scope::Scope;
+use crate::scope::{self, Scope};
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValueInfo {
   // 变量名
   pub name: Option<String>,
@@ -57,7 +58,10 @@ impl ValueInfo {
           }
       }
     } else {
-      // TODO: no reference set value
+      // no reference set value
+      if name.len() > 0 {
+        ctx.cur_scope.borrow_mut().set_value(name.clone(), value, self.is_const);
+      }
       return Ok(Some(name.clone()))
     }
   }
@@ -86,6 +90,8 @@ pub enum Value {
   Scope(Weak<RefCell<Scope>>),
   // 中断
   Interrupt(Token,Expression),
+  // bytecode
+  ByteCode(Vec<ByteCode>),
 }
 
 #[derive(PartialEq, Debug)]
@@ -151,6 +157,9 @@ impl Clone for Value {
       },
       Value::Interrupt(token, expr) => {
         return Value::Interrupt(token.clone(), expr.clone());
+      },
+      Value::ByteCode(bytecode) => {
+        return Value::ByteCode(bytecode.clone());
       },
       _ => Value::Undefined,
     }
@@ -440,6 +449,10 @@ impl Value {
     }
 
     return None;
+  }
+
+  pub fn to_value_info(&self) -> ValueInfo {
+    return ValueInfo { name: None, value: self.clone(), access_path: String::from(""), reference: None, is_const: true }
   }
 
 

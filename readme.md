@@ -13,6 +13,7 @@ JSI is a JavaScript interpreter written in Rust that supports bytecode similar t
 use jsi::JSI;
 
 let mut jsi = JSI::new();
+
 // Run with ast
 let result = jsi.run(String::from("\
   let a = [];

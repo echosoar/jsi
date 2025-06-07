@@ -36,6 +36,10 @@ pub struct AST {
   not_declare_function_to_scope: bool,
   // bytecode
   bytecode: Vec<ByteCode>,
+  // global bytecode index
+  global_bc_index: usize,
+  // 是否在多层循环解析内
+  is_in_deep_parse: bool,
 }
 
 impl AST{
@@ -57,6 +61,8 @@ impl AST{
       auto_semicolon_when_new_line: false,
       not_declare_function_to_scope: false,
       bytecode: vec![],
+      global_bc_index: 0,
+      is_in_deep_parse: false,
     }
   }
 
@@ -76,7 +82,6 @@ impl AST{
     let body = self.parse_statements()?;
     let declarations = self.scope.declarations.clone();
     self.close_scope();
-    print!("AST bytecode: {:?}", self.bytecode);
     Ok(Program {
       body,
       declarations,
@@ -239,11 +244,25 @@ impl AST{
   fn parse_if_statement(&mut self)  -> JSIResult<Statement> {
     self.check_token_and_next(Token::If)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
+    
+    
+
+    let is_if_start = !self.is_in_deep_parse;
+    let start_bc_index = self.bytecode.len() - 1;
+    self.is_in_deep_parse = true;
+    
+    let next_label_index = self.global_bc_index + 1;
+    self.global_bc_index = next_label_index.clone();
     let mut statement = IfStatement {
       condition: self.parse_expression()?,
       then_statement: Box::new(Statement::Unknown),
       else_statement: Box::new(Statement::Unknown),
     };
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpIfFalse,
+      args: vec![next_label_index.to_string()],
+      line: 0,
+    });
     self.check_token_and_next(Token::RightParenthesis)?;
     // 判断是否是 单行if
     if self.token == Token::LeftBrace {
@@ -252,9 +271,42 @@ impl AST{
       statement.then_statement = Box::new(self.parse_statement()?);
     }
 
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpGoto,
+      args: vec![], 
+      line: 0
+    });
+
     if self.token == Token::Else {
+       self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpLabel,
+        args: vec![next_label_index.to_string()], 
+        line: 0
+      });
+      self.global_bc_index = next_label_index;
       self.next();
       statement.else_statement = Box::new(self.parse_statement()?);
+    }
+    
+    if is_if_start {
+      self.is_in_deep_parse = false;
+      // if end
+      let end_label_index = self.global_bc_index + 1;
+      self.global_bc_index = end_label_index.clone();
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpLabel,
+        args: vec![end_label_index.to_string()], 
+        line: 0
+      });
+      let mut cur_bc_index = self.bytecode.len() - 1;
+      while cur_bc_index > start_bc_index {
+        cur_bc_index -= 1;
+        let bc_ref = &self.bytecode[cur_bc_index];
+        if bc_ref.op == EByteCodeop::OpGoto {
+          // 修噶 bc_ref 的值
+          self.bytecode[cur_bc_index].args = vec![end_label_index.to_string()];
+        }
+      }
     }
     return Ok(Statement::If(statement))
   }
@@ -450,6 +502,13 @@ impl AST{
       name = self.literal.clone();
       self.next();
     }
+    let function_index = self.global_bc_index + 1;
+    self.global_bc_index = function_index;
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpFuncStart,
+      args: vec![name.clone(), function_index.to_string()],
+      line: 0,
+    });
     // 解析参数
     // 左括号
     let mut parameters: Vec<Parameter> = vec![];
@@ -460,8 +519,18 @@ impl AST{
         let literal = self.literal.clone();
         self.check_function_parameters_duplicate(&mut parameters_names, &literal)?;
         parameters.push(Parameter{
-          name: IdentifierLiteral { literal: literal },
+          name: IdentifierLiteral { literal: literal.clone() },
           initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
+        });
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpGetArg,
+          args: vec![],
+          line: 0,
+        });
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpScopePutVarInit,
+          args: vec![literal.clone()],
+          line: 0,
         });
         self.next()
       } else {
@@ -490,10 +559,17 @@ impl AST{
       parameters,
       body,
       declarations,
+      bytecode: vec![],
     };
     if variable_lifting && !is_anonymous && !self.not_declare_function_to_scope {
       self.scope.declare(Declaration::Function(func.clone()));
     }
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpFuncEnd,
+      args: vec![function_index.to_string()],
+      line: 0,
+    });
+
     return Ok(func);
   }
 
@@ -551,6 +627,7 @@ impl AST{
         parameters,
         body,
         declarations,
+        bytecode: vec![],
       };
       Ok(Expression::Function(func))
     } else {
@@ -564,6 +641,7 @@ impl AST{
           Statement::Return(ReturnStatement { expression: expr }),
         ] },
         declarations: vec![],
+        bytecode: vec![],
       };
       Ok(Expression::Function(func))
     }
@@ -683,6 +761,7 @@ impl AST{
       expression = self.parse_expression()?
     }
     self.semicolon()?;
+    self.bytecode.push(ByteCode { op: EByteCodeop::OpReturn, args: vec![], line: 0 });
     return Ok(Statement::Return(ReturnStatement{
       expression
     }));
@@ -702,12 +781,12 @@ impl AST{
 
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpUndefined,
-      arg: None,
+      args: vec![],
       line: 0,
     });
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpScopePutVarInit,
-      arg: Some(node.name.clone()),
+      args: vec![node.name.clone()],
       line: 0,
     });
 
@@ -716,7 +795,7 @@ impl AST{
       node.initializer = Box::new(self.parse_expression()?);
       self.bytecode.push(ByteCode {
         op: EByteCodeop::OpScopePutVar,
-        arg: Some(node.name.clone()),
+        args: vec![node.name.clone()],
         line: 0,
       });
     }
@@ -1339,6 +1418,15 @@ impl AST{
         self.next();
         // from right to left
         let right = self.parse_expression()?;
+        
+
+        match oper {
+          Token::Assign => {
+            self.bytecode.push(ByteCode { op: EByteCodeop::OpAssign, args: vec![], line: 0 });
+          },
+          _ => {}
+        }
+
         return Ok(Expression::Assign(AssignExpression {
           left: Box::new(left),
           operator: oper,
@@ -1514,23 +1602,40 @@ impl AST{
       Token::Not | Token::BitwiseNot | Token::Plus | Token::Subtract => {
         let operator = self.token.clone();
         self.next();
+        let operand = self.parse_postfix_unary_expression()?;
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpPrefixUnary,
+          args: vec![operator.to_string()],
+          line: 0,
+        });
         Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
-          operand: Box::new(self.parse_postfix_unary_expression()?),
+          operand: Box::new(operand),
         }))
       },
       Token::Typeof | Token::Void | Token::Delete | Token::Await => {
         let operator = self.token.clone();
         self.next();
+        let operand = self.parse_postfix_unary_expression()?;
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpPrefixUnary,
+          args: vec![operator.to_string()],
+          line: 0,
+        });
         Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
-          operand: Box::new(self.parse_postfix_unary_expression()?),
+          operand: Box::new(operand),
         }))
       },
       Token::Increment | Token::Decrement => {
         let operator = self.token.clone();
         self.next();
         let operand = self.parse_postfix_unary_expression()?;
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpPrefixUnary,
+          args: vec![operator.to_string()],
+          line: 0,
+        });
         // TODO: check operand is Identifier/Property access
         Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
@@ -1552,6 +1657,11 @@ impl AST{
       let expr = Expression::PostfixUnary(PostfixUnaryExpression {
         operator: self.token.clone(),
         operand: Box::new(left),
+      });
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpPostfixUnary,
+        args: vec![self.token.to_string()],
+        line: 0,
       });
       self.next();
       Ok(expr)
@@ -1627,6 +1737,11 @@ impl AST{
     let arguments = self.parse_arguments()?;
     // CallExpression {}
     self.check_token_and_next(Token::RightParenthesis)?;
+    self.bytecode.push(ByteCode{
+      op: EByteCodeop::OpCall,
+      args: vec![arguments.len().to_string()],
+      line: 0,
+    });
     return Ok(Expression::Call(CallExpression {
       expression,
       arguments
@@ -1674,7 +1789,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpScopeGetVar,
-          arg: Some(literal.clone()),
+          args: vec![literal.clone()],
           line: 0,
         });
         Ok(Expression::Identifier(IdentifierLiteral{
@@ -1686,7 +1801,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpNumber,
-          arg: Some(literal.clone()),
+          args: vec![literal.clone()],
           line: 0,
         });
         Ok(Expression::Number(NumberLiteral {
@@ -1700,7 +1815,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpString,
-          arg: Some(slice.clone()),
+          args: vec![slice.clone()],
           line: 0,
         });
         Ok(Expression::String(StringLiteral{
@@ -1715,7 +1830,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpFalse,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::False))
@@ -1724,7 +1839,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpTrue,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::True))
@@ -1733,7 +1848,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpNull,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::Null))
@@ -1742,7 +1857,7 @@ impl AST{
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpUndefined,
-          arg: None,
+          args: vec![],
           line: 0,
         });
         Ok(Expression::Keyword(Keywords::Undefined))
@@ -1952,32 +2067,97 @@ impl AST{
           Token::Plus => {
             self.bytecode.push(ByteCode{
               op: EByteCodeop::OpAdd,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
           Token::Subtract => {
             self.bytecode.push(ByteCode{
               op: EByteCodeop::OpSub,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
           Token::Multiply => {
             self.bytecode.push(ByteCode {
               op: EByteCodeop::OpMul,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
           Token::Slash => {
             self.bytecode.push(ByteCode{
               op: EByteCodeop::OpDiv,
-              arg: None,
+              args: vec![],
               line: 0,
             });
           },
-          _ => {},
+          Token::Equal => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::StrictEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpStrictEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::NotEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpNotEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::StrictNotEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpStrictNotEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Greater => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpGreaterThan,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::GreaterOrEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpGreaterThanOrEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Less => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpLessThan,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::LessOrEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpLessThanOrEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Instanceof => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpInstanceOf,
+              args: vec![],
+              line: 0,
+            });
+          },
+          _ => {
+            println!("unknown left_associate_expression operator: {:?}", operator);
+          },
         }
         left = Expression::Binary(BinaryExpression{
           left: Box::new(left),
@@ -2039,7 +2219,7 @@ impl Program {}
 #[derive(Debug, Clone)]
 pub struct ASTScope {
   pub parent: Option<Box<ASTScope>>,
-  pub declarations: Vec<Declaration>
+  pub declarations: Vec<Declaration>,
 }
 
 impl  ASTScope {

@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::{fmt, cell::RefCell, rc::Weak};
+use crate::bytecode::ByteCode;
 use crate::context::{Context};
 use crate::{ast_token::Token, value::Value, builtins::{object::Object}, error::JSIResult};
 
@@ -218,6 +219,7 @@ pub struct FunctionDeclaration {
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,
   pub declarations: Vec<Declaration>,
+  pub bytecode: Vec<ByteCode>,
 }
 
 // ES2015 Computed Property Name
