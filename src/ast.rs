@@ -1601,23 +1601,40 @@ impl AST{
       Token::Not | Token::BitwiseNot | Token::Plus | Token::Subtract => {
         let operator = self.token.clone();
         self.next();
+        let operand = self.parse_postfix_unary_expression()?;
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpPrefixUnary,
+          args: vec![operator.to_string()],
+          line: 0,
+        });
         Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
-          operand: Box::new(self.parse_postfix_unary_expression()?),
+          operand: Box::new(operand),
         }))
       },
       Token::Typeof | Token::Void | Token::Delete | Token::Await => {
         let operator = self.token.clone();
         self.next();
+        let operand = self.parse_postfix_unary_expression()?;
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpPrefixUnary,
+          args: vec![operator.to_string()],
+          line: 0,
+        });
         Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
-          operand: Box::new(self.parse_postfix_unary_expression()?),
+          operand: Box::new(operand),
         }))
       },
       Token::Increment | Token::Decrement => {
         let operator = self.token.clone();
         self.next();
         let operand = self.parse_postfix_unary_expression()?;
+        self.bytecode.push(ByteCode {
+          op: EByteCodeop::OpPrefixUnary,
+          args: vec![operator.to_string()],
+          line: 0,
+        });
         // TODO: check operand is Identifier/Property access
         Ok(Expression::PrefixUnary(PrefixUnaryExpression {
           operator,
@@ -1639,6 +1656,11 @@ impl AST{
       let expr = Expression::PostfixUnary(PostfixUnaryExpression {
         operator: self.token.clone(),
         operand: Box::new(left),
+      });
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpPostfixUnary,
+        args: vec![self.token.to_string()],
+        line: 0,
       });
       self.next();
       Ok(expr)
@@ -2069,7 +2091,72 @@ impl AST{
               line: 0,
             });
           },
-          _ => {},
+          Token::Equal => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::StrictEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpStrictEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::NotEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpNotEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::StrictNotEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpStrictNotEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Greater => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpGreaterThan,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::GreaterOrEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpGreaterThanOrEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Less => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpLessThan,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::LessOrEqual => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpLessThanOrEqual,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Instanceof => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpInstanceOf,
+              args: vec![],
+              line: 0,
+            });
+          },
+          _ => {
+            println!("unknown left_associate_expression operator: {:?}", operator);
+          },
         }
         left = Expression::Binary(BinaryExpression{
           left: Box::new(left),

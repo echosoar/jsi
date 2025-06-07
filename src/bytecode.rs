@@ -20,6 +20,9 @@ pub enum EByteCodeop {
     OpPushConst,
     // 从栈中弹出2个值，把第一个值赋值给第二个值
     OpAssign,
+    // 从栈中弹出一个值，进行一元运算后推入栈
+    OpPrefixUnary,
+    OpPostfixUnary,
     // 从栈中弹出 2 值，进行运算后的值推入栈
     OpAdd,
     OpSub,
@@ -40,6 +43,20 @@ pub enum EByteCodeop {
     OpGoto,
     // 跳转到指定标签
     OpIfFalse,
+    // 逻辑运算
+    OpEqual,
+    OpNotEqual,
+    OpStrictEqual,
+    OpStrictNotEqual,
+    // <
+    OpLessThan,
+    // <=
+    OpLessThanOrEqual,
+    // >
+    OpGreaterThan,
+    // >=
+    OpGreaterThanOrEqual,
+    OpInstanceOf,
 }
 
 impl fmt::Display for EByteCodeop {

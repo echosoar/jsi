@@ -57,12 +57,14 @@ fn run_binary_equal() {
     ("!'0'", false),
     ("!false", true),
     ("!true", false),
+    ("++1 === 2", true),
+    ("--2 === 1", true),
     // TODO: Object/Array/Function
     
   ];
   let mut jsi = JSI::new();
   for check_item in check_list {
-    assert_eq!(jsi.run(String::from(check_item.0)).unwrap(), Value::Boolean(check_item.1), "expr: {:?}", check_item.0);
+    assert_eq!(jsi.run_with_bytecode(String::from(check_item.0)).unwrap(), Value::Boolean(check_item.1), "expr: {:?}", check_item.0);
   }
   
 }

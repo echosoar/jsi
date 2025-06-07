@@ -126,27 +126,18 @@ impl Context {
               return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("variable name arg is required"), 0, 0));
             }
           },
-          EByteCodeop::OpAdd => {
-            let right = self.stack.pop().unwrap();
-            let left = self.stack.pop().unwrap();
-            // 执行加法运算
-            let result = self.execute_binary_expression(&BinaryExpression {
-              left: Box::new(Expression::Value(Box::new(left.value))),
-              right: Box::new(Expression::Value(Box::new(right.value))),
-              operator: Token::Plus,
-            })?;
-            self.stack.push(result.to_value_info());
-          },
           EByteCodeop::OpAssign => {
             let right = self.stack.pop().unwrap();
             let mut left = self.stack.pop().unwrap();
             left.set_value(self, right.value)?;
+            // 将左值的值推入栈
+            self.stack.push(left);
           },
           EByteCodeop::OpFuncStart => {
             bytecode_index = self.run_function_bytecode(bytecode_index, bytecode_item, &bytecode);
           },
           EByteCodeop::OpCall => {
-
+            // TODO
           },
           EByteCodeop::OpIfFalse => {
             // 从栈顶获取一个数据，转换为布尔值
@@ -176,7 +167,47 @@ impl Context {
               return self.run_goto(cur_index, label.to_owned(), &bytecode)
             }
             return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("goto label arg is required"), 0, 0));
-          }
+          },
+          EByteCodeop::OpAdd  | EByteCodeop::OpSub | EByteCodeop::OpMul | EByteCodeop::OpDiv |
+          EByteCodeop::OpEqual | EByteCodeop::OpNotEqual | EByteCodeop::OpStrictEqual | EByteCodeop::OpStrictNotEqual |
+          EByteCodeop::OpLessThan | EByteCodeop::OpLessThanOrEqual | EByteCodeop::OpGreaterThan | EByteCodeop::OpGreaterThanOrEqual
+           => {
+            let right = self.stack.pop().unwrap();
+            let left = self.stack.pop().unwrap();
+            let operator = match bytecode_item.op {
+              EByteCodeop::OpAdd => Token::Plus,
+              EByteCodeop::OpSub => Token::Subtract,
+              EByteCodeop::OpMul => Token::Multiply,
+              EByteCodeop::OpDiv => Token::Slash,
+              EByteCodeop::OpEqual => Token::Equal,
+              EByteCodeop::OpNotEqual => Token::NotEqual,
+              EByteCodeop::OpStrictEqual => Token::StrictEqual,
+              EByteCodeop::OpStrictNotEqual => Token::StrictNotEqual,
+              EByteCodeop::OpLessThan => Token::Less,
+              EByteCodeop::OpLessThanOrEqual => Token::LessOrEqual,
+              EByteCodeop::OpGreaterThan => Token::Greater,
+              EByteCodeop::OpGreaterThanOrEqual => Token::GreaterOrEqual,
+              _ => {
+                return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unsupported bytecode operation: {:?}", bytecode_item.op), 0, 0));
+              }
+            };
+            // 执行二元运算
+            let result = self.execute_binary_expression(&BinaryExpression {
+              left: Box::new(Expression::Value(Box::new(left.value))),
+              right: Box::new(Expression::Value(Box::new(right.value))),
+              operator,
+            })?;
+            self.stack.push(result.to_value_info());
+          },
+          EByteCodeop::OpPrefixUnary => {
+            if let Some(arg) = bytecode_item.args.get(0) {
+              // 执行一元运算
+              let result = self.execute_prefix_unary_bytecode(arg);
+              self.stack.push(result);
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("prefix unary arg is required"), 0, 0));
+            }
+          },
           _ => {
             println!("Unsupported bytecode operation: {:?}", bytecode_item.op);
           }
@@ -805,6 +836,66 @@ impl Context {
       }
     }
 
+    fn execute_prefix_unary_bytecode(&mut self, operator: &String) -> ValueInfo {
+      // 获取栈顶的值
+      let mut value_info = self.stack.pop().unwrap();
+      let value = value_info.value.clone();
+      let new_value_info =  match operator.as_str() {
+        // Token::Not | Token::BitwiseNot | Token::Plus | Token::Subtract
+        "!" => {
+          Value::Boolean(!value.to_boolean(self)).to_value_info()
+        },
+        "+" => {
+          let value_number = value.to_number(self);
+          if let Some(num) = value_number {
+            Value::Number(num).to_value_info()
+          } else {
+            Value::NAN.to_value_info()
+          }
+        },
+        "-" => {
+          let value_number = value.to_number(self);
+          if let Some(num) = value_number {
+            Value::Number(-num).to_value_info()
+          } else {
+            Value::NAN.to_value_info()
+          }
+        },
+        // Token::Typeof | Token::Void
+        "typeof" => {
+          Value::String(value.type_of()).to_value_info()
+        },
+        "void" => {
+          Value::Undefined.to_value_info()
+        },
+        "++" => {
+          let value_number = value.to_number(self);
+          if let Some(num) = value_number {
+            let new_value = Value::Number(num + 1f64);
+            value_info.set_value(self, new_value.clone());
+            new_value.to_value_info()
+          } else {
+            Value::NAN.to_value_info()
+          }
+        },
+        "--" => {
+          let value_number = value.to_number(self);
+          if let Some(num) = value_number {
+            let new_value = Value::Number(num - 1f64);
+            value_info.set_value(self, new_value.clone());
+            new_value.to_value_info()
+          } else {
+            Value::NAN.to_value_info()
+          }
+        },
+       // TODO:  | Token::Delete | Token::Await
+        _ => {
+          println!("Unsupported prefix unary operator: {}", operator);
+          Value::Undefined.to_value_info()
+        }
+      };
+      return new_value_info;
+    }
     // 执行 ++i --i
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> JSIResult<Value> {
       
