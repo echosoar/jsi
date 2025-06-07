@@ -2,3 +2,4 @@
 .test
 262_result.json
 262_result_diff.json
+Cargo.lock

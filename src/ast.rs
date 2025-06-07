@@ -761,6 +761,7 @@ impl AST{
       expression = self.parse_expression()?
     }
     self.semicolon()?;
+    self.bytecode.push(ByteCode { op: EByteCodeop::OpReturn, args: vec![], line: 0 });
     return Ok(Statement::Return(ReturnStatement{
       expression
     }));

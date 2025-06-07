@@ -134,7 +134,8 @@ impl Context {
             self.stack.push(left);
           },
           EByteCodeop::OpFuncStart => {
-            bytecode_index = self.run_function_bytecode(bytecode_index, bytecode_item, &bytecode);
+            // 函数定义
+            bytecode_index = self.run_function_def_bytecode(1, bytecode_index, bytecode_item, &bytecode);
           },
           EByteCodeop::OpCall => {
             // TODO
@@ -241,7 +242,7 @@ impl Context {
     }
 
 
-    pub fn run_function_bytecode(&mut self, next_bytecode_index: usize, cur_bytecode: &ByteCode, bytecode_list: &Vec<ByteCode>) -> usize {
+    pub fn run_function_def_bytecode(&mut self, level:usize, next_bytecode_index: usize, cur_bytecode: &ByteCode, bytecode_list: &Vec<ByteCode>) -> usize {
       let mut function_name = String::new();
       if let Some(name) = cur_bytecode.args.get(0) {
         function_name = name.clone();
@@ -250,7 +251,7 @@ impl Context {
       //   function_index = index.clone();
       // }
 
-      let mut function_bytecode = vec![];
+      // let mut function_bytecode = vec![];
       let mut bytecode_index = next_bytecode_index;
 
       while bytecode_index < bytecode_list.len() {
@@ -259,7 +260,7 @@ impl Context {
         match next_bytecode.op {
           EByteCodeop::OpFuncStart => {
             // 嵌套函数，递归调用
-            let next_index = self.run_function_bytecode(bytecode_index, 
+            let next_index = self.run_function_def_bytecode(level + 1, bytecode_index, 
               next_bytecode, bytecode_list);
             bytecode_index = next_index;
           },
@@ -267,15 +268,23 @@ impl Context {
             // 结束函数
             break;
           },
-          _ => {
-            // 将当前 bytecode 添加到函数的 bytecode 中
-            function_bytecode.push(next_bytecode.clone());
-          }
+          _ => {}
         }
       }
-
-      let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::downgrade(&self.cur_scope));
-      (*self.cur_scope).borrow_mut().set_value(function_name, function, false);
+      if level == 1 {
+        // bytecode_index 是 OpFuncEnd
+        let function_bytecode = bytecode_list[next_bytecode_index..bytecode_index - 1].to_vec();
+        let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::downgrade(&self.cur_scope));
+        (*self.cur_scope).borrow_mut().set_value(function_name.clone(), function.clone(), false);
+        self.stack.push(ValueInfo {
+          name: Some(function_name.clone()),
+          value: function.clone(),
+          is_const: false,
+          access_path: String::from(""),
+          reference: None,
+        });
+      }
+      
       return bytecode_index
     }
 
