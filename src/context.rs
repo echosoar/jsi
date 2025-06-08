@@ -128,6 +128,34 @@ impl Context {
               return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("variable name arg is required"), 0, 0));
             }
           },
+          EByteCodeop::OpGetProperty => {
+            // 从栈中弹出一个值作为对象
+            let object = self.stack.pop().unwrap();
+            if let Some(property_name) = bytecode_item.args.get(0) {
+              // 获取属性名
+              let left = object.value;
+              if left.is_equal_to(self, &Value::Null, true) {
+                return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of null (reading '{}')", property_name), 0, 0))
+              }
+              if left.is_equal_to(self, &Value::Undefined, true) {
+                return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of undefined (reading '{}')", property_name), 0, 0))
+              }
+
+              let left_clone = left.clone();
+              let left_obj = left.to_object(self);
+              let value = (*left_obj).borrow().get_value(property_name.clone());
+              let property_valueinfo = ValueInfo {
+                is_const: false,
+                value,
+                name: Some(property_name.clone()),
+                access_path: format!("{}.{}", object.access_path, property_name),
+                reference: Some(left_clone) 
+              };
+              self.stack.push(property_valueinfo);
+            } else {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("property name arg is required"), 0, 0));
+            }
+          },
           EByteCodeop::OpAssign => {
             let right = self.stack.pop().unwrap();
             let mut left = self.stack.pop().unwrap();
@@ -159,7 +187,7 @@ impl Context {
                     if let Some(call_ref) = &callee.reference {
                       reference = call_ref.to_weak_rc_object();
                     }
-                    return self.call_function_with_bytecode(function_object.to_owned(), callee.reference, reference, args);
+                    let _ = self.call_function_with_bytecode(function_object.to_owned(), callee.reference, reference, args);
                   },
                   _ => {}
                 }
