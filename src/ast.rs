@@ -1711,6 +1711,11 @@ impl AST{
     }
     let literal = self.literal.clone();
     self.next();
+    self.bytecode.push(ByteCode{
+      op: EByteCodeop::OpGetProperty,
+      args: vec![literal.clone()],
+      line: 0,
+    });
     return Ok(Expression::PropertyAccess(PropertyAccessExpression{
       expression: Box::new(self.cur_expr.clone()),
       name: IdentifierLiteral { literal }

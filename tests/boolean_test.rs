@@ -3,7 +3,7 @@ use jsi::{JSI, value::Value};
 #[test]
 fn run_boolean_to_string() {
   let mut jsi = JSI::new();
-  let result = jsi.run(String::from("\
+  let result = jsi.run_with_bytecode(String::from("\
   let bool1 = false, bool2 = true;
   bool1.toString() + bool2.toString()")).unwrap();
   assert_eq!(result , Value::String(String::from("falsetrue")));
@@ -21,7 +21,7 @@ fn run_boolean_object() {
 #[test]
 fn run_boolean_typeof() {
   let mut jsi = JSI::new();
-  let result = jsi.run(String::from("\
+  let result = jsi.run_with_bytecode(String::from("\
   typeof false")).unwrap();
   assert_eq!(result , Value::String(String::from("boolean")));
 }

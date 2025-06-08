@@ -18,6 +18,8 @@ pub enum EByteCodeop {
     OpScopePutVar,
     OpScopeGetVar,
     OpPushConst,
+    // 从栈中弹出一个值，获取对象属性后入栈
+    OpGetProperty,
     // 从栈中弹出2个值，把第一个值赋值给第二个值
     OpAssign,
     // 从栈中弹出一个值，进行一元运算后推入栈
