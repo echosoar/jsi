@@ -24,7 +24,7 @@ fn run_string_object() {
 #[test]
 fn run_string_typeof() {
   let mut jsi = JSI::new();
-  let result = jsi.run(String::from("\
+  let result = jsi.run_with_bytecode(String::from("\
   typeof 'abc'")).unwrap();
   assert_eq!(result , Value::String(String::from("string")));
 }
@@ -32,7 +32,7 @@ fn run_string_typeof() {
 #[test]
 fn run_string_xxx() {
   let mut jsi = JSI::new();
-  let result = jsi.run(String::from("\
+  let result = jsi.run_with_bytecode(String::from("\
   !('')")).unwrap();
   assert_eq!(result , Value::Boolean(true));
 } 

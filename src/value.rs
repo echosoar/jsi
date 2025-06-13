@@ -452,7 +452,7 @@ impl Value {
   }
 
   pub fn to_value_info(&self) -> ValueInfo {
-    return ValueInfo { name: None, value: self.clone(), access_path: String::from(""), reference: None, is_const: true }
+    return ValueInfo { name: None, value: self.clone(), access_path: String::from(""), reference: None, is_const: false }
   }
 
 

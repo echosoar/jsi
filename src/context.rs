@@ -102,6 +102,29 @@ impl Context {
               return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("number arg is required"), 0, 0));
             }
           },
+          EByteCodeop::OpArray => {
+            let length = if let Some(length) = bytecode_item.args.get(0) {
+              length.parse::<usize>().unwrap_or(0)
+            } else {
+              0
+            };
+            let array = create_array(self, 0);
+            if let Value::Array(arr_obj) = &array {
+              if length > self.stack.len() {
+                return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("array length is greater than stack length"), 0, 0));
+              }
+              let arguments = self.stack.drain(self.stack.len() - length..).map(|item| item.value).collect();
+              
+              let call_ctx = &mut CallContext {
+                ctx: self,
+                this: Value::Array(Rc::clone(arr_obj)),
+                reference: None,
+                func_name: String::from("push")
+              };
+              Object::call(call_ctx, String::from("push"), arguments)?;
+            }
+            self.stack.push(array.to_value_info());
+          },
           EByteCodeop::OpScopePutVarInit | EByteCodeop::OpScopePutVar => {
             if let Some(arg) = bytecode_item.args.get(0) {
               // 获取栈顶的值
@@ -172,13 +195,11 @@ impl Context {
             let mut args = vec![];
             // 从栈中弹出参数
             let arg_count = bytecode_item.args.get(0).unwrap().parse::<usize>().unwrap_or(0);
-            for _ in 0..arg_count {
-              if let Some(arg) = self.stack.pop() {
-                args.push(arg);
-              } else {
-                return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("call args not enough"), 0, 0));
-              }
+            if arg_count > self.stack.len() {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("call args not enough"), 0, 0));
             }
+            args  = self.stack.drain(self.stack.len() - arg_count..).collect();
+              
             // 从栈中弹出函数
             if let Some(callee) = self.stack.pop() {
                 match &callee.value {
@@ -197,8 +218,8 @@ impl Context {
             
           },
           EByteCodeop::OpGetArg => {
-            // 因为 OpCall 的时候 arg 是按照从右到左的顺序入栈的，所以这里需要反向获取
-            let arg = self.cur_scope.borrow_mut().function_call_args.pop().unwrap_or(Value::Undefined.to_value_info());
+            // OpCall 的时候 arg 是按照从左到右顺序插入的
+            let arg = self.cur_scope.borrow_mut().function_call_args.remove(0);
             self.stack.push(arg);
           },
           EByteCodeop::OpReturn => {

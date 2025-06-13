@@ -6,16 +6,20 @@ fn run_if_else() {
   let mut jsi = JSI::new();
   let result = jsi.run_with_bytecode(String::from("\
   let a = false;
-  let b = 0;
+  let b = 1;
   if (a) {
     b = 1;
   } else if (b) {
-    b = 2;
+    if (b == 1) {
+      b = 2;
+    } else {
+      b = 3;
+    }
   } else {
-    b = 3;
+    b = 4;
   }\n
   b")).unwrap();
-  assert_eq!(result , Value::Number(3f64));
+  assert_eq!(result , Value::Number(2f64));
 }
 
 #[test]

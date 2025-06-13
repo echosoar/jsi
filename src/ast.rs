@@ -38,8 +38,6 @@ pub struct AST {
   bytecode: Vec<ByteCode>,
   // global bytecode index
   global_bc_index: usize,
-  // 是否在多层循环解析内
-  is_in_deep_parse: bool,
 }
 
 impl AST{
@@ -62,7 +60,6 @@ impl AST{
       not_declare_function_to_scope: false,
       bytecode: vec![],
       global_bc_index: 0,
-      is_in_deep_parse: false,
     }
   }
 
@@ -247,12 +244,10 @@ impl AST{
     
     
 
-    let is_if_start = !self.is_in_deep_parse;
     let start_bc_index = self.bytecode.len() - 1;
-    self.is_in_deep_parse = true;
     
-    let next_label_index = self.global_bc_index + 1;
-    self.global_bc_index = next_label_index.clone();
+    let else_label_index = self.global_bc_index + 1;
+    self.global_bc_index = else_label_index.clone();
     let mut statement = IfStatement {
       condition: self.parse_expression()?,
       then_statement: Box::new(Statement::Unknown),
@@ -260,7 +255,7 @@ impl AST{
     };
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpIfFalse,
-      args: vec![next_label_index.to_string()],
+      args: vec![else_label_index.to_string()],
       line: 0,
     });
     self.check_token_and_next(Token::RightParenthesis)?;
@@ -271,26 +266,23 @@ impl AST{
       statement.then_statement = Box::new(self.parse_statement()?);
     }
 
+    let else_goto_index = self.bytecode.len();
     self.bytecode.push(ByteCode {
       op: EByteCodeop::OpGoto,
       args: vec![], 
       line: 0
     });
 
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpLabel,
+      args: vec![else_label_index.to_string()], 
+      line: 0
+    });
+
     if self.token == Token::Else {
-       self.bytecode.push(ByteCode {
-        op: EByteCodeop::OpLabel,
-        args: vec![next_label_index.to_string()], 
-        line: 0
-      });
-      self.global_bc_index = next_label_index;
       self.next();
       statement.else_statement = Box::new(self.parse_statement()?);
-    }
-    
-    if is_if_start {
-      self.is_in_deep_parse = false;
-      // if end
+
       let end_label_index = self.global_bc_index + 1;
       self.global_bc_index = end_label_index.clone();
       self.bytecode.push(ByteCode {
@@ -298,16 +290,10 @@ impl AST{
         args: vec![end_label_index.to_string()], 
         line: 0
       });
-      let mut cur_bc_index = self.bytecode.len() - 1;
-      while cur_bc_index > start_bc_index {
-        cur_bc_index -= 1;
-        let bc_ref = &self.bytecode[cur_bc_index];
-        if bc_ref.op == EByteCodeop::OpGoto {
-          // 修噶 bc_ref 的值
-          self.bytecode[cur_bc_index].args = vec![end_label_index.to_string()];
-        }
-      }
     }
+
+    let end_label_index = self.global_bc_index;
+    self.bytecode[else_goto_index].args = vec![end_label_index.to_string()];
     return Ok(Statement::If(statement))
   }
 
@@ -1904,6 +1890,11 @@ impl AST{
       }
     };
     self.check_token_and_next(Token::RightBracket)?;
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpArray,
+      args: vec![elements.len().to_string()],
+      line: 0,
+    });
 
     Ok(Expression::Array(ArrayLiteral {
       elements
