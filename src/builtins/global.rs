@@ -12,6 +12,7 @@ use super::function::{bind_global_function};
 use super::number::bind_global_number;
 use super::object::{Object, Property, bind_global_object};
 use super::string::bind_global_string;
+use super::promise::bind_global_promise;
 
 pub const IS_GLOABL_OBJECT: &str = "isGlobal";
 
@@ -97,6 +98,8 @@ pub fn bind_global(ctx: &mut Context) {
   bind_global_boolean(ctx);
   // 绑定  Number 的 静态方法 和 原型链方法
   bind_global_number(ctx);
+  // 绑定  Promise 的 静态方法 和 原型链方法
+  bind_global_promise(ctx);
   // 绑定  Error 的 静态方法 和 原型链方法
   bind_global_error(ctx, GLOBAL_ERROR_NAME);
   bind_global_error(ctx, GLOBAL_TYPE_ERROR_NAME);

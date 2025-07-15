@@ -428,6 +428,7 @@ pub enum ClassType {
   Null,
   //
   Error,
+  Promise,
 }
 
 impl  ClassType {
@@ -441,6 +442,7 @@ impl  ClassType {
       Self::Number => String::from("Number"),
       Self::Null => String::from("Null"),
       Self::Error => String::from("Error"),
+      Self::Promise => String::from("Promise"),
     }
   }
 }

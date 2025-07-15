@@ -229,12 +229,25 @@ pub struct Property {
 
 // 实例化对象
 pub fn create_object(ctx: &mut Context, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
+  // Determine the appropriate global object and prototype based on type
+  let (global_name, prototype_name) = match obj_type {
+    ClassType::Array => (crate::constants::GLOBAL_ARRAY_NAME, crate::constants::GLOBAL_ARRAY_NAME),
+    ClassType::Function => (crate::constants::GLOBAL_FUNCTION_NAME, crate::constants::GLOBAL_FUNCTION_NAME),
+    ClassType::Promise => (crate::constants::GLOBAL_PROMISE_NAME, crate::constants::GLOBAL_PROMISE_NAME),
+    ClassType::String => (crate::constants::GLOBAL_STRING_NAME, crate::constants::GLOBAL_STRING_NAME),
+    ClassType::Number => (crate::constants::GLOBAL_NUMBER_NAME, crate::constants::GLOBAL_NUMBER_NAME),
+    ClassType::Boolean => (crate::constants::GLOBAL_BOOLEAN_NAME, crate::constants::GLOBAL_BOOLEAN_NAME),
+    ClassType::Error => (crate::constants::GLOBAL_ERROR_NAME, crate::constants::GLOBAL_ERROR_NAME),
+    _ => (GLOBAL_OBJECT_NAME, GLOBAL_OBJECT_NAME),
+  };
+
   let object = Rc::new(RefCell::new(Object::new(obj_type, value)));
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
-  // 绑定 obj.constructor = global.Object
-  let global_object = get_global_object_by_name(ctx, GLOBAL_OBJECT_NAME);
-  let global_prototype = get_global_object_prototype_by_name(ctx, GLOBAL_OBJECT_NAME);
+  
+  // 绑定 obj.constructor = appropriate global constructor
+  let global_object = get_global_object_by_name(ctx, global_name);
+  let global_prototype = get_global_object_prototype_by_name(ctx, prototype_name);
   object_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&global_prototype)));
   let weak_rc = Rc::downgrade(&global_object);
   object_mut.constructor = Some(weak_rc);
