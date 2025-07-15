@@ -16,6 +16,24 @@ use super::promise::bind_global_promise;
 
 pub const IS_GLOABL_OBJECT: &str = "isGlobal";
 
+// 创建全局构造函数对象 (如 Array, Promise 等)
+pub fn new_global_constructor() -> Rc<RefCell<Object>> {
+  let object = Rc::new(RefCell::new(Object::new(ClassType::Function, None)));
+  let object_clone = Rc::clone(&object);
+  let mut object_mut = (*object_clone).borrow_mut();
+
+  // 创建原型对象 prototype
+  let prototype =  Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
+  let prototype_clone = Rc::clone(&prototype);
+  let mut prototype_mut = prototype_clone.borrow_mut();
+  prototype_mut.define_property(String::from("constructor"), Property {
+    enumerable: false,
+    value: Value::RefObject(Rc::downgrade(&object)),
+  });
+  object_mut.prototype = Some(prototype);
+  object
+}
+
 pub fn new_global_object() -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(ClassType::Object, None)));
   let object_clone = Rc::clone(&object);
@@ -68,7 +86,9 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
       if name == &GLOBAL_OBJECT_NAME {
         continue;
       }
-      let object = new_global_object();
+      
+      // 构造函数应该被创建为 Function 而不是 Object
+      let object = new_global_constructor();
       let object_rc = Rc::clone(&object);
       let mut object_borrow = object_rc.borrow_mut();
       // 绑定当前对象的原型
@@ -78,7 +98,8 @@ pub fn new_global_this() -> Rc<RefCell<Object>> {
       object_borrow.set_inner_property_value(IS_GLOABL_OBJECT.to_string(), Value::Boolean(true));
       // 添加对象 name
       object_borrow.set_inner_property_value(String::from("name"), Value::String(name.to_string()));
-      global_obj.property.insert(name.to_string(), Property { enumerable: true, value: Value::Object(Rc::clone(&object))});
+      // 存储为 Function 而不是 Object
+      global_obj.property.insert(name.to_string(), Property { enumerable: true, value: Value::Function(Rc::clone(&object))});
     }
   }
   

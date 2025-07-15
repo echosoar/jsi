@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, get_value_info_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
+use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, get_value_info_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo, INSTANTIATE_OBJECT_METHOD_NAME}};
 
 
 use super::ast::AST;
@@ -1243,8 +1243,17 @@ impl Context {
            }
            
            // 执行构造函数
-          self.call_function_object(Rc::clone(function_declare), Some(Value::Object(Rc::clone(&obj))), None, arguments)?;
-          return Ok(Value::Object(obj))
+          let constructor_result = self.call_function_object(Rc::clone(function_declare), Some(Value::Object(Rc::clone(&obj))), None, arguments)?;
+          
+          // 如果构造函数返回一个对象，使用该对象而不是创建的默认对象
+          match constructor_result {
+            Value::Object(_) | Value::Function(_) | Value::Array(_) | Value::Promise(_) => {
+              return Ok(constructor_result);
+            },
+            _ => {
+              return Ok(Value::Object(obj));
+            }
+          }
         }
       }
 
@@ -1378,7 +1387,19 @@ impl Context {
     // reference 指向
     pub fn call_function_object(&mut self, function_define: Rc<RefCell<Object>>, call_this: Option<Value>, reference: Option<Weak<RefCell<Object>>>, arguments: Vec<Value>) -> JSIResult<Value> {
       // 获取 function 定义
-      let function_define_value = (*function_define).borrow_mut().get_initializer().unwrap();
+      let function_define_value = (*function_define).borrow_mut().get_initializer();
+      
+      // 如果没有 initializer，但有 INSTANTIATE_OBJECT_METHOD_NAME，说明这是一个构造函数
+      if function_define_value.is_none() {
+        let instantiate_method = (*function_define).borrow().get_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string());
+        if let Some(Value::Function(instantiate_fn)) = instantiate_method {
+          return self.call_function_object(instantiate_fn, call_this, reference, arguments);
+        } else {
+          return Err(JSIError::new(JSIErrorType::TypeError, "Function has no implementation".to_string(), 0, 0));
+        }
+      }
+      
+      let function_define_value = function_define_value.unwrap();
       // 获取 function 调用的 this
       let this_obj = match (*function_define).borrow_mut().get_inner_property_value(String::from("this")) {
         Some(bind_this_value) => bind_this_value,
@@ -1494,9 +1515,13 @@ impl Context {
 
       for name in GLOBAL_OBJECT_NAME_LIST.iter() {
         let object_type_name = name.to_string();
-        let object = get_global_object(self, object_type_name.clone());
+        // 获取原始的 Value，保持 Function 类型
+        let original_value = {
+          let global_borrow = self.global.borrow();
+          global_borrow.get_value(object_type_name.clone())
+        };
         let mut global_scope = self.scope.borrow_mut();
-        global_scope.set_value(object_type_name, Value::RefObject(Rc::downgrade(&object)), true);
+        global_scope.set_value(object_type_name, original_value, true);
       }
       let console = create_console(self);
       let mut global_scope = self.scope.borrow_mut();
