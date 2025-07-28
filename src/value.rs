@@ -75,10 +75,11 @@ pub enum Value {
   Boolean(bool),
   Null,
   Undefined,
-  // 3 种引用类型
+  // 4 种引用类型
   Object(Rc<RefCell<Object>>),
   Function(Rc<RefCell<Object>>),
   Array(Rc<RefCell<Object>>),
+  Promise(Rc<RefCell<Object>>),
   // 3 种基础数据类型的包装对象
   StringObj(Rc<RefCell<Object>>),
   NumberObj(Rc<RefCell<Object>>),
@@ -102,10 +103,11 @@ pub enum ValueType {
   Boolean,
   Null,
   Undefined,
-  // 3 种引用类型
+  // 4 种引用类型
   Object,
   Function,
   Array,
+  Promise,
   // 其他
   NAN,
 }
@@ -134,6 +136,9 @@ impl Clone for Value {
       },
       Value::Function(rc_value) => {
         Value::Function(Rc::clone(rc_value))
+      },
+      Value::Promise(rc_value) => {
+        Value::Promise(Rc::clone(rc_value))
       },
       Value::StringObj(rc_value) => {
         Value::StringObj(Rc::clone(rc_value))
@@ -221,7 +226,7 @@ impl Value {
       Value::NAN => String::from("NaN"),
       _ => {
         let call_this = match self {
-          Value::Object(_) | Value::Array(_) | Value::Function(_) => Some(self.clone()),
+          Value::Object(_) | Value::Array(_) | Value::Function(_) | Value::Promise(_) => Some(self.clone()),
           Value::RefObject(_ref) => {
             let origin = _ref.upgrade();
             if let Some(obj)= &origin {
@@ -412,6 +417,7 @@ impl Value {
       Value::Function(_) => true,
       Value::Array(_) => true,
       Value::Object(_) => true,
+      Value::Promise(_) => true,
       _ => false
     }
   }
@@ -461,6 +467,7 @@ impl Value {
       Value::Object(obj) => Some(Rc::downgrade(obj)),
       Value::Function(function) => Some(Rc::downgrade(function)),
       Value::Array(array) => Some(Rc::downgrade(array)),
+      Value::Promise(promise) => Some(Rc::downgrade(promise)),
       Value::StringObj(obj) => Some(Rc::downgrade(obj)),
       Value::NumberObj(obj) => Some(Rc::downgrade(obj)),
       Value::BooleanObj(obj) => Some(Rc::downgrade(obj)),
@@ -486,6 +493,7 @@ impl Value {
       Value::Object(_) => ValueType::Object,
       Value::Function(_) => ValueType::Function,
       Value::Array(_) => ValueType::Array,
+      Value::Promise(_) => ValueType::Object,
       Value::String(_) => ValueType::String,
       Value::StringObj(_) => ValueType::String,
       Value::Number(_) => ValueType::Number,

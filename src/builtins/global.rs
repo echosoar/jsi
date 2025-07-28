@@ -2,6 +2,7 @@ use std::cell::{RefCell};
 use std::rc::{Rc};
 
 use crate::ast_node::ClassType;
+use crate::builtins::promise::bind_global_promise;
 use crate::constants::{GLOBAL_OBJECT_NAME_LIST, GLOBAL_OBJECT_NAME, PROTO_PROPERTY_NAME, GLOBAL_ERROR_NAME, GLOBAL_TYPE_ERROR_NAME};
 use crate::value::Value;
 use crate::context::{Context};
@@ -97,6 +98,9 @@ pub fn bind_global(ctx: &mut Context) {
   bind_global_boolean(ctx);
   // 绑定  Number 的 静态方法 和 原型链方法
   bind_global_number(ctx);
+
+  // 绑定 Promise 的 静态方法 和 原型链方法
+  bind_global_promise(ctx);
   // 绑定  Error 的 静态方法 和 原型链方法
   bind_global_error(ctx, GLOBAL_ERROR_NAME);
   bind_global_error(ctx, GLOBAL_TYPE_ERROR_NAME);

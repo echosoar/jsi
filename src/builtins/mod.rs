@@ -4,6 +4,7 @@ pub mod array;
 pub mod string;
 pub mod number;
 pub mod boolean;
+pub mod promise;
 pub mod error;
 pub mod global;
 pub mod console;
