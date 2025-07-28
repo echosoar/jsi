@@ -31,8 +31,13 @@ pub fn bind_global_promise(ctx: &mut Context) {
 // 创建 Promise 实例
 fn create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   let mut param = Value::Undefined;
-  if args.len() > 0 {
-    param = args[0].clone();
+  if args.len() == 0 {
+    return Err(JSIError::new(JSIErrorType::TypeError, "Promise resolver is not a function".to_string(), 0, 0));
   }
-  Ok(create_promise(call_ctx.ctx, param))
+    let executor = &args[0];
+    if !matches!(executor, Value::Function(_)) {
+        return Err(JSIError::new(JSIErrorType::TypeError, "Promise resolver is not a function".to_string(), 0, 0));
+    }
+
+  Ok(create_promise(call_ctx.ctx, executor.to_owned()))
 }
