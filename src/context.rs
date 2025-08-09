@@ -1328,7 +1328,7 @@ impl Context {
         let mut ctx = CallContext{
           ctx: self,
           this: this_obj,
-          reference: reference,
+          reference: Some(Rc::downgrade(&function_define)),
           func_name,
         };
         let arguments = args.iter().map(|info| info.value.clone()).collect::<Vec<Value>>();
@@ -1397,7 +1397,7 @@ impl Context {
         let mut ctx = CallContext{
           ctx: self,
           this: this_obj,
-          reference: reference,
+          reference: Some(Rc::downgrade(&function_define)),
           func_name,
         };
         return (builtin_function)(&mut ctx, arguments);
