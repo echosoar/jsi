@@ -9,10 +9,18 @@ fn run_promise_base() {
     resolveCache = resolve;
   });
   resolveCache('123abc');
-  // let res = promise.then(value => value + 'xyz');
-  promise
+  let res = promise.then(value => value + 'xyz');
+  res
   ")).unwrap();
-  assert_eq!(result , Value::String(String::from("123abc")));
+  if let Value::Promise(promise_rc) = &result {
+    let promise_mut = promise_rc.borrow_mut();
+    let state = promise_mut.get_inner_property_value(String::from("[[PromiseState]]")).unwrap();
+    assert_eq!(state , Value::String(String::from("fulfilled")));
+    let value = promise_mut.get_inner_property_value(String::from("[[PromiseFulfilledValue]]")).unwrap();
+    assert_eq!(value , Value::String(String::from("123abcxyz")));
+  } else {
+    panic!("Expected a Promise");
+  }
 }
 
 
@@ -36,7 +44,17 @@ fn run_promise_then() {
   }, rejValue => {
     return Promise.resolve(rejValue + ':reject3');
   });
+  
   res
   ")).unwrap();
-  assert_eq!(result , Value::String(String::from("123abc:reject1:reject2:resolve3")));
+
+  if let Value::Promise(promise_rc) = &result {
+    let promise_mut = promise_rc.borrow_mut();
+    let state = promise_mut.get_inner_property_value(String::from("[[PromiseState]]")).unwrap();
+    assert_eq!(state , Value::String(String::from("rejected")));
+    let reason = promise_mut.get_inner_property_value(String::from("[[PromiseRejectedReason]]")).unwrap();
+    assert_eq!(reason , Value::String(String::from("123abc:reject1:reject2:resolve3")));
+  } else {
+    panic!("Expected a Promise");
+  }
 }
