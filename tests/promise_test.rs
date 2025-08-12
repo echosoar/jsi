@@ -101,9 +101,9 @@ fn run_promise_all() {
     
     if let Value::Array(array_rc) = value {
       let array_borrowed = array_rc.borrow();
-      let val0 = array_borrowed.get_inner_property_value("0".to_string()).unwrap();
-      let val1 = array_borrowed.get_inner_property_value("1".to_string()).unwrap();
-      let val2 = array_borrowed.get_inner_property_value("2".to_string()).unwrap();
+      let val0 = array_borrowed.get_value("0".to_string());
+      let val1 = array_borrowed.get_value("1".to_string());  
+      let val2 = array_borrowed.get_value("2".to_string());
       assert_eq!(val0, Value::String("value1".to_string()));
       assert_eq!(val1, Value::String("value2".to_string()));
       assert_eq!(val2, Value::String("value3".to_string()));

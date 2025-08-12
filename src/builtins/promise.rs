@@ -380,7 +380,7 @@ fn then(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
             
             // Need to reborrow as mutable
             drop(this_promise);
-            let mut this_promise = this_promise_obj.borrow_mut();
+            let this_promise = this_promise_obj.borrow_mut();
             
             // Create fulfill reaction
             let fulfill_reaction = create_object(call_ctx.ctx, ClassType::Object, None);
@@ -471,7 +471,7 @@ fn promise_all(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
     
     if let Value::Array(promises_rc) = promises_array {
         let promises_borrowed = promises_rc.borrow();
-        let length_prop = promises_borrowed.get_inner_property_value("length".to_string()).unwrap_or(Value::Number(0f64));
+        let length_prop = promises_borrowed.get_value("length".to_string());
         
         if let Value::Number(length) = length_prop {
             let length = length as usize;
@@ -489,16 +489,17 @@ fn promise_all(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
             
             // Create result array and track completion
             let result_array = create_array(call_ctx.ctx, length);
-            let mut pending_count = 0;
             let mut all_fulfilled = true;
             
             // Check each promise and collect results
             for i in 0..length {
-                if let Some(promise_value) = promises_borrowed.get_inner_property_value(i.to_string()) {
+                let promise_value = promises_borrowed.get_value(i.to_string());
+                
+                if !matches!(promise_value, Value::Undefined) {
                     match promise_value {
                         Value::Promise(promise_rc) => {
                             let promise_borrowed = promise_rc.borrow();
-                            let state = promise_borrowed.get_inner_property_value(PROMISE_STATE.to_string()).unwrap();
+                            let state = promise_borrowed.get_inner_property_value(PROMISE_STATE.to_string()).unwrap_or(Value::String("pending".to_string()));
                             
                             if let Value::String(state_str) = state {
                                 match state_str.as_str() {
@@ -506,7 +507,7 @@ fn promise_all(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
                                         let fulfilled_value = promise_borrowed.get_inner_property_value(PROMISE_FULFILLED_VALUE.to_string()).unwrap_or(Value::Undefined);
                                         if let Value::Array(result_rc) = &result_array {
                                             let mut result_mut = result_rc.borrow_mut();
-                                            result_mut.set_inner_property_value(i.to_string(), fulfilled_value);
+                                            result_mut.define_property(i.to_string(), Property { enumerable: true, value: fulfilled_value });
                                         }
                                     },
                                     "rejected" => {
@@ -520,13 +521,12 @@ fn promise_all(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
                                         return Ok(result_promise);
                                     },
                                     "pending" => {
-                                        pending_count += 1;
                                         all_fulfilled = false;
                                         // TODO: For full implementation, we'd need to add reactions to wait for pending promises
                                         // For now, just treat as undefined
                                         if let Value::Array(result_rc) = &result_array {
                                             let mut result_mut = result_rc.borrow_mut();
-                                            result_mut.set_inner_property_value(i.to_string(), Value::Undefined);
+                                            result_mut.define_property(i.to_string(), Property { enumerable: true, value: Value::Undefined });
                                         }
                                     },
                                     _ => {}
@@ -537,7 +537,7 @@ fn promise_all(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value>
                             // Non-promise values are treated as fulfilled promises
                             if let Value::Array(result_rc) = &result_array {
                                 let mut result_mut = result_rc.borrow_mut();
-                                result_mut.set_inner_property_value(i.to_string(), promise_value);
+                                result_mut.define_property(i.to_string(), Property { enumerable: true, value: promise_value });
                             }
                         }
                     }
@@ -579,7 +579,7 @@ fn promise_race(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value
     
     if let Value::Array(promises_rc) = promises_array {
         let promises_borrowed = promises_rc.borrow();
-        let length_prop = promises_borrowed.get_inner_property_value("length".to_string()).unwrap_or(Value::Number(0f64));
+        let length_prop = promises_borrowed.get_value("length".to_string());
         
         if let Value::Number(length) = length_prop {
             let length = length as usize;
@@ -591,11 +591,13 @@ fn promise_race(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value
             
             // Find the first settled promise
             for i in 0..length {
-                if let Some(promise_value) = promises_borrowed.get_inner_property_value(i.to_string()) {
+                let promise_value = promises_borrowed.get_value(i.to_string());
+                
+                if !matches!(promise_value, Value::Undefined) {
                     match promise_value {
                         Value::Promise(promise_rc) => {
                             let promise_borrowed = promise_rc.borrow();
-                            let state = promise_borrowed.get_inner_property_value(PROMISE_STATE.to_string()).unwrap();
+                            let state = promise_borrowed.get_inner_property_value(PROMISE_STATE.to_string()).unwrap_or(Value::String("pending".to_string()));
                             
                             if let Value::String(state_str) = state {
                                 match state_str.as_str() {
