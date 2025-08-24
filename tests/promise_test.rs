@@ -8,8 +8,9 @@ fn run_promise_base() {
   let promise = new Promise(resolve => {
     resolveCache = resolve;
   });
-  resolveCache('123abc');
+  
   let res = promise.then(value => value + 'xyz');
+  resolveCache('123abc');
   res
   ")).unwrap();
   if let Value::Promise(promise_rc) = &result {
@@ -32,7 +33,7 @@ fn run_promise_then() {
   let promise = new Promise(resolve => {
     resolveCache = resolve;
   });
-  resolveCache('123abc');
+  
   let res = promise.then(value => {
     return Promise.reject(value + ':reject1');
   }).then(value => {
@@ -40,11 +41,12 @@ fn run_promise_then() {
   }, rejValue => {
     return Promise.resolve(rejValue + ':reject2');
   }).then(value => {
+    // TODO: 返回一个 new Promise，但是先缓存 resolve 方法，后面再执行
     return Promise.reject(value + ':resolve3');
   }, rejValue => {
     return Promise.resolve(rejValue + ':reject3');
   });
-  
+  resolveCache('123abc');
   res
   ")).unwrap();
 
