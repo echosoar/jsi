@@ -42,10 +42,7 @@ impl ValueInfo {
     if let Some(reference) = &self.reference {
       match reference {
           Value::Scope(scope) => {
-            let scope_rc = scope.upgrade();
-            if let Some(scope)= scope_rc {
-              scope.borrow_mut().set_value( name.clone(), value, false);
-            }
+            scope.borrow_mut().set_value( name.clone(), value, false);
             Ok(None)
           },
           _ => {
@@ -88,7 +85,8 @@ pub enum Value {
   NAN,
   // 一般是指向自己等情况
   RefObject(Weak<RefCell<Object>>),
-  Scope(Weak<RefCell<Scope>>),
+  // 定义的 scope 得是强引用
+  Scope(Rc<RefCell<Scope>>),
   // 中断
   Interrupt(Token,Expression),
   // bytecode

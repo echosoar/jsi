@@ -365,7 +365,7 @@ impl Context {
       if level == 1 {
         // bytecode_index 是 OpFuncEnd
         let function_bytecode = bytecode_list[next_bytecode_index..bytecode_index - 1].to_vec();
-        let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::downgrade(&self.cur_scope));
+        let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::clone(&self.cur_scope));
         (*self.cur_scope).borrow_mut().set_value(function_name.clone(), function.clone(), false);
       }
       
@@ -410,7 +410,7 @@ impl Context {
        for declaration in declarations.iter() {
         match  declaration {
             Declaration::Function(function_statement) => {
-              let function = create_function(self, &function_statement, Rc::downgrade(&self.cur_scope));
+              let function = create_function(self, &function_statement, Rc::clone(&self.cur_scope));
              (*self.cur_scope).borrow_mut().set_value(function_statement.name.literal.clone(), function, false)
             }
         };
@@ -605,7 +605,7 @@ impl Context {
           Ok(ValueInfo { is_const: false, value: self.new_array(array)?, name: None, access_path: String::from(""), reference: None })
         },
         Expression::Function(function_declaration) => {
-          let func = create_function(self, function_declaration, Rc::downgrade(&self.cur_scope));
+          let func = create_function(self, function_declaration, Rc::clone(&self.cur_scope));
           Ok(ValueInfo { is_const: false, value: func, name: None, access_path: String::from(""), reference: None })
         },
         Expression::PropertyAccess(property_access) => {
@@ -655,7 +655,7 @@ impl Context {
           let name = identifier.literal.clone();
           let (value, scope, is_const) = get_value_and_scope(Rc::clone(&self.cur_scope), name.clone());
           if let Some(val) = value {
-            Ok(ValueInfo { is_const, value: val, name: Some(name.clone()),  access_path: name.clone(),reference: Some(Value::Scope(Rc::downgrade(&scope))) })
+            Ok(ValueInfo { is_const, value: val, name: Some(name.clone()),  access_path: name.clone(),reference: Some(Value::Scope(Rc::clone(&scope))) })
           } else {
             Err(JSIError::new(JSIErrorType::ReferenceError, format!("{} is not defined", name), 0, 0))
           }
@@ -1347,7 +1347,7 @@ impl Context {
       let mut define_scope_value = None;
       if let Some(scope_value) = define_scope {
         if let Value::Scope(scope) = scope_value {
-          define_scope_value = scope.upgrade();
+          define_scope_value = Some(scope);
         }
       }
       self.switch_scope(define_scope_value);
@@ -1412,7 +1412,7 @@ impl Context {
       let mut define_scope_value = None;
       if let Some(scope_value) = define_scope {
         if let Value::Scope(scope) = scope_value {
-          define_scope_value = scope.upgrade();
+          define_scope_value = Some(scope);
         }
       }
       self.switch_scope(define_scope_value);

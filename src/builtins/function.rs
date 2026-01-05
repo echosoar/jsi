@@ -6,7 +6,7 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
 
 // 初始化一个方法
 // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
- pub fn create_function(ctx: &mut Context, function_declaration: &FunctionDeclaration, define_scope: Weak<RefCell<Scope>>) -> Value {
+ pub fn create_function(ctx: &mut Context, function_declaration: &FunctionDeclaration, define_scope: Rc<RefCell<Scope>>) -> Value {
   let global_function = get_global_object_by_name(ctx, GLOBAL_FUNCTION_NAME);
   let function = create_object(ctx,ClassType::Function, Some(Box::new(Statement::Function((*function_declaration).clone()))));
   
@@ -46,7 +46,7 @@ use super::{object::{create_object, Property, Object}, global::{get_global_objec
 }
 
 
-pub fn create_function_with_bytecode(ctx: &mut Context, name: String, parameters: Vec<Parameter>, bytecode: Vec<ByteCode>, define_scope: Weak<RefCell<Scope>>) -> Value {
+pub fn create_function_with_bytecode(ctx: &mut Context, name: String, parameters: Vec<Parameter>, bytecode: Vec<ByteCode>, define_scope: Rc<RefCell<Scope>>) -> Value {
   let function_declaration = FunctionDeclaration {
     is_anonymous: false,
     is_arrow: false,
