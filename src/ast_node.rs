@@ -48,7 +48,9 @@ impl fmt::Debug for Statement {
       Statement::BuiltinFunction(_) => { "builtin function"},
       Statement::Class(_) => { "class"},
       Statement::Continue(_) => { "continue"},
-      Statement::Expression(_) => { "expression"},
+      Statement::Expression(expr) => {
+        return expr.fmt(f);
+      },
       Statement::For(_) => { "for"},
       Statement::Function(_) => { "function"},
       Statement::If(_) => { "if"},

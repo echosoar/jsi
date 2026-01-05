@@ -38,6 +38,8 @@ pub struct AST {
   bytecode: Vec<ByteCode>,
   // global bytecode index
   global_bc_index: usize,
+  // Token 栈
+  token_stack: Vec<Token>,
 }
 
 impl AST{
@@ -60,6 +62,7 @@ impl AST{
       not_declare_function_to_scope: false,
       bytecode: vec![],
       global_bc_index: 0,
+      token_stack: vec![],
     }
   }
 
@@ -1673,7 +1676,13 @@ impl AST{
       let new_left = match self.token {
         Token::Period => self.parse_property_access_expression()?,
         Token::LeftBracket => self.parse_element_access_expression()?,
-        Token::LeftParenthesis => self.parse_call_expression()?,
+        Token::LeftParenthesis => {
+          let last_stack_token = self.token_stack.last();
+          if let Some(Token::New) = last_stack_token {
+            break;
+          }
+          self.parse_call_expression()?
+        },
         Token::New => self.parse_new_expression()?,
         // TODO: new
         // TODO: optional chaining
@@ -1741,12 +1750,14 @@ impl AST{
 
   // 解析 new 语法 优先级 18
   fn parse_new_expression(&mut self) -> JSIResult<Expression> {
+    self.token_stack.push(self.token.clone());
     self.next();
-    let mut expression = self.parse_expression()?;
+    let  expression = self.parse_expression()?;
+    self.token_stack.pop();
     let mut args: Vec<Expression> = vec![];
-    if let Expression::Call(call_expr) = expression {
-      expression = *call_expr.expression;
-      args = call_expr.arguments.clone();
+    if self.token == Token::LeftParenthesis {
+      args = self.parse_arguments()?;
+      self.check_token_and_next(Token::RightParenthesis)?;
     }
     return Ok(Expression::New(NewExpression {
       expression: Box::new(expression),
