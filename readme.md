@@ -3,12 +3,15 @@
 JSI is a JavaScript interpreter written in Rust that supports bytecode similar to quickjs.
 
 
-<img src="https://img.shields.io/badge/Test262-4280%20Passed-brightgreen.svg" alt="test262 passed" />
-<img src="https://img.shields.io/badge/Test262-46442%20Total-blue.svg" alt="test262 total" />
+<img src="https://img.shields.io/badge/Test262-4903%20Passed-brightgreen.svg" alt="test262 passed" />
+<img src="https://img.shields.io/badge/Test262-48653%20Total-blue.svg" alt="test262 total" />
 
 ---
 
 ### Usage
+
+#### Basic
+
 ```rust
 use jsi::JSI;
 
@@ -45,6 +48,45 @@ let result2 = jsi.run_with_bytecode(String::from("\
   a + b
   ")).unwrap();
 assert_eq!(result , Value::String(String::from("123abc")));
+```
+
+
+##### Promise support
+
+```rust
+use jsi::JSI;
+
+let mut jsi = JSI::new();
+
+let result = jsi.run(String::from("\
+  let resolveCache;
+  let resolveCache2;
+  let promise = new Promise(resolve => {
+    resolveCache = resolve;
+  });
+  
+  let res = promise.then(value1 => {
+    return new Promise(resolve => {
+      resolveCache2 = resolve;
+    }).then(value2 => {
+      return value1 + 'x:' + value2;
+    });
+  }).then(value3 => {
+    return value3 + '5:';
+  });
+  resolveCache('a:');
+  resolveCache2('b:');
+  res
+")).unwrap();
+
+if let Value::Promise(promise_rc) = &result {
+  let promise_mut = promise_rc.borrow_mut();
+  let state = promise_mut.get_inner_property_value(String::from("[[PromiseState]]")).unwrap();
+  assert_eq!(state , Value::String(String::from("fulfilled")));
+  let value = promise_mut.get_inner_property_value(String::from("[[PromiseFulfilledValue]]")).unwrap();
+  assert_eq!(value , Value::String(String::from("a:x:b:5:")));
+}
+
 ```
 
 ### Development

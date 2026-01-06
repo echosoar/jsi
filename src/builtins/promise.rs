@@ -179,8 +179,10 @@ fn then(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
     let (result_promise, new_resolve_fn, new_reject_fn) = create_promise_helper(call_ctx.ctx);
 
     let this_promise_obj = get_promise_object_from_this(&call_ctx.this).unwrap();
-    let this_promise = this_promise_obj.borrow_mut();
-    let state = this_promise.get_inner_property_value(PROMISE_STATE.to_string()).unwrap();
+    let state = {
+        let this_promise = this_promise_obj.borrow();
+        this_promise.get_inner_property_value(PROMISE_STATE.to_string()).unwrap()
+    };
 
     {
         // 把 this 和 result promise 关联起来
@@ -190,41 +192,48 @@ fn then(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
 
     if let Value::String(state_str) = state {
         if state_str == String::from("fulfilled") {
+            let this_promise = this_promise_obj.borrow();
             let fulfilled_value = this_promise.get_inner_property_value(PROMISE_FULFILLED_VALUE.to_string()).unwrap_or(Value::Undefined);
             execute_promise_reaction(call_ctx.ctx, on_fulfilled, fulfilled_value, vec![new_resolve_fn, new_reject_fn], true);
         } else if state_str == String::from("rejected") {
+            let this_promise = this_promise_obj.borrow();
             let rejected_reason = this_promise.get_inner_property_value(PROMISE_REJECTED_REASON.to_string()).unwrap_or(Value::Undefined);
             execute_promise_reaction(call_ctx.ctx, on_rejected, rejected_reason, vec![new_resolve_fn, new_reject_fn], false);
         } else  if state_str == String::from("pending") {
             // 把  on_fulfilled 和 on_rejected 存储起来，并且执行 new_resolve_fn 和 new_reject_fn
-            let fulfilled_reactions = this_promise.get_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string()).unwrap();
-            if let Value::Array(fulfill_array) = fulfilled_reactions {
-                let mut fulfill_array_mut = fulfill_array.borrow_mut();
-                let length = fulfill_array_mut.get_inner_property_value("length".to_string()).unwrap_or(Value::Number(0f64));
-                if let Value::Number(len) = length {
-                    fulfill_array_mut.set_inner_property_value(len.to_string(), on_fulfilled.clone());
-                    // ${len}_rsolve_fn
-                    fulfill_array_mut.set_inner_property_value(format!("{}_resolve_fn", len), new_resolve_fn.clone());
-                    fulfill_array_mut.set_inner_property_value(format!("{}_reject_fn", len), new_reject_fn.clone());
-                    fulfill_array_mut.set_inner_property_value("length".to_string(), Value::Number(len + 1f64));
-                }
-            }
-            let rejected_reactions = this_promise.get_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string()).unwrap();
-            if let Value::Array(reject_array) = rejected_reactions {
-                let mut reject_array_mut = reject_array.borrow_mut();
-                let length = reject_array_mut.get_inner_property_value("length".to_string()).unwrap_or(Value::Number(0f64));
-                if let Value::Number(len) = length {
-                    reject_array_mut.set_inner_property_value(len.to_string(), on_rejected.clone());
-                    // ${len}_rsolve_fn
-                    reject_array_mut.set_inner_property_value(format!("{}_resolve_fn", len), new_resolve_fn.clone());
-                    reject_array_mut.set_inner_property_value(format!("{}_reject_fn", len), new_reject_fn.clone());
-                    reject_array_mut.set_inner_property_value("length".to_string(), Value::Number(len + 1f64));
-                }
-            }
+            add_to_promise_reactions(this_promise_obj, on_fulfilled, on_rejected, new_resolve_fn, new_reject_fn);
         }
     }
 
     return Ok(Value::Promise(result_promise));
+}
+
+fn add_to_promise_reactions(this_promise_obj: &Rc<RefCell<Object>>, on_fulfilled:Value, on_rejected:Value, new_resolve_fn:Value, new_reject_fn:Value) {
+    let this_promise = this_promise_obj.borrow();
+    let fulfilled_reactions = this_promise.get_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string()).unwrap();
+    if let Value::Array(fulfill_array) = fulfilled_reactions {
+        let mut fulfill_array_mut = fulfill_array.borrow_mut();
+        let length = fulfill_array_mut.get_inner_property_value("length".to_string()).unwrap_or(Value::Number(0f64));
+        if let Value::Number(len) = length {
+            fulfill_array_mut.set_inner_property_value(len.to_string(), on_fulfilled.clone());
+            // ${len}_rsolve_fn
+            fulfill_array_mut.set_inner_property_value(format!("{}_resolve_fn", len), new_resolve_fn.clone());
+            fulfill_array_mut.set_inner_property_value(format!("{}_reject_fn", len), new_reject_fn.clone());
+            fulfill_array_mut.set_inner_property_value("length".to_string(), Value::Number(len + 1f64));
+        }
+    }
+    let rejected_reactions = this_promise.get_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string()).unwrap();
+    if let Value::Array(reject_array) = rejected_reactions {
+        let mut reject_array_mut = reject_array.borrow_mut();
+        let length = reject_array_mut.get_inner_property_value("length".to_string()).unwrap_or(Value::Number(0f64));
+        if let Value::Number(len) = length {
+            reject_array_mut.set_inner_property_value(len.to_string(), on_rejected.clone());
+            // ${len}_rsolve_fn
+            reject_array_mut.set_inner_property_value(format!("{}_resolve_fn", len), new_resolve_fn.clone());
+            reject_array_mut.set_inner_property_value(format!("{}_reject_fn", len), new_reject_fn.clone());
+            reject_array_mut.set_inner_property_value("length".to_string(), Value::Number(len + 1f64));
+        }
+    }
 }
 
 fn exec_all_reactions(ctx: &mut Context, reactions_array_obj: Value, value: Value, is_fulfilled: bool) {
@@ -247,7 +256,7 @@ fn exec_all_reactions(ctx: &mut Context, reactions_array_obj: Value, value: Valu
 // then_handler 代表传入到 then 的回调方法，is_fulfilled 为 true 代表执行 onFulfilled，否则执行 onRejected
 fn execute_promise_reaction(ctx: &mut Context, then_handler: Value, value: Value, next_resolve_reject: Vec<Value>, is_fulfilled: bool) {
     // 执行完 then 回调后的返回值
-    let next_data = if let Value::Undefined = then_handler {
+    let returned_data = if let Value::Undefined = then_handler {
         if is_fulfilled {
             Ok(value.clone())
         } else {
@@ -265,15 +274,18 @@ fn execute_promise_reaction(ctx: &mut Context, then_handler: Value, value: Value
         Ok(value.clone())
     };
 
-    match next_data {
-        Ok(resolved_value) => {
-            if let Value::Promise(resolved_promise_value) = resolved_value {
+    match returned_data {
+        Ok(returned_value) => {
+            if let Value::Promise(current_promise) = returned_value {
                 // 根据 promise 的状态，调用下一个 promise 的 resolve 或 reject 方法
-                let resolved_promise = resolved_promise_value.borrow();
-                let state = resolved_promise.get_inner_property_value(String::from("[[PromiseState]]")).unwrap();
+                let state = {
+                    let curren_promise_ref = current_promise.borrow();
+                    curren_promise_ref.get_inner_property_value(String::from("[[PromiseState]]")).unwrap()
+                };
                 if let Value::String(state_str) = state {
                     if state_str == String::from("fulfilled") {
-                        let fulfilled_value = resolved_promise.get_inner_property_value(String::from("[[PromiseFulfilledValue]]")).unwrap_or(Value::Undefined);
+                        let curren_promise_ref = current_promise.borrow();
+                        let fulfilled_value = curren_promise_ref.get_inner_property_value(String::from("[[PromiseFulfilledValue]]")).unwrap_or(Value::Undefined);
                         // 调用下一个 promise 的 resolve 方法
                         if let Some(next_resolve) = next_resolve_reject.get(0) {
                             if let Value::Function(next_resolve_fun) = next_resolve {
@@ -287,7 +299,8 @@ fn execute_promise_reaction(ctx: &mut Context, then_handler: Value, value: Value
                             }
                         }
                     } else if state_str == String::from("rejected") {
-                        let rejected_reason = resolved_promise.get_inner_property_value(String::from("[[PromiseRejectedReason]]")).unwrap_or(Value::Undefined);
+                        let curren_promise_ref = current_promise.borrow();
+                        let rejected_reason = curren_promise_ref.get_inner_property_value(String::from("[[PromiseRejectedReason]]")).unwrap_or(Value::Undefined);
                         // 调用下一个 promise 的 reject 方法
                         if let Some(next_reject) = next_resolve_reject.get(1) {
                             if let Value::Function(next_reject_fun) = next_reject {
@@ -302,8 +315,20 @@ fn execute_promise_reaction(ctx: &mut Context, then_handler: Value, value: Value
                             }
                         }
                     } else {
-                        // TODO, resolve 又返回了一个 pending 状态的 promise
-                        // 在这个 promise 被 resolve 或 reject 的时候，再调用下一个 promise 的 resolve 或 reject 方法
+                        let on_fulfilled = next_resolve_reject.get(0).cloned().unwrap_or(Value::Undefined);
+                        let on_rejected = next_resolve_reject.get(1).cloned().unwrap_or(Value::Undefined);
+
+                        let call_ctx = &mut CallContext {
+                            ctx,
+                            this: Value::Promise(current_promise.clone()),
+                            reference: None,
+                            func_name: String::from("then"),
+                        };
+
+                        let new_promise = then(call_ctx, vec![on_fulfilled, on_rejected]).unwrap();
+                        let mut current_promise_ref = current_promise.borrow_mut();
+                        current_promise_ref.set_inner_property_value(PROMISE_FULFILLED_VALUE.to_string(), new_promise);
+
                     }
                 }
             } else {
@@ -316,7 +341,7 @@ fn execute_promise_reaction(ctx: &mut Context, then_handler: Value, value: Value
                             reference: Some(Rc::downgrade(next_resolve_fun)),
                             func_name: String::from("next_resolve_fun"),
                         };
-                        call_ctx.call_function(Rc::clone(next_resolve_fun), None, None, vec![resolved_value.clone()]).unwrap();
+                        call_ctx.call_function(Rc::clone(next_resolve_fun), None, None, vec![returned_value.clone()]).unwrap();
                     }
                 }
             }
