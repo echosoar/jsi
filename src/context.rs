@@ -732,12 +732,12 @@ impl Context {
       if expression.operator == Token::LogicalAnd {
         // false &&
         if !left.to_boolean(self) {
-          return Ok(Value::Boolean(false));
+          return Ok(left);
         }
       } else if expression.operator == Token::LogicalOr {
         // true ||
         if left.to_boolean(self) {
-          return Ok(Value::Boolean(true));
+          return Ok(left);
         }
       }
 
@@ -745,13 +745,7 @@ impl Context {
 
       // 逻辑运算 右值
       if expression.operator == Token::LogicalAnd || expression.operator == Token::LogicalOr {
-        // true && false / false || false
-        if !right.to_boolean(self) {
-          return Ok(Value::Boolean(false));
-        } else {
-          // true && true / false || true
-          return Ok(Value::Boolean(true));
-        }
+        return Ok(right);
       }
       match expression.operator {
         Token::Equal => {
@@ -1258,14 +1252,13 @@ impl Context {
 
     fn new_object(&mut self, expression: &ObjectLiteral) -> JSIResult<Value> {
       // 获取 object 实例
-      let object = create_object(self,ClassType::Array, None);
+      let object = create_object(self, ClassType::Object, None);
       let object_clone = Rc::clone(&object);
       let mut object_mut = (*object_clone).borrow_mut();
       // 绑定属性
       let mut normal_propertys: Vec<(String, Value)> = vec![];
       for property_index in 0..expression.properties.len() {
         let property = &expression.properties[property_index];
-        let x = self.execute_expression(&property.name);
         let name = self.execute_expression(&property.name)?.to_string(self);
         let mut initializer = self.execute_expression(&property.initializer)?;
         initializer.bind_name(name.clone());
@@ -1474,6 +1467,7 @@ impl Context {
         for index in 0..len {
           if (*parent_scope_rc).borrow_mut().childs[index].borrow().id == self.cur_scope.borrow().id {
             cur_scope_index = index;
+            break;
           }
         }
         if cur_scope_index != len {
