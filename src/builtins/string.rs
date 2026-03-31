@@ -88,8 +88,8 @@ fn char_at(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   }
   let utf16: Vec<u16> = str.as_str().encode_utf16().collect();
   if index < utf16.len() {
-    let char = utf16[index];
-    return Ok(Value::String(char.to_string()))
+    let ch = char::from_u32(utf16[index] as u32).unwrap_or('\0');
+    return Ok(Value::String(ch.to_string()))
   }
 
   return Ok(Value::String("".to_string()))

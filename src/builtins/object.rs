@@ -42,8 +42,7 @@ pub struct Object {
 
 impl Object {
   pub fn new(obj_type: ClassType, value: Option<Box<Statement>>) -> Object {
-    OBJECT_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let id = OBJECT_ID_COUNTER.load(Ordering::SeqCst);
+    let id = OBJECT_ID_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
     Object {
       class_type: obj_type,
       // 设置或添加的属性
@@ -61,8 +60,7 @@ impl Object {
   // 强制拷贝
   // 用于 function.bind，但是不能拷贝 id
   pub fn force_copy(&self) -> Object {
-    OBJECT_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let id = OBJECT_ID_COUNTER.load(Ordering::SeqCst);
+    let id = OBJECT_ID_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
     Object {
       class_type: self.class_type.clone(),
       property: self.property.clone(),
