@@ -59,6 +59,24 @@ pub enum EByteCodeop {
     // >=
     OpGreaterThanOrEqual,
     OpInstanceOf,
+    // 逻辑与 &&
+    OpLogicalAnd,
+    // 逻辑或 ||
+    OpLogicalOr,
+    // 取余 %
+    OpRemainder,
+    // 位移 << >> >>>
+    OpShiftLeft,
+    OpShiftRight,
+    OpUnsignedShiftRight,
+    // 按位运算 | ^ &
+    OpBitwiseOr,
+    OpBitwiseXor,
+    OpBitwiseAnd,
+    // in 运算符
+    OpIn,
+    // 空值合并 ??
+    OpNullishCoalescing,
 }
 
 impl fmt::Display for EByteCodeop {

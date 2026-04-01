@@ -2162,6 +2162,83 @@ impl AST{
               line: 0,
             });
           },
+          Token::LogicalAnd => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpLogicalAnd,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::LogicalOr => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpLogicalOr,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Remainder => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpRemainder,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::ShiftLeft => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpShiftLeft,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::ShiftRight => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpShiftRight,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::UnsignedShiftRight => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpUnsignedShiftRight,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::Or => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpBitwiseOr,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::ExclusiveOr => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpBitwiseXor,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::And => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpBitwiseAnd,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::In => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpIn,
+              args: vec![],
+              line: 0,
+            });
+          },
+          Token::NullishCoalescing => {
+            self.bytecode.push(ByteCode{
+              op: EByteCodeop::OpNullishCoalescing,
+              args: vec![],
+              line: 0,
+            });
+          },
           _ => {
             println!("unknown left_associate_expression operator: {:?}", operator);
           },

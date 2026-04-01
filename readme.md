@@ -3,7 +3,7 @@
 JSI is a JavaScript interpreter written in Rust that supports bytecode similar to quickjs.
 
 
-<img src="https://img.shields.io/badge/Test262-4915%20Passed-brightgreen.svg" alt="test262 passed" />
+<img src="https://img.shields.io/badge/Test262-5044%20Passed-brightgreen.svg" alt="test262 passed" />
 <img src="https://img.shields.io/badge/Test262-48659%20Total-blue.svg" alt="test262 total" />
 
 ---
@@ -93,6 +93,7 @@ if let Value::Promise(promise_rc) = &result {
 
 + git submodule `git submodule update --init --recursive`
 + test262 `RUST_MIN_STACK=8388608 cargo test --package jsi --test test262_test -- test_all_262 --exact --nocapture`
++ no test262 `RUST_MIN_STACK=8388608 cargo test --package jsi -- --skip test_all_262 --exact --nocapture`
 
 ### Refs
 

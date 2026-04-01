@@ -73,13 +73,13 @@ fn ast_lexer_assign_token() {
   ];
   let mut jsi_vm = JSI::new();
   for token in token_list.iter() {
-    let mut code = String::from("1");
+    let mut code = String::from("a");
     code.push_str(token.oper.as_str());
     code.push_str("1;");
     let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
       expression: Expression::Assign(AssignExpression {
-        left: Box::new(Expression::Number(NumberLiteral{ literal: String::from("1"), value: 1f64 })),
+        left: Box::new(Expression::Identifier(IdentifierLiteral{ literal: String::from("a") })),
         operator: token.token.clone(),
         right: Box::new(Expression::Number(NumberLiteral{ literal: String::from("1"), value: 1f64 })),
       })
@@ -184,18 +184,18 @@ fn ast_lexer_associativity_right_exponentiation() {
     TokenCheck { oper: String::from("??="), token: Token::NullishCoalescingAssign },
   ];
   for token in token_list_assign.iter() {
-    let mut code = String::from("2 ");
+    let mut code = String::from("a ");
     code.push_str(token.oper.as_str());
-    code.push_str(" 3 ");
+    code.push_str(" b ");
     code.push_str(token.oper.as_str());
     code.push_str(" 2;");
     let program = jsi_vm.parse(code).unwrap();
     assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
-      expression: Expression::Assign(AssignExpression { // 向右结合 2 op (3 op 2)
-        left: Box::new(Expression::Number(NumberLiteral {  literal: String::from("2"), value: 2f64 })), // 2,
+      expression: Expression::Assign(AssignExpression { // 向右结合 a op (b op 2)
+        left: Box::new(Expression::Identifier(IdentifierLiteral{ literal: String::from("a") })), // a
         operator: token.token.clone(),
-        right: Box::new(Expression::Assign(AssignExpression { // 3 op 2
-          left: Box::new(Expression::Number(NumberLiteral {  literal: String::from("3"), value: 3f64 })), // 3
+        right: Box::new(Expression::Assign(AssignExpression { // b op 2
+          left: Box::new(Expression::Identifier(IdentifierLiteral{ literal: String::from("b") })), // b
           operator: token.token.clone(),
           right: Box::new(Expression::Number(NumberLiteral {  literal: String::from("2"), value: 2f64 })), // 2
         })),
@@ -332,6 +332,48 @@ fn ast_lexer_complex() {
           when_true: Box::new(Expression::Number(NumberLiteral {  literal: String::from("1"), value: 1f64 })), // 1
           when_false: Box::new(Expression::Number(NumberLiteral {  literal: String::from("2"), value: 2f64 })), // 2
         }))
+      })),
+    })
+  })]);
+}
+
+// Verify precedence: & > ^ > | (bitwise AND binds tighter than XOR, XOR tighter than OR)
+// 1 | 2 ^ 3 & 4  =>  1 | (2 ^ (3 & 4))
+#[test]
+fn ast_lexer_priority_bitwise() {
+  let mut jsi_vm = JSI::new();
+  let program = jsi_vm.parse(String::from("1 | 2 ^ 3 & 4;")).unwrap();
+  assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
+    expression: Expression::Binary(BinaryExpression {
+      left: Box::new(Expression::Number(NumberLiteral { literal: String::from("1"), value: 1f64 })),
+      operator: Token::Or,
+      right: Box::new(Expression::Binary(BinaryExpression {
+        left: Box::new(Expression::Number(NumberLiteral { literal: String::from("2"), value: 2f64 })),
+        operator: Token::ExclusiveOr,
+        right: Box::new(Expression::Binary(BinaryExpression {
+          left: Box::new(Expression::Number(NumberLiteral { literal: String::from("3"), value: 3f64 })),
+          operator: Token::And,
+          right: Box::new(Expression::Number(NumberLiteral { literal: String::from("4"), value: 4f64 })),
+        })),
+      })),
+    })
+  })]);
+}
+
+// Verify precedence: shift binds tighter than bitwise OR/XOR/AND
+// 1 | 2 << 3  =>  1 | (2 << 3)
+#[test]
+fn ast_lexer_priority_shift_over_bitwise() {
+  let mut jsi_vm = JSI::new();
+  let program = jsi_vm.parse(String::from("1 | 2 << 3;")).unwrap();
+  assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
+    expression: Expression::Binary(BinaryExpression {
+      left: Box::new(Expression::Number(NumberLiteral { literal: String::from("1"), value: 1f64 })),
+      operator: Token::Or,
+      right: Box::new(Expression::Binary(BinaryExpression {
+        left: Box::new(Expression::Number(NumberLiteral { literal: String::from("2"), value: 2f64 })),
+        operator: Token::ShiftLeft,
+        right: Box::new(Expression::Number(NumberLiteral { literal: String::from("3"), value: 3f64 })),
       })),
     })
   })]);

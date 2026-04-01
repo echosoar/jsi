@@ -68,9 +68,9 @@ impl Context {
         let cur_index = bytecode_index;
         let bytecode_item = &bytecode[cur_index];
         bytecode_index += 1;
-        println!("");
+        // println!("");
         // println!(">>>> cur_stack {:?} {:?} {:?}", self.stack.len(), self.stack.iter().map(|item| item.name.clone().unwrap_or(String::from(""))).collect::<Vec<String>>(), bytecode_item.op);
-        println!(">>>> cur_stack {:?} {:?}", self.stack, bytecode_item.op);
+        // println!(">>>> cur_stack {:?} {:?}", self.stack, bytecode_item.op);
         match bytecode_item.op {
           EByteCodeop::OpUndefined => {
             self.stack.push(Value::Undefined.to_value_info());
@@ -261,8 +261,13 @@ impl Context {
             return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("goto label arg is required"), 0, 0));
           },
           EByteCodeop::OpAdd  | EByteCodeop::OpSub | EByteCodeop::OpMul | EByteCodeop::OpDiv |
+          EByteCodeop::OpRemainder |
           EByteCodeop::OpEqual | EByteCodeop::OpNotEqual | EByteCodeop::OpStrictEqual | EByteCodeop::OpStrictNotEqual |
-          EByteCodeop::OpLessThan | EByteCodeop::OpLessThanOrEqual | EByteCodeop::OpGreaterThan | EByteCodeop::OpGreaterThanOrEqual
+          EByteCodeop::OpLessThan | EByteCodeop::OpLessThanOrEqual | EByteCodeop::OpGreaterThan | EByteCodeop::OpGreaterThanOrEqual |
+          EByteCodeop::OpLogicalAnd | EByteCodeop::OpLogicalOr |
+          EByteCodeop::OpShiftLeft | EByteCodeop::OpShiftRight | EByteCodeop::OpUnsignedShiftRight |
+          EByteCodeop::OpBitwiseOr | EByteCodeop::OpBitwiseXor | EByteCodeop::OpBitwiseAnd |
+          EByteCodeop::OpIn | EByteCodeop::OpNullishCoalescing
            => {
             let right = self.stack.pop().unwrap();
             let left = self.stack.pop().unwrap();
@@ -271,6 +276,7 @@ impl Context {
               EByteCodeop::OpSub => Token::Subtract,
               EByteCodeop::OpMul => Token::Multiply,
               EByteCodeop::OpDiv => Token::Slash,
+              EByteCodeop::OpRemainder => Token::Remainder,
               EByteCodeop::OpEqual => Token::Equal,
               EByteCodeop::OpNotEqual => Token::NotEqual,
               EByteCodeop::OpStrictEqual => Token::StrictEqual,
@@ -279,6 +285,16 @@ impl Context {
               EByteCodeop::OpLessThanOrEqual => Token::LessOrEqual,
               EByteCodeop::OpGreaterThan => Token::Greater,
               EByteCodeop::OpGreaterThanOrEqual => Token::GreaterOrEqual,
+              EByteCodeop::OpLogicalAnd => Token::LogicalAnd,
+              EByteCodeop::OpLogicalOr => Token::LogicalOr,
+              EByteCodeop::OpShiftLeft => Token::ShiftLeft,
+              EByteCodeop::OpShiftRight => Token::ShiftRight,
+              EByteCodeop::OpUnsignedShiftRight => Token::UnsignedShiftRight,
+              EByteCodeop::OpBitwiseOr => Token::Or,
+              EByteCodeop::OpBitwiseXor => Token::ExclusiveOr,
+              EByteCodeop::OpBitwiseAnd => Token::And,
+              EByteCodeop::OpIn => Token::In,
+              EByteCodeop::OpNullishCoalescing => Token::NullishCoalescing,
               _ => {
                 return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unsupported bytecode operation: {:?}", bytecode_item.op), 0, 0));
               }
@@ -788,6 +804,32 @@ impl Context {
         Token::Less | Token::Greater | Token::LessOrEqual | Token::GreaterOrEqual => {
           self.execute_compare_operator_expression(&left, &right, &expression.operator)
         },
+        Token::ShiftLeft | Token::ShiftRight | Token::UnsignedShiftRight
+        | Token::Or | Token::ExclusiveOr | Token::And => {
+          Ok(self.execute_bitwise_expression(&left, &right, &expression.operator))
+        },
+        Token::In => {
+          let key = left.to_string(self);
+          match &right {
+            Value::Object(obj_rc) => {
+              Ok(Value::Boolean(obj_rc.borrow().property.contains_key(&key)))
+            },
+            Value::RefObject(weak) => {
+              if let Some(obj_rc) = weak.upgrade() {
+                Ok(Value::Boolean(obj_rc.borrow().property.contains_key(&key)))
+              } else {
+                Ok(Value::Boolean(false))
+              }
+            },
+            _ => Err(JSIError::new(JSIErrorType::TypeError, format!("Cannot use 'in' operator to search for '{}' in non-object", key), 0, 0)),
+          }
+        },
+        Token::NullishCoalescing => {
+          match &left {
+            Value::Null | Value::Undefined => Ok(right),
+            _ => Ok(left),
+          }
+        },
         _ =>  {
           Err(JSIError::new(JSIErrorType::Unknown, format!("unsupport binary {:?}", expression), 0, 0))
         }
@@ -816,6 +858,21 @@ impl Context {
         Token::Slash => Value::Number(left_number / right_number),
         Token::Remainder => Value::Number(left_number % right_number),
         _=> Value::NAN,
+      }
+    }
+
+    // 执行位运算表达式 << >> >>> | ^ &
+    fn execute_bitwise_expression(&mut self, left: &Value, right: &Value, operator: &Token) -> Value {
+      let left_i = left.to_number(self).unwrap_or(0.0) as i32;
+      let right_u = right.to_number(self).unwrap_or(0.0) as u32 & 31;
+      match operator {
+        Token::ShiftLeft => Value::Number(((left_i) << right_u) as f64),
+        Token::ShiftRight => Value::Number(((left_i) >> right_u) as f64),
+        Token::UnsignedShiftRight => Value::Number(((left_i as u32) >> right_u) as f64),
+        Token::Or => Value::Number((left_i | right.to_number(self).unwrap_or(0.0) as i32) as f64),
+        Token::ExclusiveOr => Value::Number((left_i ^ right.to_number(self).unwrap_or(0.0) as i32) as f64),
+        Token::And => Value::Number((left_i & right.to_number(self).unwrap_or(0.0) as i32) as f64),
+        _ => Value::NAN,
       }
     }
 
