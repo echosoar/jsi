@@ -86,6 +86,10 @@ pub fn bind_global_promise(ctx: &mut Context) {
     let reject_name = String::from("reject");
     global_promise_borrowed.property.insert(reject_name.clone(), Property { enumerable: true, value: builtin_function(ctx, reject_name, 1f64, reject_static) });
 
+    // Promise.all 静态方法
+    let all_name = String::from("all");
+    global_promise_borrowed.property.insert(all_name.clone(), Property { enumerable: true, value: builtin_function(ctx, all_name, 1f64, all) });
+
     // 原型方法 then
     if let Some(props) = &global_promise_borrowed.prototype {
         let prototype_rc = Rc::clone(props);
@@ -110,30 +114,32 @@ fn create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
 
 // resolve 方法
 fn resolve(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
-
     let resolve_fn = call_ctx.reference.as_ref().and_then(|r| r.upgrade()).expect("resolve rc error");
-    
-    let promise = resolve_fn.borrow().get_inner_property_value(String::from("promise")).unwrap();
 
-    if let Value::RefObject(promise_rc_weak) = promise {
-        if let Some(promise_rc) = promise_rc_weak.upgrade() {
-            let mut promise_mut = promise_rc.borrow_mut();
-            // 设置 Promise 的状态为 fulfilled
-            promise_mut.set_inner_property_value(PROMISE_STATE.to_string(), Value::String("fulfilled".to_string()));
-            // 处理 resolve 的值
-            let value = args.get(0).cloned().unwrap_or(Value::Undefined);
-            promise_mut.set_inner_property_value(PROMISE_FULFILLED_VALUE.to_string(), value.clone());
+    let promise = resolve_fn.borrow().get_inner_property_value(String::from("promise")).expect("promise property not found");
 
-            // 执行所有 resolve 回调
-            let all_reactions = promise_mut.get_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string()).unwrap();
-            exec_all_reactions(call_ctx.ctx, all_reactions, value, true);
+    match promise {
+        Value::RefObject(promise_rc_weak) => {
+            if let Some(promise_rc) = promise_rc_weak.upgrade() {
+                let mut promise_mut = promise_rc.borrow_mut();
+                // 设置 Promise 的状态为 fulfilled
+                promise_mut.set_inner_property_value(PROMISE_STATE.to_string(), Value::String("fulfilled".to_string()));
+                // 处理 resolve 的值
+                let value = args.get(0).cloned().unwrap_or(Value::Undefined);
+                promise_mut.set_inner_property_value(PROMISE_FULFILLED_VALUE.to_string(), value.clone());
 
-             // 清空 fulfilled 和 rejected 回调数组
-            promise_mut.set_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string(), Value::Undefined);
-            promise_mut.set_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string(), Value::Undefined);
-            // 清空 parent 引用，防止循环引用
-            promise_mut.set_inner_property_value(String::from("parent"), Value::Undefined);
-        }
+                // 执行所有 resolve 回调
+                let all_reactions = promise_mut.get_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string()).unwrap();
+                exec_all_reactions(call_ctx.ctx, all_reactions, value, true);
+
+                 // 清空 fulfilled 和 rejected 回调数组
+                promise_mut.set_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string(), Value::Undefined);
+                promise_mut.set_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string(), Value::Undefined);
+                // 清空 parent 引用，防止循环引用
+                promise_mut.set_inner_property_value(String::from("parent"), Value::Undefined);
+            }
+        },
+        _ => {}
     }
 
     Ok(Value::Undefined)
@@ -266,7 +272,7 @@ fn execute_promise_reaction(ctx: &mut Context, then_handler: Value, value: Value
         let mut call_ctx = CallContext {
             ctx,
             this: Value::Undefined,
-            reference: None,
+            reference: Some(Rc::downgrade(&then_handler_fun)),
             func_name: String::from("then_handler_fun"),
         };
         call_ctx.call_function(then_handler_fun, None, None, vec![value.clone()])
@@ -401,4 +407,215 @@ fn get_promise_object_from_this<'a>(this_value: &'a Value) -> Option<&'a Rc<RefC
         Value::Promise(promise_rc) => Some(promise_rc),
         _ => None,
     }
+}
+
+// Promise.all 静态方法
+// 接收一个可迭代对象，返回一个新的 Promise
+// 当所有 Promise 都 fulfilled 时，返回包含所有结果的数组
+// 当任何一个 Promise rejected 时，立即 reject
+fn all(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+    let iterable = args.get(0).cloned().unwrap_or(Value::Undefined);
+
+    // 创建结果 Promise
+    let (result_promise, result_resolve_fn, result_reject_fn) = create_promise_helper(call_ctx.ctx);
+
+    // 获取迭代对象的元素
+    let elements = get_iterable_elements(call_ctx.ctx, &iterable);
+
+    // 如果元素数组为空，直接 resolve 空数组
+    if elements.is_empty() {
+        let empty_array = create_array(call_ctx.ctx, 0);
+        if let Value::Function(resolve_fn) = &result_resolve_fn {
+            let mut call_context = CallContext {
+                ctx: call_ctx.ctx,
+                this: Value::Undefined,
+                reference: Some(Rc::downgrade(resolve_fn)),
+                func_name: String::from("resolve"),
+            };
+            call_context.call_function(Rc::clone(resolve_fn), None, None, vec![empty_array]).unwrap();
+        }
+        return Ok(Value::Promise(result_promise));
+    }
+
+    // 创建结果数组，用于存储每个 Promise 的结果
+    let result_array = create_array(call_ctx.ctx, elements.len());
+
+    // 在结果 Promise 上存储 remaining_count 和 result_array
+    {
+        let mut result_promise_mut = result_promise.borrow_mut();
+        result_promise_mut.set_inner_property_value(String::from("[[PromiseAllRemainingCount]]"), Value::Number(elements.len() as f64));
+        result_promise_mut.set_inner_property_value(String::from("[[PromiseAllResultArray]]"), result_array.clone());
+    }
+
+    for (index, element) in elements.iter().enumerate() {
+        // 将每个元素转换为 Promise
+        let element_promise = resolve_element_to_promise(call_ctx.ctx, element.clone());
+
+        // 创建 resolve 回调函数，存储必要的参数在函数内部属性中
+        let resolve_element_fn = builtin_function(call_ctx.ctx, "resolveElement".to_string(), 1f64, all_resolve_element);
+        if let Value::Function(resolve_fn) = &resolve_element_fn {
+            let mut resolve_fn_mut = resolve_fn.borrow_mut();
+            resolve_fn_mut.set_inner_property_value(String::from("[[PromiseAllIndex]]"), Value::Number(index as f64));
+            resolve_fn_mut.set_inner_property_value(String::from("[[PromiseAllResultPromise]]"), Value::Promise(Rc::clone(&result_promise)));
+            resolve_fn_mut.set_inner_property_value(String::from("[[PromiseAllResultResolve]]"), result_resolve_fn.clone());
+            resolve_fn_mut.set_inner_property_value(String::from("[[PromiseAllResultReject]]"), result_reject_fn.clone());
+        }
+
+        // 创建 reject 回调函数
+        let reject_element_fn = builtin_function(call_ctx.ctx, "rejectElement".to_string(), 1f64, all_reject_element);
+        if let Value::Function(reject_fn) = &reject_element_fn {
+            let mut reject_fn_mut = reject_fn.borrow_mut();
+            reject_fn_mut.set_inner_property_value(String::from("[[PromiseAllResultResolve]]"), result_resolve_fn.clone());
+            reject_fn_mut.set_inner_property_value(String::from("[[PromiseAllResultReject]]"), result_reject_fn.clone());
+            // 标记为已处理
+            reject_fn_mut.set_inner_property_value(String::from("[[PromiseAllAlreadyRejected]]"), Value::Boolean(false));
+        }
+
+        // 调用 element_promise.then(resolve_element_fn, reject_element_fn)
+        if let Value::Promise(element_promise_rc) = &element_promise {
+            let then_call_ctx = &mut CallContext {
+                ctx: call_ctx.ctx,
+                this: Value::Promise(Rc::clone(element_promise_rc)),
+                reference: None,
+                func_name: String::from("then"),
+            };
+            then(then_call_ctx, vec![resolve_element_fn, reject_element_fn]).unwrap();
+        }
+    }
+
+    Ok(Value::Promise(result_promise))
+}
+
+// Promise.all 的 resolve 元素函数
+fn all_resolve_element(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+    let value = args.get(0).cloned().unwrap_or(Value::Undefined);
+
+    let resolve_fn = call_ctx.reference.as_ref().and_then(|r| r.upgrade()).expect("resolve element fn error");
+
+    // 获取存储的参数
+    let index = resolve_fn.borrow().get_inner_property_value(String::from("[[PromiseAllIndex]]")).unwrap();
+    let result_promise = resolve_fn.borrow().get_inner_property_value(String::from("[[PromiseAllResultPromise]]")).unwrap();
+    let result_resolve_fn = resolve_fn.borrow().get_inner_property_value(String::from("[[PromiseAllResultResolve]]")).unwrap();
+
+    let index_num = if let Value::Number(n) = index { n as usize } else { 0 };
+
+    // 将结果存入数组对应位置
+    if let Value::Promise(result_promise_rc) = &result_promise {
+        let result_array = result_promise_rc.borrow().get_inner_property_value(String::from("[[PromiseAllResultArray]]")).unwrap();
+        if let Value::Array(result_array_rc) = result_array {
+            let mut result_array_mut = result_array_rc.borrow_mut();
+            result_array_mut.define_property(index_num.to_string(), Property { enumerable: true, value });
+        }
+
+        // 减少剩余计数
+        let remaining_count = result_promise_rc.borrow().get_inner_property_value(String::from("[[PromiseAllRemainingCount]]")).unwrap();
+        if let Value::Number(count) = remaining_count {
+            let new_count = count - 1f64;
+            {
+                let mut result_promise_mut = result_promise_rc.borrow_mut();
+                result_promise_mut.set_inner_property_value(String::from("[[PromiseAllRemainingCount]]"), Value::Number(new_count));
+            }
+
+            // 当所有 Promise 都完成时，resolve 结果数组
+            if new_count == 0f64 {
+                let result_array = result_promise_rc.borrow().get_inner_property_value(String::from("[[PromiseAllResultArray]]")).unwrap();
+                if let Value::Function(resolve_fn) = &result_resolve_fn {
+                    let mut call_context = CallContext {
+                        ctx: call_ctx.ctx,
+                        this: Value::Undefined,
+                        reference: Some(Rc::downgrade(resolve_fn)),
+                        func_name: String::from("resolve"),
+                    };
+                    call_context.call_function(Rc::clone(resolve_fn), None, None, vec![result_array]).unwrap();
+                }
+            }
+        }
+    }
+
+    Ok(Value::Undefined)
+}
+
+// Promise.all 的 reject 元素函数
+fn all_reject_element(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+    let reason = args.get(0).cloned().unwrap_or(Value::Undefined);
+
+    let reject_fn = call_ctx.reference.as_ref().and_then(|r| r.upgrade()).expect("reject element fn error");
+
+    // 检查是否已经 reject 过
+    let already_rejected = reject_fn.borrow().get_inner_property_value(String::from("[[PromiseAllAlreadyRejected]]")).unwrap();
+    if let Value::Boolean(true) = already_rejected {
+        return Ok(Value::Undefined);
+    }
+
+    // 标记为已 reject
+    {
+        let mut reject_fn_mut = reject_fn.borrow_mut();
+        reject_fn_mut.set_inner_property_value(String::from("[[PromiseAllAlreadyRejected]]"), Value::Boolean(true));
+    }
+
+    // 直接 reject 结果 Promise
+    let result_reject_fn = reject_fn.borrow().get_inner_property_value(String::from("[[PromiseAllResultReject]]")).unwrap();
+    if let Value::Function(reject_fn) = &result_reject_fn {
+        let mut call_context = CallContext {
+            ctx: call_ctx.ctx,
+            this: Value::Undefined,
+            reference: Some(Rc::downgrade(reject_fn)),
+            func_name: String::from("reject"),
+        };
+        call_context.call_function(Rc::clone(reject_fn), None, None, vec![reason]).unwrap();
+    }
+
+    Ok(Value::Undefined)
+}
+
+// 获取可迭代对象的元素
+fn get_iterable_elements(_ctx: &mut Context, iterable: &Value) -> Vec<Value> {
+    match iterable {
+        Value::Array(arr) => {
+            let arr_borrowed = arr.borrow();
+            // 数组的 length 存储在 property 中
+            let length = arr_borrowed.get_property_value("length".to_string());
+            if let Value::Number(len) = length {
+                let mut elements = Vec::new();
+                for i in 0..(len as usize) {
+                    let element = arr_borrowed.get_property_value(i.to_string());
+                    elements.push(element);
+                }
+                return elements;
+            }
+            Vec::new()
+        },
+        Value::Object(obj) => {
+            // 尝试获取对象的迭代器
+            let obj_borrowed = obj.borrow();
+            // 检查是否有 length 属性（类似数组对象）
+            if let Some(length) = obj_borrowed.property.get("length") {
+                if let Value::Number(len) = &length.value {
+                    let mut elements = Vec::new();
+                    for i in 0..(*len as usize) {
+                        let element = obj_borrowed.get_property_value(i.to_string());
+                        elements.push(element);
+                    }
+                    return elements;
+                }
+            }
+            Vec::new()
+        },
+        _ => Vec::new(),
+    }
+}
+
+// 将元素转换为 Promise
+fn resolve_element_to_promise(ctx: &mut Context, element: Value) -> Value {
+    if let Value::Promise(_) = &element {
+        return element;
+    }
+    // 使用 Promise.resolve 转换
+    let mut call_ctx = CallContext {
+        ctx,
+        this: Value::Undefined,
+        reference: None,
+        func_name: String::from("resolve_static"),
+    };
+    resolve_static(&mut call_ctx, vec![element]).unwrap()
 }
