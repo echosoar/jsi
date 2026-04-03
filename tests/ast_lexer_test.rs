@@ -378,3 +378,70 @@ fn ast_lexer_priority_shift_over_bitwise() {
     })
   })]);
 }
+
+// Test hexadecimal number literals (0x prefix)
+#[test]
+fn ast_lexer_hex_number_literal() {
+  let test_cases = vec![
+    ("0xFF;", "0xFF", 255f64),   // uppercase X, two hex digits
+    ("0xff;", "0xff", 255f64),   // lowercase x, two hex digits
+    ("0x10;", "0x10", 16f64),    // hex 10 = dec 16
+    ("0xAB;", "0xAB", 171f64),   // hex AB = dec 171
+    ("0x1F;", "0x1F", 31f64),    // hex 1F = dec 31
+  ];
+  
+  let mut jsi_vm = JSI::new();
+  for (code, literal, value) in test_cases.iter() {
+    let program = jsi_vm.parse(String::from(*code)).unwrap();
+    assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
+      expression: Expression::Number(NumberLiteral { 
+        literal: String::from(*literal), 
+        value: *value 
+      })
+    })], "Failed for code: {}", code);
+  }
+}
+
+// Test binary number literals (0b prefix)
+#[test]
+fn ast_lexer_binary_number_literal() {
+  let test_cases = vec![
+    ("0b1010;", "0b1010", 10f64),  // binary 1010 = dec 10
+    ("0b11;", "0b11", 3f64),       // binary 11 = dec 3
+    ("0B101;", "0B101", 5f64),     // uppercase B, binary 101 = dec 5
+    ("0b1111;", "0b1111", 15f64),  // binary 1111 = dec 15
+  ];
+  
+  let mut jsi_vm = JSI::new();
+  for (code, literal, value) in test_cases.iter() {
+    let program = jsi_vm.parse(String::from(*code)).unwrap();
+    assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
+      expression: Expression::Number(NumberLiteral { 
+        literal: String::from(*literal), 
+        value: *value 
+      })
+    })], "Failed for code: {}", code);
+  }
+}
+
+// Test decimal numbers still work correctly
+#[test]
+fn ast_lexer_decimal_number_literal() {
+  let test_cases = vec![
+    ("123;", "123", 123f64),
+    ("0;", "0", 0f64),
+    ("999;", "999", 999f64),
+    ("3.14;", "3.14", 3.14f64),
+  ];
+  
+  let mut jsi_vm = JSI::new();
+  for (code, literal, value) in test_cases.iter() {
+    let program = jsi_vm.parse(String::from(*code)).unwrap();
+    assert_eq!(program.body, vec![Statement::Expression(ExpressionStatement {
+      expression: Expression::Number(NumberLiteral { 
+        literal: String::from(*literal), 
+        value: *value 
+      })
+    })], "Failed for code: {}", code);
+  }
+}

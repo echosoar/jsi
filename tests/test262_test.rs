@@ -28,6 +28,7 @@ impl Test262Dir {
         let (dirs, files) = self.get_childs(ignore_list, only_list);
         self.cases += files.len();
         for file in files.iter() {
+            println!(">>>[TEST 262 run] {}", file.name);
             let mut passed = false;
             let result = panic::catch_unwind(|| {
                 let mut jsi = JSI::new();
@@ -40,7 +41,7 @@ impl Test262Dir {
                 return result;
             });
             if result.is_err() {
-                println!("panic: {:?} {:?}", file.name, file.code);
+                println!(">>>[TEST 262 panic] {}", file.name);
                 passed = false;
             } else {
                 if let Ok(inner_result) = result {

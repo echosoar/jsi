@@ -1281,24 +1281,35 @@ impl AST{
       self.read();
       match self.char {
         'x' | 'X' => {
-          // TODO: 十六进制
-          // 自动读取下一个字符
-         self.read_number(16);
-         let number_len = self.cur_char_index - start_index;
-
-         if number_len <= 2 {
-          self.error_common("Illegal hex characters");
-         }
-
+          // 十六进制
+          self.read(); // 跳过 x，现在指向十六进制数字
+          let hex_start = self.cur_char_index;
+          self.read_number(16);
+          
+          if self.cur_char_index == hex_start {
+            // 没有读取到任何十六进制数字
+            self.error_common("Illegal hex characters");
+          }
+          return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index));
         },
         'b' | 'B' => {
-          // TODO: 二进制
+          // 二进制
+          self.read(); // 跳过 b，现在指向二进制数字
+          let binary_start = self.cur_char_index;
+          self.read_number(2);
+          
+          if self.cur_char_index == binary_start {
+            // 没有读取到任何二进制数字
+            self.error_common("Illegal binary characters");
+          }
+          return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index));
         },
         '.' => {
-          // TODO: 浮点数
+          // 浮点数以 0. 开头
+          // 会在后面的浮点处理中继续处理
         },
         _ => {
-
+          // 可能是八进制，但由于是 0 开头，会继续作为十进制处理
         }
       }
     }
@@ -2055,9 +2066,26 @@ impl AST{
   }
 
   fn parse_number_literal_expression(&mut self) -> JSIResult<f64> {
-    // 检测是否是 float
-    // TODO: format to JSIError
-    Ok(self.literal.parse::<f64>().unwrap())
+    // 处理十六进制 (0x) 和二进制 (0b) 字面量
+    let literal = &self.literal;
+    
+    if literal.to_lowercase().starts_with("0x") {
+      // 十六进制: 0xHH
+      match i64::from_str_radix(&literal[2..], 16) {
+        Ok(val) => Ok(val as f64),
+        Err(_) => Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid hex number"), 0, 0))
+      }
+    } else if literal.to_lowercase().starts_with("0b") {
+      // 二进制: 0bBB
+      match i64::from_str_radix(&literal[2..], 2) {
+        Ok(val) => Ok(val as f64),
+        Err(_) => Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid binary number"), 0, 0))
+      }
+    } else {
+      // 十进制
+      literal.parse::<f64>()
+        .map_err(|_| JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid number"), 0, 0))
+    }
   }
 
   // 解析左结合表达式
