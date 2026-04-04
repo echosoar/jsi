@@ -52,6 +52,9 @@ pub fn bind_global_array(ctx: &mut Context) {
     prototype.define_builtin_function_property(ctx, String::from("join"),  1, array_join);
     prototype.define_builtin_function_property(ctx, String::from("push"),  1, array_push);
     prototype.define_builtin_function_property(ctx, String::from("toString"),  0, array_to_string);
+    prototype.define_builtin_function_property(ctx, String::from("map"),  1, array_map);
+    prototype.define_builtin_function_property(ctx, String::from("forEach"),  1, array_for_each);
+    prototype.define_builtin_function_property(ctx, String::from("filter"),  1, array_filter);
   }
 }
 
@@ -228,4 +231,159 @@ fn get_array_object_from_this<'a>(this_value: &'a Value) -> Option<&'a Rc<RefCel
     },
     _ => None,
   }
+}
+
+// Array.prototype.map
+fn array_map(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let callback = if args.len() > 0 {
+    &args[0]
+  } else {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.map requires a callback function"), 0, 0))
+  };
+
+  let callback_func = match callback {
+    Value::Function(func) => Rc::clone(func),
+    _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.map callback must be a function"), 0, 0))
+  };
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  let (len, elements, this_value) = if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      let len = len as i32;
+      let mut elements: Vec<Value> = Vec::with_capacity(len as usize);
+      for index in 0..len {
+        elements.push(this.get_property_value(index.to_string()));
+      }
+      (len, elements, call_ctx.this.clone())
+    } else {
+      return Ok(create_array(call_ctx.ctx, 0));
+    }
+  } else {
+    return Ok(create_array(call_ctx.ctx, 0));
+  };
+
+  let new_array = create_array(call_ctx.ctx, 0);
+  let new_array_clone = match &new_array {
+    Value::Array(arr) => Rc::clone(arr),
+    _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Failed to create array"), 0, 0))
+  };
+  let mut new_arr_borrowed = new_array_clone.borrow_mut();
+
+  for index in 0..len {
+    let element = &elements[index as usize];
+    let callback_args: Vec<crate::value::ValueInfo> = vec![
+      element.to_value_info(),
+      Value::Number(index as f64).to_value_info(),
+      this_value.to_value_info()
+    ];
+    call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+    let result = call_ctx.ctx.pop_stack_value();
+    new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: result });
+  }
+  new_arr_borrowed.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(len as f64) });
+  Ok(new_array)
+}
+
+// Array.prototype.forEach
+fn array_for_each(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let callback = if args.len() > 0 {
+    &args[0]
+  } else {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.forEach requires a callback function"), 0, 0))
+  };
+
+  let callback_func = match callback {
+    Value::Function(func) => Rc::clone(func),
+    _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.forEach callback must be a function"), 0, 0))
+  };
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  let (len, elements, this_value) = if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      let len = len as i32;
+      let mut elements: Vec<Value> = Vec::with_capacity(len as usize);
+      for index in 0..len {
+        elements.push(this.get_property_value(index.to_string()));
+      }
+      (len, elements, call_ctx.this.clone())
+    } else {
+      return Ok(Value::Undefined);
+    }
+  } else {
+    return Ok(Value::Undefined);
+  };
+
+  for index in 0..len {
+    let element = &elements[index as usize];
+    let callback_args: Vec<crate::value::ValueInfo> = vec![
+      element.to_value_info(),
+      Value::Number(index as f64).to_value_info(),
+      this_value.to_value_info()
+    ];
+    call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+    // Pop the result from stack but we don't need it for forEach
+    call_ctx.ctx.pop_stack_value();
+  }
+  Ok(Value::Undefined)
+}
+
+// Array.prototype.filter
+fn array_filter(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let callback = if args.len() > 0 {
+    &args[0]
+  } else {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.filter requires a callback function"), 0, 0))
+  };
+
+  let callback_func = match callback {
+    Value::Function(func) => Rc::clone(func),
+    _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.filter callback must be a function"), 0, 0))
+  };
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  let (len, elements, this_value) = if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      let len = len as i32;
+      let mut elements: Vec<Value> = Vec::with_capacity(len as usize);
+      for index in 0..len {
+        elements.push(this.get_property_value(index.to_string()));
+      }
+      (len, elements, call_ctx.this.clone())
+    } else {
+      return Ok(create_array(call_ctx.ctx, 0));
+    }
+  } else {
+    return Ok(create_array(call_ctx.ctx, 0));
+  };
+
+  let new_array = create_array(call_ctx.ctx, 0);
+  let new_array_clone = match &new_array {
+    Value::Array(arr) => Rc::clone(arr),
+    _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Failed to create array"), 0, 0))
+  };
+  let mut new_arr_borrowed = new_array_clone.borrow_mut();
+  let mut new_index = 0;
+
+  for index in 0..len {
+    let element = &elements[index as usize];
+    let callback_args: Vec<crate::value::ValueInfo> = vec![
+      element.to_value_info(),
+      Value::Number(index as f64).to_value_info(),
+      this_value.to_value_info()
+    ];
+    call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+    let result = call_ctx.ctx.pop_stack_value();
+    if result.to_boolean(call_ctx.ctx) {
+      new_arr_borrowed.define_property(new_index.to_string(), Property { enumerable: true, value: element.clone() });
+      new_index += 1;
+    }
+  }
+  new_arr_borrowed.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(new_index as f64) });
+  Ok(new_array)
 }

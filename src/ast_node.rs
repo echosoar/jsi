@@ -237,6 +237,7 @@ pub struct CatchClause {
 pub struct FunctionDeclaration {
   pub is_anonymous: bool,
   pub is_arrow: bool,
+  pub is_async: bool,
   pub name: IdentifierLiteral,
   pub parameters: Vec<Parameter>,
   pub body: BlockStatement,

@@ -35,6 +35,7 @@ fn asi_after_keyword_return() {
     Statement::Function(FunctionDeclaration { // a + b
       is_anonymous: false,
       is_arrow: false,
+      is_async: false,
       name: IdentifierLiteral { literal: String::from("test") },
       parameters: vec![],
       body: BlockStatement {

@@ -135,8 +135,23 @@ impl AST{
         Token::Do => self.parse_do_while_statement(),
         Token::Break => self.parse_break_statement(),
         Token::Continue => self.parse_continue_statement(),
+        Token::Async => {
+          // async function or async expression
+          self.next();
+          if self.token == Token::Function {
+            // async function declaration
+            Ok(Statement::Function(self.parse_function(true, true)?))
+          } else {
+            // async expression - treat as identifier for now
+            let expression = self.parse_expression()?;
+            // Put back 'async' as prefix
+            Ok(Statement::Expression(ExpressionStatement{
+              expression
+            }))
+          }
+        },
         Token::Function => {
-          Ok(Statement::Function(self.parse_function(true)?))
+          Ok(Statement::Function(self.parse_function(true, false)?))
         },
         Token::Return => self.parse_return_statement(),
         Token::Class => {
@@ -592,12 +607,12 @@ impl AST{
   }
 
   // 解析 function statement
-  fn parse_function(&mut self, variable_lifting: bool) -> JSIResult<FunctionDeclaration> {
+  fn parse_function(&mut self, variable_lifting: bool, is_async: bool) -> JSIResult<FunctionDeclaration> {
     // 如果是 function 关键字，则跳过
     if self.token == Token::Function {
       self.next();
     }
-    
+
     // 解析方法名
     let mut is_anonymous = true;
     let mut name = String::new();
@@ -646,8 +661,18 @@ impl AST{
     }
 
     self.check_token_and_next(Token::RightParenthesis)?;
+
+    // 如果是 async 函数，需要在作用域中标记
+    if is_async {
+      self.scope.is_async = true;
+    }
+
     // 需要开启一个新的作用域，用来记录 block 里面的 方法定义 和 变量定义，因为方法定义是要提升到作用域最开始的
     self.new_scope();
+    // 传递 async 标记到新作用域
+    if is_async {
+      self.scope.is_async = true;
+    }
     // 解析方法体
     let body_statement = self.parse_block_statement()?;
     let body = match body_statement {
@@ -659,6 +684,7 @@ impl AST{
     let func = FunctionDeclaration {
       is_anonymous,
       is_arrow: false,
+      is_async,
       name: IdentifierLiteral { literal: name },
       parameters,
       body,
@@ -713,10 +739,39 @@ impl AST{
       },
       _ => {}
     }
-   
+
+    // Check if parent scope is async
+    let is_async = self.scope.is_async;
+
+    // 生成函数索引和 OpFuncStart
+    let function_index = self.global_bc_index + 1;
+    self.global_bc_index = function_index;
+    self.bytecode.push(ByteCode {
+      op: EByteCodeop::OpFuncStart,
+      args: vec![String::new(), function_index.to_string()],
+      line: 0,
+    });
+
+    // 为参数生成 bytecode
+    for param in parameters.iter() {
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpGetArg,
+        args: vec![],
+        line: 0,
+      });
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpScopePutVarInit,
+        args: vec![param.name.literal.clone()],
+        line: 0,
+      });
+    }
+
     // 解析方法体
     if self.token == Token::LeftBrace {
       self.new_scope();
+      if is_async {
+        self.scope.is_async = true;
+      }
       let body_statement = self.parse_block_statement()?;
       let body = match body_statement {
         Statement::Block(block) => block,
@@ -724,9 +779,16 @@ impl AST{
       };
       let declarations = self.scope.declarations.clone();
       self.close_scope();
+      // 生成 OpFuncEnd (使用函数索引)
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpFuncEnd,
+        args: vec![function_index.to_string()],
+        line: 0,
+      });
       let func = FunctionDeclaration {
         is_anonymous: true,
         is_arrow: true,
+        is_async,
         name: IdentifierLiteral { literal: String::new() },
         parameters,
         body,
@@ -736,9 +798,22 @@ impl AST{
       Ok(Expression::Function(func))
     } else {
       let expr = self.parse_expression()?;
+      // 生成 OpReturn (箭头函数表达式体需要返回值)
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpReturn,
+        args: vec![],
+        line: 0,
+      });
+      // 生成 OpFuncEnd (使用函数索引)
+      self.bytecode.push(ByteCode {
+        op: EByteCodeop::OpFuncEnd,
+        args: vec![function_index.to_string()],
+        line: 0,
+      });
       let func = FunctionDeclaration {
         is_anonymous: true,
         is_arrow: true,
+        is_async,
         name: IdentifierLiteral { literal: String::new() },
         parameters,
         body: BlockStatement { statements: vec![
@@ -749,7 +824,7 @@ impl AST{
       };
       Ok(Expression::Function(func))
     }
-    
+
   }
 
   // 解析 class(ES2015)
@@ -784,21 +859,22 @@ impl AST{
       if self.token == Token::Identifier {
         if self.literal == String::from("constructor") {
           // constructor
-          let constructor = self.parse_function(false)?;
+          let constructor = self.parse_function(false, false)?;
           members.push(Expression::Constructor(constructor));
         } else if self.next_is('(', true) {
-          // method
-          let method = self.parse_function(false)?;
+          // method - check if async
+          let is_async_method = modifiers.contains(&Token::Async);
+          let method = self.parse_function(false, is_async_method)?;
           members.push(Expression::ClassMethod(ClassMethodDeclaration {
             name: method.name.clone(),
             modifiers,
-            method: Box::new(method), 
+            method: Box::new(method),
           }));
         } else {
           // TODO: property
           self.next()
         }
-        
+
       } else {
         // TODO: throw error
         self.next()
@@ -1788,10 +1864,18 @@ impl AST{
   // 解析访问(.、[])语法 优先级 18，从左到右
   // ref: https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-left-hand-side-expressions
   fn parse_left_hand_side_expression(&mut self) -> JSIResult<Expression> {
+    // 记录当前 bytecode 长度，用于箭头函数参数清理
+    let bytecode_len_before = self.bytecode.len();
     let mut left = self.parse_group_expression()?;
     if self.token == Token::Assign && self.char == '>' {
       if self.auto_semicolon_when_new_line {
         return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unexpected token '=>'"), 0, 0));
+      }
+      // 计算参数解析时生成的 bytecode 数量
+      let params_bytecode_count = self.bytecode.len() - bytecode_len_before;
+      // 清理参数解析时生成的 bytecode（如 OpScopeGetVar）
+      if params_bytecode_count > 0 {
+        self.bytecode.truncate(bytecode_len_before);
       }
       self.next();
       self.next();
@@ -2000,8 +2084,30 @@ impl AST{
       Token::LeftBracket => {
         self.parse_array_literal()
       },
+      Token::Async => {
+        // async function expression or async arrow function
+        self.next();
+        if self.token == Token::Function {
+          // async function expression
+          Ok(Expression::Function(self.parse_function(true, true)?))
+        } else {
+          // async arrow function or just identifier
+          // For now, parse as expression
+          let expr = self.parse_literal_expression()?;
+          if self.token == Token::Assign && self.char == '>' {
+            // async arrow function
+            self.scope.is_async = true;
+            self.next();
+            self.next();
+            self.parse_arrow_function(expr)
+          } else {
+            // Just 'async' identifier followed by expression
+            Ok(expr)
+          }
+        }
+      },
       Token::Function => {
-        Ok(Expression::Function(self.parse_function(true)?))
+        Ok(Expression::Function(self.parse_function(true, false)?))
       },
       _ => {
         Ok(Expression::Unknown)
@@ -2042,13 +2148,14 @@ impl AST{
   fn parse_object_literal(&mut self) -> JSIResult<Expression> {
     self.check_token_and_next(Token::LeftBrace)?;
     let mut properties: Vec<PropertyAssignment>= vec![];
+    let mut property_count = 0;
     while self.token != Token::RightBrace && self.token != Token::EOF {
       // 属性名
       let mut property_name = self.parse_object_property_name()?;
       if let Expression::Unknown = property_name {
         break;
       }
-      
+
       // 解析值
       let initializer = match self.token {
          // 如果是 :
@@ -2068,13 +2175,35 @@ impl AST{
         },
       };
 
+      // Convert identifier property name to string
+      let key_string = if let Expression::Identifier(property) = property_name.clone() {
+        property.literal.clone()
+      } else if let Expression::String(str_lit) = property_name.clone() {
+        str_lit.value.clone()
+      } else if let Expression::Number(num_lit) = property_name.clone() {
+        num_lit.value.to_string()
+      } else {
+        // For computed property names and other cases, we need special handling
+        String::from("")
+      };
+
+      // Emit bytecode for key (as string)
+      if !key_string.is_empty() {
+        self.bytecode.push(ByteCode{
+          op: EByteCodeop::OpString,
+          args: vec![key_string.clone()],
+          line: 0,
+        });
+        property_count += 1;
+      }
+
       if let Expression::Identifier(property) = property_name {
         property_name = Expression::String(StringLiteral {
           literal: property.literal.clone(),
           value: property.literal,
         });
       }
-      
+
       properties.push(PropertyAssignment {
         name: Box::new(property_name),
         initializer: Box::new(initializer),
@@ -2085,6 +2214,14 @@ impl AST{
       }
     }
     self.check_token_and_next(Token::RightBrace)?;
+
+    // Emit OpObject bytecode to create the object
+    self.bytecode.push(ByteCode{
+      op: EByteCodeop::OpObject,
+      args: vec![property_count.to_string()],
+      line: 0,
+    });
+
     Ok(Expression::Object(ObjectLiteral {
       properties,
     }))
@@ -2447,6 +2584,7 @@ impl Program {}
 pub struct ASTScope {
   pub parent: Option<Box<ASTScope>>,
   pub declarations: Vec<Declaration>,
+  pub is_async: bool,
 }
 
 impl  ASTScope {
@@ -2454,6 +2592,7 @@ impl  ASTScope {
       ASTScope {
         parent: None,
         declarations: vec![],
+        is_async: false,
       }
     }
 

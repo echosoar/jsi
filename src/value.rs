@@ -48,7 +48,7 @@ impl ValueInfo {
           _ => {
             let object = reference.to_object(ctx);
             object.borrow_mut().define_property( name.clone(), Property {
-              enumerable: false,
+              enumerable: true,
               value: value,
             });
             Ok(None)

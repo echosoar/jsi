@@ -196,3 +196,23 @@ fn run_object_test() {
 ")).unwrap();
   assert_eq!(result , Value::String(String::from("My name is Matthew. Am I human? true")));
 }
+
+#[test]
+fn run_object_keys() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+  let result = {};
+    for (let i = 0; i < 10; i++) {
+      result[`run_${i}`] = i;
+    }
+
+    let keys = Object.keys(result);
+    keys
+")).unwrap();
+  // keys is an array of strings "run_0", "run_1", ..., "run_9"
+  if let Value::Array(arr) = &result {
+    let arr_mut = arr.borrow();
+    let length = arr_mut.get_property_value(String::from("length"));
+    assert_eq!(length, Value::Number(10f64));
+  }
+}

@@ -50,6 +50,7 @@ pub fn create_function_with_bytecode(ctx: &mut Context, name: String, parameters
   let function_declaration = FunctionDeclaration {
     is_anonymous: false,
     is_arrow: false,
+    is_async: false,
     name: IdentifierLiteral {
       literal: name,
     },

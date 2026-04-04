@@ -13,6 +13,8 @@ pub enum EByteCodeop {
     OpNumber,
     // 从栈中弹出 n 个值初始化数组，然后把数组推入栈
     OpArray,
+    // 从栈中弹出 n 对 key-value 初始化对象，然后把对象推入栈
+    OpObject,
     // 向当前作用于推入一个变量，并弹出一个值作为变量的初始值
     OpScopePutVarInit,
     OpScopePutVar,
@@ -89,6 +91,7 @@ impl fmt::Display for EByteCodeop {
             EByteCodeop::OpString => write!(f, "String"),
             EByteCodeop::OpNumber => write!(f, "Number"),
             EByteCodeop::OpArray => write!(f, "Array"),
+            EByteCodeop::OpObject => write!(f, "Object"),
             EByteCodeop::OpScopePutVarInit => write!(f, "ScopePutVarInit"),
             EByteCodeop::OpScopePutVar => write!(f, "ScopePutVar"),
             EByteCodeop::OpScopeGetVar => write!(f, "ScopeGetVar"),

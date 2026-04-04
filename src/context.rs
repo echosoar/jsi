@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, ForInStatement, ForOfStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, get_value_info_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
+use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, ForInStatement, ForOfStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{builtin_function, create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}, promise::create_promise_helper}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, get_value_info_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
 
 
 use super::ast::AST;
@@ -11,6 +11,109 @@ enum LoopInterruptAction {
   Continue,           // 继续下一次循环
   Break,              // 退出当前循环
   BreakAndPropagate,  // 退出循环并向上传播中断
+}
+
+const ASYNC_RESUME_FUNCTION: &str = "[[AsyncResumeFunction]]";
+const ASYNC_RESUME_THIS: &str = "[[AsyncResumeThis]]";
+const ASYNC_RESUME_ARGUMENT_LENGTH: &str = "[[AsyncResumeArgumentLength]]";
+const ASYNC_RESUME_ARGUMENT_PREFIX: &str = "[[AsyncResumeArgument]]";
+const ASYNC_RESOLVE_FUNCTION: &str = "[[AsyncResolveFunction]]";
+const ASYNC_REJECT_FUNCTION: &str = "[[AsyncRejectFunction]]";
+
+fn create_await_suspend_error(promise: Value) -> JSIError {
+  let mut err = JSIError::new(JSIErrorType::Await, String::from("async await suspended"), 0, 0);
+  err.set_value(promise);
+  err
+}
+
+fn call_function_value(ctx: &mut Context, function_value: &Value, argument: Value) -> JSIResult<Value> {
+  if let Value::Function(function_define) = function_value {
+    let func_name = get_builtin_function_name(ctx, function_define);
+    let mut call_ctx = CallContext {
+      ctx,
+      this: Value::Undefined,
+      reference: Some(Rc::downgrade(function_define)),
+      func_name,
+    };
+    return call_ctx.call_function(Rc::clone(function_define), None, None, vec![argument]);
+  }
+
+  Ok(Value::Undefined)
+}
+
+fn create_async_resume_callback(
+  ctx: &mut Context,
+  function_define: Rc<RefCell<Object>>,
+  call_this: Value,
+  arguments: &Vec<Value>,
+  resolve_fn: Value,
+  reject_fn: Value,
+) -> Value {
+  let callback = builtin_function(ctx, String::from("async_resume"), 1f64, async_resume);
+
+  if let Value::Function(callback_fn) = &callback {
+    let mut callback_mut = callback_fn.borrow_mut();
+    callback_mut.set_inner_property_value(ASYNC_RESUME_FUNCTION.to_string(), Value::Function(function_define));
+    callback_mut.set_inner_property_value(ASYNC_RESUME_THIS.to_string(), call_this);
+    callback_mut.set_inner_property_value(ASYNC_RESOLVE_FUNCTION.to_string(), resolve_fn);
+    callback_mut.set_inner_property_value(ASYNC_REJECT_FUNCTION.to_string(), reject_fn);
+    callback_mut.set_inner_property_value(ASYNC_RESUME_ARGUMENT_LENGTH.to_string(), Value::Number(arguments.len() as f64));
+
+    for (index, argument) in arguments.iter().enumerate() {
+      callback_mut.set_inner_property_value(format!("{}{}]]", ASYNC_RESUME_ARGUMENT_PREFIX, index), argument.clone());
+    }
+  }
+
+  callback
+}
+
+fn async_resume(call_ctx: &mut CallContext, _args: Vec<Value>) -> JSIResult<Value> {
+  let callback_fn = call_ctx.reference.as_ref().and_then(|reference| reference.upgrade()).expect("async resume callback error");
+
+  let (function_value, call_this, resolve_fn, reject_fn, arguments) = {
+    let callback_ref = callback_fn.borrow();
+    let function_value = callback_ref.get_inner_property_value(ASYNC_RESUME_FUNCTION.to_string()).unwrap_or(Value::Undefined);
+    let call_this = callback_ref.get_inner_property_value(ASYNC_RESUME_THIS.to_string()).unwrap_or(Value::Undefined);
+    let resolve_fn = callback_ref.get_inner_property_value(ASYNC_RESOLVE_FUNCTION.to_string()).unwrap_or(Value::Undefined);
+    let reject_fn = callback_ref.get_inner_property_value(ASYNC_REJECT_FUNCTION.to_string()).unwrap_or(Value::Undefined);
+    let argument_length = callback_ref.get_inner_property_value(ASYNC_RESUME_ARGUMENT_LENGTH.to_string()).unwrap_or(Value::Number(0f64));
+
+    let mut arguments = vec![];
+    if let Value::Number(length) = argument_length {
+      for index in 0..(length as usize) {
+        let argument = callback_ref.get_inner_property_value(format!("{}{}]]", ASYNC_RESUME_ARGUMENT_PREFIX, index)).unwrap_or(Value::Undefined);
+        arguments.push(argument);
+      }
+    }
+
+    (function_value, call_this, resolve_fn, reject_fn, arguments)
+  };
+
+  let rerun_result = match function_value {
+    Value::Function(function_define) => call_ctx.ctx.call_function_object(function_define, Some(call_this), None, arguments),
+    _ => Ok(Value::Undefined),
+  };
+
+  match rerun_result {
+    Ok(Value::Promise(promise)) => {
+      let mut then_ctx = CallContext {
+        ctx: call_ctx.ctx,
+        this: Value::Promise(Rc::clone(&promise)),
+        reference: None,
+        func_name: String::from("then"),
+      };
+      Object::call(&mut then_ctx, String::from("then"), vec![resolve_fn, reject_fn])?;
+    },
+    Ok(value) => {
+      call_function_value(call_ctx.ctx, &resolve_fn, value)?;
+    },
+    Err(err) => {
+      let rejection_value = err.value.unwrap_or(Value::String(err.message));
+      call_function_value(call_ctx.ctx, &reject_fn, rejection_value)?;
+    }
+  }
+
+  Ok(Value::Undefined)
 }
 
 pub struct Context {
@@ -44,6 +147,15 @@ impl Context {
 
     pub fn set_strict(&mut self,strict: bool) {
       self.strict = strict;
+    }
+
+    // Pop the last value from stack (used for getting callback return values)
+    pub fn pop_stack_value(&mut self) -> Value {
+      if let Some(value_info) = self.stack.pop() {
+        value_info.value
+      } else {
+        Value::Undefined
+      }
     }
     
     // 运行一段 JS 代码
@@ -133,6 +245,33 @@ impl Context {
               Object::call(call_ctx, String::from("push"), arguments)?;
             }
             self.stack.push(array.to_value_info());
+          },
+          EByteCodeop::OpObject => {
+            let property_count = if let Some(count) = bytecode_item.args.get(0) {
+              count.parse::<usize>().unwrap_or(0)
+            } else {
+              0
+            };
+            let object = create_object(self, ClassType::Object, None);
+            if property_count * 2 > self.stack.len() {
+              return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("object property count exceeds stack length"), 0, 0));
+            }
+            // Pop key-value pairs from stack (in reverse order)
+            // Stack order: [value, key, value, key, ...] (value pushed first during parsing)
+            // We need to read them in pairs: items[i*2] is value, items[i*2+1] is key
+            let items: Vec<ValueInfo> = self.stack.drain(self.stack.len() - property_count * 2..).collect();
+            {
+              let mut obj_mut = object.borrow_mut();
+              for i in 0..property_count {
+                let key = items[i * 2 + 1].value.to_string(self);
+                let value = items[i * 2].value.clone();
+                obj_mut.define_property(key, Property {
+                  enumerable: true,
+                  value,
+                });
+              }
+            }
+            self.stack.push(Value::Object(object).to_value_info());
           },
           EByteCodeop::OpScopePutVarInit | EByteCodeop::OpScopePutVar => {
             if let Some(arg) = bytecode_item.args.get(0) {
@@ -391,7 +530,13 @@ impl Context {
         // bytecode_index 是 OpFuncEnd
         let function_bytecode = bytecode_list[next_bytecode_index..bytecode_index - 1].to_vec();
         let function = create_function_with_bytecode(self, function_name.clone(), vec![], function_bytecode, Rc::clone(&self.cur_scope));
-        (*self.cur_scope).borrow_mut().set_value(function_name.clone(), function.clone(), false);
+        if function_name.is_empty() {
+          // 匿名函数：推送到栈
+          self.stack.push(function.to_value_info());
+        } else {
+          // 命名函数：存储到作用域
+          (*self.cur_scope).borrow_mut().set_value(function_name.clone(), function.clone(), false);
+        }
       }
       
       return bytecode_index
@@ -1047,7 +1192,33 @@ impl Context {
             Value::NAN.to_value_info()
           }
         },
-       // TODO:  | Token::Delete | Token::Await
+        "await" => {
+          // await in bytecode context
+          match &value {
+            Value::Promise(promise_rc) => {
+              let promise_ref = promise_rc.borrow();
+              let state = promise_ref.get_inner_property_value(String::from("[[PromiseState]]")).unwrap_or(Value::Undefined);
+
+              if let Value::String(state_str) = state {
+                if state_str == "fulfilled" {
+                  let value = promise_ref.get_inner_property_value(String::from("[[PromiseFulfilledValue]]")).unwrap_or(Value::Undefined);
+                  value.to_value_info()
+                } else if state_str == "rejected" {
+                  let _reason = promise_ref.get_inner_property_value(String::from("[[PromiseRejectedReason]]")).unwrap_or(Value::Undefined);
+                  Value::Undefined.to_value_info()
+                } else {
+                  Value::Undefined.to_value_info()
+                }
+              } else {
+                Value::Undefined.to_value_info()
+              }
+            },
+            _ => {
+              value_info
+            }
+          }
+        },
+       // TODO:  | Token::Delete
         _ => {
           println!("Unsupported prefix unary operator: {}", operator);
           Value::Undefined.to_value_info()
@@ -1057,7 +1228,7 @@ impl Context {
     }
     // 执行 ++i --i
     fn execute_prefix_unary_expression(&mut self, expression: &PrefixUnaryExpression) -> JSIResult<Value> {
-      
+
       let operand_info = self.execute_expression_info(&expression.operand);
       if &Token::Typeof == &expression.operator {
         if let Err(_) = operand_info {
@@ -1076,11 +1247,39 @@ impl Context {
 
           Ok(Value::Boolean(!operand_info.value.to_boolean(self)))
         },
+        Token::Await => {
+          // await expression - handle Promise
+          match &operand_info.value {
+            Value::Promise(promise_rc) => {
+              let promise_ref = promise_rc.borrow();
+              let state = promise_ref.get_inner_property_value(String::from("[[PromiseState]]")).unwrap_or(Value::Undefined);
+
+              if let Value::String(state_str) = state {
+                if state_str == "fulfilled" {
+                  // Return the fulfilled value
+                  let value = promise_ref.get_inner_property_value(String::from("[[PromiseFulfilledValue]]")).unwrap_or(Value::Undefined);
+                  Ok(value)
+                } else if state_str == "rejected" {
+                  // Throw the rejection reason
+                  let reason = promise_ref.get_inner_property_value(String::from("[[PromiseRejectedReason]]")).unwrap_or(Value::Undefined);
+                  Err(JSIError::new(JSIErrorType::Unknown, format!("{:?}", reason), 0, 0))
+                } else {
+                  Err(create_await_suspend_error(Value::Promise(Rc::clone(promise_rc))))
+                }
+              } else {
+                Ok(Value::Undefined)
+              }
+            },
+            _ => {
+              // Non-Promise values are returned as-is
+              Ok(operand_info.value)
+            }
+          }
+        },
         // TODO: delete
         // Token::Void => {
         //   Ok(Value::Undefined)
         // },
-        // TODO: await
         _ => {
           let value_number = operand_info.value.to_number(self);
           let value = if let Some(new_value) = value_number {
@@ -1514,7 +1713,7 @@ impl Context {
         }
       };
       // 内置方法
-      if let Statement::BuiltinFunction(builtin_function) = *function_define_value {
+      if let Statement::BuiltinFunction(builtin_function) = *function_define_value.clone() {
         let func_name = get_builtin_function_name(self, &function_define);
         let mut ctx = CallContext{
           ctx: self,
@@ -1527,12 +1726,23 @@ impl Context {
         self.stack.push(builtin_res.to_value_info());
         return Ok(Value::Undefined);
       }
+
+      // 检查是否为箭头函数或无 bytecode 的函数
+      let function_declaration = match &*function_define_value {
+        Statement::Function(func) => Some(func.clone()),
+        _ => None,
+      };
+
       // 获取 function 的 bytecode
       let bytecode_list_value =  (*function_define).borrow_mut().get_inner_property_value(String::from("bytecode")).unwrap();
       let bytecode_list = match bytecode_list_value {
         Value::ByteCode(bytecode_list) => bytecode_list,
         _ => vec![],
       };
+
+      // 判断是否需要通过 bytecode 执行（有 bytecode 且不是箭头函数）
+      let use_bytecode_execution = bytecode_list.len() > 0 && function_declaration.as_ref().map_or(true, |f| !f.is_arrow);
+
        // 创建新的执行作用域
       let define_scope = (*function_define).borrow_mut().get_inner_property_value(String::from("define_scope"));
       let mut define_scope_value = None;
@@ -1549,18 +1759,40 @@ impl Context {
         let mut argument_object_mut = argument_object_rc.borrow_mut();
         argument_object_mut.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(args.len() as f64) });
         let mut arguments_index = 0;
-        for value_info in args.iter() { 
+        for value_info in args.iter() {
           argument_object_mut.define_property(arguments_index.to_string(), Property { enumerable: true, value: value_info.value.clone() });
           arguments_index += 1
         }
       }
 
       (*self.cur_scope).borrow_mut().set_value(String::from("arguments"), Value::Object(argument_object), false);
-      (*self.cur_scope).borrow_mut().this = Some(this_obj);
-      (*self.cur_scope).borrow_mut().function_call_args = args.clone();
-      let _ =  self.run_with_bytecode_list(0, &bytecode_list);
+      (*self.cur_scope).borrow_mut().this = Some(this_obj.clone());
+
+      if use_bytecode_execution {
+        // 使用 bytecode 执行（常规函数）
+        (*self.cur_scope).borrow_mut().function_call_args = args.clone();
+        let _ =  self.run_with_bytecode_list(0, &bytecode_list);
+      } else if let Some(ref func_decl) = function_declaration {
+        // 使用 function declaration 执行（箭头函数）
+        let arguments: Vec<Value> = args.iter().map(|info| info.value.clone()).collect();
+        // 绑定参数
+        for parameter_index in 0..func_decl.parameters.len() {
+          if parameter_index < arguments.len() {
+            (*self.cur_scope).borrow_mut().set_value(func_decl.parameters[parameter_index].name.literal.clone(), arguments[parameter_index].clone(), false);
+          } else {
+            (*self.cur_scope).borrow_mut().set_value(func_decl.parameters[parameter_index].name.literal.clone(), Value::Undefined, false);
+          }
+        }
+        // 执行 body
+        let block_result = self.call_block(&func_decl.declarations, &func_decl.body.statements);
+        // 将返回值推入栈中
+        if let Ok((result_value, _, _)) = block_result {
+          self.stack.push(result_value.to_value_info());
+        }
+      }
+
       self.close_scope();
-      // 这个return 其实没啥用，都是走 stack 
+      // 这个return 其实没啥用，都是走 stack
       Ok(Value::Undefined)
     }
 
@@ -1598,6 +1830,11 @@ impl Context {
         Statement::Function(function_declaration) => Some(function_declaration),
         _ => None,
       }.unwrap();
+      let async_result_promise = if function_declaration.is_async {
+        Some(create_promise_helper(self))
+      } else {
+        None
+      };
       // 创建新的执行作用域
       let define_scope = (*function_define).borrow_mut().get_inner_property_value(String::from("define_scope"));
       let mut define_scope_value = None;
@@ -1620,7 +1857,7 @@ impl Context {
         }
       }
       (*self.cur_scope).borrow_mut().set_value(String::from("arguments"), Value::Object(argument_object), false);
-      (*self.cur_scope).borrow_mut().this = Some(this_obj);
+      (*self.cur_scope).borrow_mut().this = Some(this_obj.clone());
       // 绑定参数
       for parameter_index in 0..function_declaration.parameters.len() {
         if parameter_index < arguments.len() {
@@ -1631,9 +1868,50 @@ impl Context {
         }
       }
       // 执行 body
-      let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements)?;
+      let result = self.call_block(&function_declaration.declarations, &function_declaration.body.statements);
       self.close_scope();
-      Ok(result.0)
+
+      // Handle async function
+      if function_declaration.is_async {
+        let (promise, resolve_fn, reject_fn) = async_result_promise.unwrap();
+
+        match result {
+          Ok(val) => {
+            let return_value = val.0;
+            let _ = call_function_value(self, &resolve_fn, return_value);
+          },
+          Err(err) => {
+            if err.error_type == JSIErrorType::Await {
+              if let Some(Value::Promise(awaited_promise)) = err.value {
+                let resume_callback = create_async_resume_callback(
+                  self,
+                  Rc::clone(&function_define),
+                  this_obj.clone(),
+                  &arguments,
+                  resolve_fn.clone(),
+                  reject_fn.clone(),
+                );
+                let mut then_ctx = CallContext {
+                  ctx: self,
+                  this: Value::Promise(Rc::clone(&awaited_promise)),
+                  reference: None,
+                  func_name: String::from("then"),
+                };
+                Object::call(&mut then_ctx, String::from("then"), vec![resume_callback, reject_fn.clone()])?;
+              } else {
+                let _ = call_function_value(self, &reject_fn, Value::String(err.message));
+              }
+            } else {
+              let rejection_value = err.value.unwrap_or(Value::String(err.message));
+              let _ = call_function_value(self, &reject_fn, rejection_value);
+            }
+          }
+        }
+
+        Ok(Value::Promise(promise))
+      } else {
+        Ok(result?.0)
+      }
     }
 
     // 切换作用域

@@ -38,3 +38,102 @@ fn run_array_typeof() {
   num.concat([2,3], 4).join(',') + typeof num")).unwrap();
   assert_eq!(result , Value::String(String::from("1,2,2,3,4object")));
 }
+
+#[test]
+fn run_array_map() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run_with_bytecode(String::from("\n
+  function double(x) {
+    return x * 2;
+  };
+  let arr = [1, 2, 3];
+  arr.map(double).join(',')")).unwrap();
+  assert_eq!(result, Value::String(String::from("2,4,6")));
+}
+
+#[test]
+fn run_array_map_with_index() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run_with_bytecode(String::from("\n
+  let arr = [10, 20, 30];
+  arr.map((x, i) => (x + i)).join(',')")).unwrap();
+  assert_eq!(result, Value::String(String::from("10,21,32")));
+}
+
+#[test]
+fn run_array_map_with_object() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run_with_bytecode(String::from("\n
+  let arr = [{ name: 'Alice' }, { name: 'Bob' }, { name: 'Charlie' }];
+  arr.map((x, i) => x.name + ':' + i).join(',')")).unwrap();
+  assert_eq!(result, Value::String(String::from("Alice:0,Bob:1,Charlie:2")));
+}
+
+#[test]
+fn run_array_for_each() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run_with_bytecode(String::from("\n
+  let sum = 0;
+  function addSum(x) { sum = sum + x };
+  let arr = [1, 2, 3];
+  arr.forEach(addSum);
+  sum")).unwrap();
+  assert_eq!(result, Value::Number(6.0));
+}
+
+#[test]
+fn run_array_for_each_simple() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  // Test that forEach iterates correctly with a simple side effect
+  let result = jsi.run_with_bytecode(String::from("\n
+  let count = 0;
+  function increment(x) { count = count + 1 };
+  let arr = [10, 20, 30];
+  arr.forEach(increment);
+  count")).unwrap();
+  assert_eq!(result, Value::Number(3.0));
+}
+
+#[test]
+fn run_array_for_each_returns_undefined() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run_with_bytecode(String::from("\n
+  function returnX(x) {
+    return x;
+  };
+  let arr = [1, 2, 3];
+  arr.forEach(returnX)")).unwrap();
+  assert_eq!(result, Value::Undefined);
+}
+
+#[test]
+fn run_array_filter() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run_with_bytecode(String::from("\n
+  function greaterThan2(x) {
+    return x > 2;
+  };
+  let arr = [1, 2, 3, 4, 5];
+  arr.filter(greaterThan2).join(',')")).unwrap();
+  assert_eq!(result, Value::String(String::from("3,4,5")));
+}
+
+#[test]
+fn run_array_filter_empty() {
+  let mut jsi = JSI::new();
+  jsi.set_strict(false);
+  let result = jsi.run_with_bytecode(String::from("\n
+  function greaterThan10(x) {
+    return x > 10;
+  };
+  let arr = [1, 2, 3];
+  arr.filter(greaterThan10).length")).unwrap();
+  assert_eq!(result, Value::Number(0.0));
+}

@@ -121,18 +121,21 @@ fn resolve(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
     match promise {
         Value::RefObject(promise_rc_weak) => {
             if let Some(promise_rc) = promise_rc_weak.upgrade() {
-                let mut promise_mut = promise_rc.borrow_mut();
-                // 设置 Promise 的状态为 fulfilled
-                promise_mut.set_inner_property_value(PROMISE_STATE.to_string(), Value::String("fulfilled".to_string()));
-                // 处理 resolve 的值
                 let value = args.get(0).cloned().unwrap_or(Value::Undefined);
-                promise_mut.set_inner_property_value(PROMISE_FULFILLED_VALUE.to_string(), value.clone());
+                let all_reactions = {
+                    let mut promise_mut = promise_rc.borrow_mut();
+                    // 设置 Promise 的状态为 fulfilled
+                    promise_mut.set_inner_property_value(PROMISE_STATE.to_string(), Value::String("fulfilled".to_string()));
+                    // 处理 resolve 的值
+                    promise_mut.set_inner_property_value(PROMISE_FULFILLED_VALUE.to_string(), value.clone());
+                    promise_mut.get_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string()).unwrap_or(Value::Undefined)
+                };
 
                 // 执行所有 resolve 回调
-                let all_reactions = promise_mut.get_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string()).unwrap();
                 exec_all_reactions(call_ctx.ctx, all_reactions, value, true);
 
-                 // 清空 fulfilled 和 rejected 回调数组
+                let mut promise_mut = promise_rc.borrow_mut();
+                // 清空 fulfilled 和 rejected 回调数组
                 promise_mut.set_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string(), Value::Undefined);
                 promise_mut.set_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string(), Value::Undefined);
                 // 清空 parent 引用，防止循环引用
@@ -152,18 +155,20 @@ fn reject(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
     if let Value::RefObject(promise_rc_weak) = promise {
         let upgrade = promise_rc_weak.upgrade();
         if let Some(promise_rc) = upgrade {
-            let mut promise_mut = promise_rc.borrow_mut();
-            // 设置 Promise 的状态为 rejected
-            promise_mut.set_inner_property_value(PROMISE_STATE.to_string(), Value::String("rejected".to_string()));
-            // 处理 reject 的原因
             let reason = args.get(0).cloned().unwrap_or(Value::Undefined);
-            promise_mut.set_inner_property_value(PROMISE_REJECTED_REASON.to_string(), reason.clone());
+            let all_reactions = {
+                let mut promise_mut = promise_rc.borrow_mut();
+                // 设置 Promise 的状态为 rejected
+                promise_mut.set_inner_property_value(PROMISE_STATE.to_string(), Value::String("rejected".to_string()));
+                // 处理 reject 的原因
+                promise_mut.set_inner_property_value(PROMISE_REJECTED_REASON.to_string(), reason.clone());
+                promise_mut.get_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string()).unwrap_or(Value::Undefined)
+            };
 
             // 执行所有 reject 回调
-            let all_reactions = promise_mut.get_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string()).unwrap();
-            
             exec_all_reactions(call_ctx.ctx, all_reactions, reason, false);
 
+            let mut promise_mut = promise_rc.borrow_mut();
             // 清空 fulfilled 和 rejected 回调数组
             promise_mut.set_inner_property_value(PROMISE_FULFILLED_REACTIONS.to_string(), Value::Undefined);
             promise_mut.set_inner_property_value(PROMISE_REJECTED_REACTIONS.to_string(), Value::Undefined);

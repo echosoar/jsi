@@ -15,6 +15,8 @@ pub enum JSIErrorType {
   ReferenceError,
   // 范围错误，如设置 array 的length为非数字
   RangeError,
+  // 内部使用，表示 async function 在 await pending Promise 时挂起
+  Await,
   Unknown,
 }
 
@@ -25,6 +27,7 @@ impl JSIErrorType {
         JSIErrorType::TypeError => String::from("TypeError"),
         JSIErrorType::ReferenceError => String::from("ReferenceError"),
         JSIErrorType::RangeError => String::from("RangeError"),
+      JSIErrorType::Await => String::from("Await"),
         JSIErrorType::Unknown => String::from("Unknown"),
     }
   }

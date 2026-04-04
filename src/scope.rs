@@ -55,7 +55,7 @@ pub fn get_value_info_and_scope(scope: Rc<RefCell<Scope>>, identifier: String) -
       name: Some(identifier.clone()),
       value: val.value.clone(),
       is_const: val.is_const,
-      reference: None,
+      reference: Some(Value::Scope(Rc::clone(&scope))),
       access_path: identifier.clone(),
     };
     return (Some(value_info), Rc::clone(&scope), val.is_const)
