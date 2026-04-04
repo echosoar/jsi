@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
-use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression};
+use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, ForInStatement, ForOfStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression};
 use crate::ast_utils::{get_hex_number_value, chars_to_string};
 use crate::bytecode::{ByteCode, EByteCodeop};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
@@ -351,35 +351,150 @@ impl AST{
   }
 
   // 解析 for 循环
-  // TODO: for in/ of
   fn parse_for_statement(&mut self)  -> JSIResult<Statement> {
     self.check_token_and_next(Token::For)?;
     self.check_token_and_next(Token::LeftParenthesis)?;
-    // 解析 initializer
-    // 需要额外处理 var 的情况
-    let mut initializer = Statement::Unknown;
-    if self.token == Token::Var || self.token == Token::Let || self.token == Token::Const {
-        initializer = self.parse_variable_statement()?;
-    } else if self.token != Token::Semicolon {
-      initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
-      self.check_token_and_next(Token::Semicolon)?;
-    }
-    self.not_declare_function_to_scope = true;
-    let condition = self.parse_expression()?;
-    self.not_declare_function_to_scope = false;
-    self.check_token_and_next(Token::Semicolon)?;
-    let incrementor = self.parse_expression()?;
-    self.check_token_and_next(Token::RightParenthesis)?;
 
-    let block = self.parse_block_statement()?;
-    let statement = ForStatement {
-      initializer: Box::new(initializer),
-      condition: condition,
-      incrementor: incrementor,
-      statement: Box::new(block),
-      post_judgment: false,
-    };
-    return  Ok(Statement::For(statement));
+    // Check if this is a for-in or for-of statement
+    // First, check if we have var/let/const or an identifier
+    let mut is_var = false;
+    let mut var_flag = VariableFlag::Var;
+    let mut variable_name = String::new();
+
+    if self.token == Token::Var || self.token == Token::Let || self.token == Token::Const {
+      is_var = true;
+      var_flag = match self.token {
+        Token::Var => VariableFlag::Var,
+        Token::Let => VariableFlag::Let,
+        Token::Const => VariableFlag::Const,
+        _ => VariableFlag::Var,
+      };
+      self.next();
+      // Expect an identifier
+      self.check_token(Token::Identifier)?;
+      variable_name = self.literal.clone();
+      self.next();
+    } else if self.token == Token::Identifier {
+      // Simple identifier without var/let/const
+      variable_name = self.literal.clone();
+      self.next();
+    } else {
+      // This is a regular for loop - parse initializer
+      let mut initializer = Statement::Unknown;
+      if self.token != Token::Semicolon {
+        initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
+        self.check_token_and_next(Token::Semicolon)?;
+      }
+
+      self.not_declare_function_to_scope = true;
+      let condition = self.parse_expression()?;
+      self.not_declare_function_to_scope = false;
+      self.check_token_and_next(Token::Semicolon)?;
+      let incrementor = self.parse_expression()?;
+      self.check_token_and_next(Token::RightParenthesis)?;
+
+      let block = self.parse_block_statement()?;
+      let statement = ForStatement {
+        initializer: Box::new(initializer),
+        condition: condition,
+        incrementor: incrementor,
+        statement: Box::new(block),
+        post_judgment: false,
+      };
+      return Ok(Statement::For(statement));
+    }
+
+    // Now check if the next token is 'in' or 'of'
+    if self.token == Token::In {
+      // for-in statement
+      self.next();
+      let object = self.parse_expression()?;
+      self.check_token_and_next(Token::RightParenthesis)?;
+      let block = self.parse_block_statement()?;
+
+      let statement = ForInStatement {
+        is_var,
+        var_flag,
+        variable: Expression::Identifier(IdentifierLiteral { literal: variable_name }),
+        object,
+        statement: Box::new(block),
+      };
+      return Ok(Statement::ForIn(statement));
+    } else if self.token == Token::Of {
+      // for-of statement
+      self.next();
+      let object = self.parse_expression()?;
+      self.check_token_and_next(Token::RightParenthesis)?;
+      let block = self.parse_block_statement()?;
+
+      let statement = ForOfStatement {
+        is_var,
+        var_flag,
+        variable: Expression::Identifier(IdentifierLiteral { literal: variable_name }),
+        object,
+        statement: Box::new(block),
+      };
+      return Ok(Statement::ForOf(statement));
+    } else {
+      // This is a regular for loop where we already parsed a var/let/const or identifier
+      // We need to handle the case where we have var x = expr; ...
+      let mut initializer = Statement::Unknown;
+
+      if is_var {
+        // We had var/let/const x, now check for initializer
+        let mut var_decl = VariableDeclaration {
+          name: variable_name.clone(),
+          initializer: Box::new(Expression::Keyword(Keywords::Undefined)),
+        };
+
+        if self.token == Token::Assign {
+          self.next();
+          var_decl.initializer = Box::new(self.parse_expression()?);
+        }
+
+        initializer = Statement::Var(VariableDeclarationStatement {
+          list: vec![Expression::Var(var_decl)],
+          flag: var_flag,
+        });
+      } else {
+        // We had just an identifier, it's an expression
+        if self.token == Token::Assign {
+          let left = Expression::Identifier(IdentifierLiteral { literal: variable_name });
+          self.next();
+          let right = self.parse_expression()?;
+          initializer = Statement::Expression(ExpressionStatement {
+            expression: Expression::Assign(AssignExpression {
+              left: Box::new(left),
+              operator: Token::Assign,
+              right: Box::new(right),
+            }),
+          });
+        } else {
+          initializer = Statement::Expression(ExpressionStatement {
+            expression: Expression::Identifier(IdentifierLiteral { literal: variable_name }),
+          });
+        }
+      }
+
+      self.check_token_and_next(Token::Semicolon)?;
+
+      self.not_declare_function_to_scope = true;
+      let condition = self.parse_expression()?;
+      self.not_declare_function_to_scope = false;
+      self.check_token_and_next(Token::Semicolon)?;
+      let incrementor = self.parse_expression()?;
+      self.check_token_and_next(Token::RightParenthesis)?;
+
+      let block = self.parse_block_statement()?;
+      let statement = ForStatement {
+        initializer: Box::new(initializer),
+        condition: condition,
+        incrementor: incrementor,
+        statement: Box::new(block),
+        post_judgment: false,
+      };
+      return Ok(Statement::For(statement));
+    }
   }
 
   // 解析 while 循环

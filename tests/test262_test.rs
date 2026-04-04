@@ -65,6 +65,10 @@ impl Test262Dir {
             }
             if passed {
                 self.passed += 1;
+            } else {
+                if file.code.len() < 1000 {
+                    println!(">>>[TEST 262 failed small file] {}", file.name);
+                }
             }
             self.result.files.insert(file.name.clone(), passed);
         }

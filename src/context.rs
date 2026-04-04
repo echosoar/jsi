@@ -1,9 +1,18 @@
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, get_value_info_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
+use crate::{ast::Program, ast_node::{ArrayLiteral, AssignExpression, BinaryExpression, CallContext, CallExpression, ClassType, Declaration, Expression, ForStatement, ForInStatement, ForOfStatement, IdentifierLiteral, Keywords, NewExpression, ObjectLiteral, PostfixUnaryExpression, PrefixUnaryExpression, Statement, SwitchStatement, VariableFlag}, ast_token::Token, builtins::{array::create_array, console::create_console, function::{create_function, create_function_with_bytecode, get_builtin_function_name, get_function_this}, global::{bind_global, get_global_object, new_global_this, IS_GLOABL_OBJECT}, object::{create_object, Object, Property}}, bytecode::{self, ByteCode, EByteCodeop}, constants::{GLOBAL_OBJECT_NAME_LIST, PROTO_PROPERTY_NAME}, error::{JSIError, JSIErrorType, JSIResult}, scope::{get_value_and_scope, get_value_info_and_scope, Scope}, value::{CallStatementOptions, Value, ValueInfo}};
 
 
 use super::ast::AST;
+
+// 循环中断处理结果
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LoopInterruptAction {
+  Continue,           // 继续下一次循环
+  Break,              // 退出当前循环
+  BreakAndPropagate,  // 退出循环并向上传播中断
+}
+
 pub struct Context {
   pub global: Rc<RefCell<Object>>,
   pub strict: bool,
@@ -513,6 +522,12 @@ impl Context {
         },
         Statement::For(for_statment) => {
           self.execute_for(for_statment, result_value, last_statement_value, interrupt, call_options)
+        },
+        Statement::ForIn(for_in_statement) => {
+          self.execute_for_in(for_in_statement, result_value, last_statement_value, interrupt, call_options)
+        },
+        Statement::ForOf(for_of_statement) => {
+          self.execute_for_of(for_of_statement, result_value, last_statement_value, interrupt, call_options)
         },
         Statement::While(for_statment) => {
           self.execute_for(for_statment, result_value, last_statement_value, interrupt, call_options)
@@ -1128,6 +1143,49 @@ impl Context {
       Ok(origin_value)
     }
 
+    // 处理循环中的中断（break/continue/return）
+    // 返回应该采取的动作，需要传播时设置 outer_interrupt
+    fn handle_loop_interrupt(
+      interrupt_value: &Value,
+      label: &Option<String>,
+      handle_return: bool,
+      outer_interrupt: &mut Value,
+    ) -> LoopInterruptAction {
+      if let Value::Interrupt(token, expr) = interrupt_value {
+        if token == &Token::Break {
+          if let Expression::Identifier(identifier) = expr {
+            if let Some(last_label_str) = label {
+              if *last_label_str == identifier.literal {
+                // break 当前循环
+                return LoopInterruptAction::Break;
+              }
+            }
+            // 向上传播
+            *outer_interrupt = interrupt_value.clone();
+            return LoopInterruptAction::BreakAndPropagate;
+          }
+          return LoopInterruptAction::Break;
+        } else if token == &Token::Continue {
+          if let Expression::Identifier(identifier) = expr {
+            if let Some(last_label_str) = label {
+              if *last_label_str == identifier.literal {
+                // continue 当前循环
+                return LoopInterruptAction::Continue;
+              }
+            }
+            // 向上传播并退出
+            *outer_interrupt = interrupt_value.clone();
+            return LoopInterruptAction::BreakAndPropagate;
+          }
+          return LoopInterruptAction::Continue;
+        } else if token == &Token::Return && handle_return {
+          *outer_interrupt = interrupt_value.clone();
+          return LoopInterruptAction::BreakAndPropagate;
+        }
+      }
+      LoopInterruptAction::Continue
+    }
+
     // 执行循环
     fn execute_for(&mut self, for_statment: &ForStatement, _: &mut Value, _: &mut Value, interrupt: &mut Value, call_options: CallStatementOptions) -> JSIResult<bool> {
       let mut is_change_scope = false;
@@ -1173,41 +1231,11 @@ impl Context {
         // TODO: expression
         if let Statement::Block(block) = for_statment.statement.as_ref() {
           let result = self.call_block(&vec![], &block.statements)?;
-         
+
           let for_interrupt = result.2.clone();
-          if let Value::Interrupt(token, expr) = for_interrupt {
-            if token == Token::Break {
-              if let Expression::Identifier(identifier) = expr {
-                if let Some(last_label_str) = &call_options.label {
-                  if *last_label_str == identifier.literal {
-                    // break 当前循环，无需做任何处理
-                  } else {
-                    // 向上走，让上层循环继续处理
-                    (*interrupt) = result.2;
-                  }
-                } else {
-                  // 向上走，让上层循环继续处理
-                  (*interrupt) = result.2;
-                }
-              }
-              break;
-            } else if token == Token::Continue {
-              if let Expression::Identifier(identifier) = expr {
-                if let Some(last_label_str) = &call_options.label {
-                  if *last_label_str == identifier.literal {
-                    // continue 当前循环，无需做任何处理
-                  } else {
-                    // 有 label ，但是不一样，向上走，让上层循环继续处理
-                    (*interrupt) = result.2;
-                    break;
-                  }
-                } else {
-                  // 当前循环没有 label，向上走，让上层循环继续处理
-                  (*interrupt) = result.2;
-                  break;
-                }
-              }
-            }
+          let action = Self::handle_loop_interrupt(&for_interrupt, &call_options.label, false, interrupt);
+          if action == LoopInterruptAction::Break || action == LoopInterruptAction::BreakAndPropagate {
+            break;
           }
         }
 
@@ -1232,6 +1260,119 @@ impl Context {
           }
         }
       }
+      self.close_scope();
+      Ok(true)
+    }
+
+    // 执行 for-in 循环
+    fn execute_for_in(&mut self, for_in_statement: &ForInStatement, _: &mut Value, _: &mut Value, interrupt: &mut Value, call_options: CallStatementOptions) -> JSIResult<bool> {
+      // Create scope for the loop variable
+      self.switch_scope(Some(Rc::clone(&self.cur_scope)));
+
+      // Declare the variable in the loop scope
+      let variable_name = match &for_in_statement.variable {
+        Expression::Identifier(id) => id.literal.clone(),
+        _ => String::new(),
+      };
+
+      // Get the object to iterate over
+      let object_value = self.execute_expression(&for_in_statement.object)?;
+      let object = object_value.to_object(self);
+
+      // Get enumerable properties
+      let properties: Vec<String> = {
+        let obj_ref = object.borrow();
+        obj_ref.property.keys().filter(|key| {
+          obj_ref.property.get(*key).map_or(false, |prop| prop.enumerable)
+        }).cloned().collect()
+      };
+
+      // Iterate over each property
+      for key in properties {
+        // Set the variable to the current key
+        (*self.cur_scope).borrow_mut().set_value(variable_name.clone(), Value::String(key.clone()), for_in_statement.var_flag == VariableFlag::Const);
+
+        // Execute the loop body
+        if let Statement::Block(block) = for_in_statement.statement.as_ref() {
+          let result = self.call_block(&vec![], &block.statements)?;
+
+          let for_interrupt = result.2.clone();
+          let action = Self::handle_loop_interrupt(&for_interrupt, &call_options.label, true, interrupt);
+          if action == LoopInterruptAction::Break || action == LoopInterruptAction::BreakAndPropagate {
+            break;
+          }
+        }
+      }
+
+      self.close_scope();
+      Ok(true)
+    }
+
+    // 执行 for-of 循环
+    fn execute_for_of(&mut self, for_of_statement: &ForOfStatement, _: &mut Value, _: &mut Value, interrupt: &mut Value, call_options: CallStatementOptions) -> JSIResult<bool> {
+      // Create scope for the loop variable
+      self.switch_scope(Some(Rc::clone(&self.cur_scope)));
+
+      // Declare the variable in the loop scope
+      let variable_name = match &for_of_statement.variable {
+        Expression::Identifier(id) => id.literal.clone(),
+        _ => String::new(),
+      };
+
+      // Get the object to iterate over
+      let object_value = self.execute_expression(&for_of_statement.object)?;
+
+      // Get the iterator values based on the object type
+      let values: Vec<Value> = match &object_value {
+        Value::Array(arr) => {
+          let arr_ref = arr.borrow();
+          let mut vals = vec![];
+          // Get array elements in order
+          let length = arr_ref.get_value("length".to_string());
+          if let Value::Number(len) = length {
+            for i in 0..(len as usize) {
+              vals.push(arr_ref.get_value(i.to_string()));
+            }
+          }
+          vals
+        },
+        Value::String(s) => {
+          s.chars().map(|c| Value::String(c.to_string())).collect()
+        },
+        Value::Object(obj) => {
+          // For objects, iterate over values
+          let obj_ref = obj.borrow();
+          let mut vals = vec![];
+          for key in obj_ref.property.keys() {
+            if obj_ref.property.get(key).map_or(false, |prop| prop.enumerable) {
+              vals.push(obj_ref.get_value(key.clone()));
+            }
+          }
+          vals
+        },
+        _ => {
+          // For other types, try to get an iterator
+          vec![]
+        }
+      };
+
+      // Iterate over each value
+      for value in values {
+        // Set the variable to the current value
+        (*self.cur_scope).borrow_mut().set_value(variable_name.clone(), value.clone(), for_of_statement.var_flag == VariableFlag::Const);
+
+        // Execute the loop body
+        if let Statement::Block(block) = for_of_statement.statement.as_ref() {
+          let result = self.call_block(&vec![], &block.statements)?;
+
+          let for_interrupt = result.2.clone();
+          let action = Self::handle_loop_interrupt(&for_interrupt, &call_options.label, true, interrupt);
+          if action == LoopInterruptAction::Break || action == LoopInterruptAction::BreakAndPropagate {
+            break;
+          }
+        }
+      }
+
       self.close_scope();
       Ok(true)
     }

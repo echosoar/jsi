@@ -14,6 +14,8 @@ pub enum Statement {
   Continue(ContinueStatement),
   Expression(ExpressionStatement),
   For(ForStatement),
+  ForIn(ForInStatement),
+  ForOf(ForOfStatement),
   Function(FunctionDeclaration),
   If(IfStatement),
   Label(LabeledStatement),
@@ -190,6 +192,24 @@ pub struct ForStatement {
   pub incrementor: Expression,
   pub statement: Box<Statement>,
   pub post_judgment: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForInStatement {
+  pub is_var: bool,
+  pub var_flag: VariableFlag,
+  pub variable: Expression,
+  pub object: Expression,
+  pub statement: Box<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForOfStatement {
+  pub is_var: bool,
+  pub var_flag: VariableFlag,
+  pub variable: Expression,
+  pub object: Expression,
+  pub statement: Box<Statement>,
 }
 
 
