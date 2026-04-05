@@ -216,3 +216,68 @@ fn run_object_keys() {
     assert_eq!(length, Value::Number(10f64));
   }
 }
+#[test]
+fn run_object_delete_property() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = { a: 1, b: 2, c: 3 };
+    delete obj.b;
+    Object.keys(obj).length
+  ")).unwrap();
+  assert_eq!(result, Value::Number(2f64));
+}
+
+#[test]
+fn run_object_delete_property_return_value() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = { a: 1, b: 2 };
+    delete obj.b
+  ")).unwrap();
+  assert_eq!(result, Value::Boolean(true));
+}
+
+#[test]
+fn run_object_delete_nonexistent_property() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = { a: 1 };
+    delete obj.nonexistent
+  ")).unwrap();
+  assert_eq!(result, Value::Boolean(true));
+}
+
+#[test]
+fn run_object_delete_element_access() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = { a: 1, b: 2, c: 3 };
+    delete obj['b'];
+    obj.b
+  ")).unwrap();
+  assert_eq!(result, Value::Undefined);
+}
+
+#[test]
+fn run_object_delete_variable() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let x = 10;
+    delete x
+  ")).unwrap();
+  // 不能删除变量，返回 false
+  assert_eq!(result, Value::Boolean(false));
+}
+
+#[test]
+fn run_object_delete_after_delete() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = { a: 1, b: 2 };
+    delete obj.a;
+    delete obj.a;
+    Object.keys(obj).length
+  ")).unwrap();
+  // 重复删除同一个属性，对象应该只有 b 属性
+  assert_eq!(result, Value::Number(1f64));
+}

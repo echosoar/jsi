@@ -137,3 +137,103 @@ fn run_array_filter_empty() {
   arr.filter(greaterThan10).length")).unwrap();
   assert_eq!(result, Value::Number(0.0));
 }
+// ========== Array includes 测试 ==========
+#[test]
+fn run_array_includes_found() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3].includes(2)
+  ")).unwrap();
+  assert_eq!(result, Value::Boolean(true));
+}
+
+#[test]
+fn run_array_includes_not_found() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3].includes(4)
+  ")).unwrap();
+  assert_eq!(result, Value::Boolean(false));
+}
+
+#[test]
+fn run_array_includes_with_from_index() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3, 2].includes(2, 2)
+  ")).unwrap();
+  assert_eq!(result, Value::Boolean(true));
+}
+
+#[test]
+fn run_array_includes_with_negative_from_index() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3].includes(3, -1)
+  ")).unwrap();
+  assert_eq!(result, Value::Boolean(true));
+}
+
+#[test]
+fn run_array_includes_string() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    ['a', 'b', 'c'].includes('b')
+  ")).unwrap();
+  assert_eq!(result, Value::Boolean(true));
+}
+
+// ========== Array indexOf 测试 ==========
+#[test]
+fn run_array_index_of_found() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3].indexOf(2)
+  ")).unwrap();
+  assert_eq!(result, Value::Number(1f64));
+}
+
+#[test]
+fn run_array_index_of_not_found() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3].indexOf(4)
+  ")).unwrap();
+  assert_eq!(result, Value::Number(-1f64));
+}
+
+#[test]
+fn run_array_index_of_with_from_index() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3, 2].indexOf(2, 2)
+  ")).unwrap();
+  assert_eq!(result, Value::Number(3f64));
+}
+
+#[test]
+fn run_array_index_of_first_occurrence() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3, 2].indexOf(2)
+  ")).unwrap();
+  assert_eq!(result, Value::Number(1f64));
+}
+
+#[test]
+fn run_array_index_of_negative_from_index() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    [1, 2, 3].indexOf(3, -1)
+  ")).unwrap();
+  assert_eq!(result, Value::Number(2f64));
+}
+
+#[test]
+fn run_array_index_of_string() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    ['a', 'b', 'c'].indexOf('b')
+  ")).unwrap();
+  assert_eq!(result, Value::Number(1f64));
+}

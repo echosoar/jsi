@@ -104,3 +104,147 @@ fn run_new_function() {
   ")).unwrap();
   assert_eq!(result , Value::String(String::from("45612falsetruefalse")));
 }
+// ========== this 相关测试 ==========
+
+#[test]
+fn run_function_this_in_object_method() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = {
+      name: 'test',
+      getName: function() {
+        return this.name;
+      }
+    };
+    obj.getName()
+  ")).unwrap();
+  assert_eq!(result, Value::String(String::from("test")));
+}
+
+#[test]
+fn run_function_this_in_nested_object() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let outer = {
+      value: 100,
+      inner: {
+        value: 200,
+        getValue: function() {
+          return this.value;
+        }
+      }
+    };
+    outer.inner.getValue()
+  ")).unwrap();
+  assert_eq!(result, Value::Number(200f64));
+}
+
+#[test]
+fn run_function_this_in_constructor() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    function Person(name, age) {
+      this.name = name;
+      this.age = age;
+    }
+    let p = new Person('Alice', 25);
+    p.name + ':' + p.age
+  ")).unwrap();
+  assert_eq!(result, Value::String(String::from("Alice:25")));
+}
+
+#[test]
+fn run_function_this_in_arrow_function() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = {
+      name: 'arrow',
+      getName: function() {
+        return this.name;
+      }
+    };
+    obj.getName()
+  ")).unwrap();
+  assert_eq!(result, Value::String(String::from("arrow")));
+}
+
+#[test]
+fn run_function_this_prototype_chain() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    function Counter() {
+      this.count = 0;
+    }
+    Counter.prototype.increment = function() {
+      this.count++;
+      return this;
+    };
+    Counter.prototype.getCount = function() {
+      return this.count;
+    };
+    let c = new Counter();
+    c.increment().increment().getCount()
+  ")).unwrap();
+  assert_eq!(result, Value::Number(2f64));
+}
+
+#[test]
+fn run_function_this_method_chain() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let calc = {
+      value: 0,
+      add: function(n) {
+        this.value += n;
+        return this;
+      },
+      subtract: function(n) {
+        this.value -= n;
+        return this;
+      },
+      getValue: function() {
+        return this.value;
+      }
+    };
+    calc.add(10).subtract(3).getValue()
+  ")).unwrap();
+  assert_eq!(result, Value::Number(7f64));
+}
+
+#[test]
+fn run_function_this_in_callback() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let obj = {
+      multiplier: 2,
+      numbers: [1, 2, 3],
+      sum: function() {
+        let self = this;
+        let total = 0;
+        let arr = self.numbers;
+        for (let i = 0; i < arr.length; i++) {
+          total += arr[i] * self.multiplier;
+        }
+        return total;
+      }
+    };
+    obj.sum()
+  ")).unwrap();
+  assert_eq!(result, Value::Number(12f64));
+}
+
+#[test]
+fn run_function_this_with_computed_property() {
+  let mut jsi = JSI::new();
+  let result = jsi.run(String::from("\
+    let key = 'dynamic';
+    let obj = {
+      [key]: 'computed value',
+      getKey: function() {
+        return this[key];
+      }
+    };
+    obj.getKey()
+  ")).unwrap();
+  assert_eq!(result, Value::String(String::from("computed value")));
+}

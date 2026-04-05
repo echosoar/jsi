@@ -55,6 +55,8 @@ pub fn bind_global_array(ctx: &mut Context) {
     prototype.define_builtin_function_property(ctx, String::from("map"),  1, array_map);
     prototype.define_builtin_function_property(ctx, String::from("forEach"),  1, array_for_each);
     prototype.define_builtin_function_property(ctx, String::from("filter"),  1, array_filter);
+    prototype.define_builtin_function_property(ctx, String::from("includes"),  1, array_includes);
+    prototype.define_builtin_function_property(ctx, String::from("indexOf"),  1, array_index_of);
   }
 }
 
@@ -386,4 +388,94 @@ fn array_filter(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value
   }
   new_arr_borrowed.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(new_index as f64) });
   Ok(new_array)
+}
+
+// Array.prototype.includes
+fn array_includes(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let search_element = if args.len() > 0 {
+    &args[0]
+  } else {
+    return Ok(Value::Boolean(false));
+  };
+
+  let mut from_index: i32 = 0;
+  if args.len() > 1 {
+    if let Some(pos) = args[1].to_number(call_ctx.ctx) {
+      from_index = pos as i32;
+    }
+  }
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      let len = len as i32;
+
+      // 处理负数的 from_index
+      if from_index < 0 {
+        from_index = len + from_index;
+        if from_index < 0 {
+          from_index = 0;
+        }
+      }
+
+      for index in from_index..len {
+        let element = this.get_property_value(index.to_string());
+        // 使用严格相等比较
+        if element.is_equal_to(call_ctx.ctx, search_element, true) {
+          return Ok(Value::Boolean(true));
+        }
+        // 对于 NaN 的特殊处理
+        if element.is_nan() && search_element.is_nan() {
+          return Ok(Value::Boolean(true));
+        }
+      }
+    }
+  }
+
+  Ok(Value::Boolean(false))
+}
+
+// Array.prototype.indexOf
+fn array_index_of(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let search_element = if args.len() > 0 {
+    &args[0]
+  } else {
+    return Ok(Value::Number(-1f64));
+  };
+
+  let mut from_index: i32 = 0;
+  if args.len() > 1 {
+    if let Some(pos) = args[1].to_number(call_ctx.ctx) {
+      from_index = pos as i32;
+    }
+  }
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      let len = len as i32;
+
+      // 处理负数的 from_index
+      if from_index < 0 {
+        from_index = len + from_index;
+        if from_index < 0 {
+          from_index = 0;
+        }
+      }
+
+      for index in from_index..len {
+        let element = this.get_property_value(index.to_string());
+        // 使用严格相等比较
+        if element.is_equal_to(call_ctx.ctx, search_element, true) {
+          return Ok(Value::Number(index as f64));
+        }
+      }
+    }
+  }
+
+  Ok(Value::Number(-1f64))
 }

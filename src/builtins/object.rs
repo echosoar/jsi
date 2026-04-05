@@ -116,6 +116,19 @@ impl Object {
     }
   }
 
+  // 删除属性
+  // 返回 true 表示删除成功（包括属性不存在的情况）
+  // 返回 false 表示属性不可删除
+  pub fn delete_property(&mut self, name: String) -> bool {
+    // 从 property HashMap 中移除
+    let removed = self.property.remove(&name);
+    // 从 property_list 中移除
+    self.property_list.retain(|key| key != &name);
+    // JavaScript 规范：删除不存在的属性返回 true
+    // 只有不可配置的属性才会返回 false，这里暂时都返回 true
+    true
+  }
+
   pub fn get_inner_property_value(&self, name: String) -> Option<Value> {
     let prop = self.inner_property.get(&name);
     if let Some(prop) = prop {

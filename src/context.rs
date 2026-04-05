@@ -1218,7 +1218,28 @@ impl Context {
             }
           }
         },
-       // TODO:  | Token::Delete
+        "delete" => {
+          // delete in bytecode context
+          if let Some(reference) = &value_info.reference {
+            match reference {
+              Value::Scope(_) => {
+                // 不能删除变量
+                Value::Boolean(false).to_value_info()
+              },
+              _ => {
+                if let Some(name) = &value_info.name {
+                  let obj = reference.to_object(self);
+                  let deleted = obj.borrow_mut().delete_property(name.clone());
+                  Value::Boolean(deleted).to_value_info()
+                } else {
+                  Value::Boolean(false).to_value_info()
+                }
+              }
+            }
+          } else {
+            Value::Boolean(true).to_value_info()
+          }
+        },
         _ => {
           println!("Unsupported prefix unary operator: {}", operator);
           Value::Undefined.to_value_info()
@@ -1276,10 +1297,31 @@ impl Context {
             }
           }
         },
-        // TODO: delete
-        // Token::Void => {
-        //   Ok(Value::Undefined)
-        // },
+        Token::Delete => {
+          // delete expression - delete a property from an object
+          // 需要检查 operand_info 是否有 reference 和 name
+          if let Some(reference) = &operand_info.reference {
+            match reference {
+              Value::Scope(_) => {
+                // 不能删除变量，返回 false
+                Ok(Value::Boolean(false))
+              },
+              _ => {
+                // 删除对象属性
+                if let Some(name) = &operand_info.name {
+                  let obj = reference.to_object(self);
+                  let deleted = obj.borrow_mut().delete_property(name.clone());
+                  Ok(Value::Boolean(deleted))
+                } else {
+                  Ok(Value::Boolean(false))
+                }
+              }
+            }
+          } else {
+            // 没有引用，返回 true
+            Ok(Value::Boolean(true))
+          }
+        },
         _ => {
           let value_number = operand_info.value.to_number(self);
           let value = if let Some(new_value) = value_number {
