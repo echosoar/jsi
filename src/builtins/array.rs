@@ -9,6 +9,70 @@ use super::global::{get_global_object_prototype_by_name, get_global_object_by_na
 use super::object::Object;
 use super::{object::{create_object, Property}};
 
+// Pre-generated string representations for small integers (0-999)
+// This avoids repeated to_string() allocations for common array indices
+fn index_to_string(index: i32) -> String {
+  if index >= 0 && index < 100 {
+    const SMALL_INT_STRINGS: [&str; 100] = [
+      "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+      "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+      "20", "21", "22", "23", "24", "25", "26", "27", "28", "29",
+      "30", "31", "32", "33", "34", "35", "36", "37", "38", "39",
+      "40", "41", "42", "43", "44", "45", "46", "47", "48", "49",
+      "50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
+      "60", "61", "62", "63", "64", "65", "66", "67", "68", "69",
+      "70", "71", "72", "73", "74", "75", "76", "77", "78", "79",
+      "80", "81", "82", "83", "84", "85", "86", "87", "88", "89",
+      "90", "91", "92", "93", "94", "95", "96", "97", "98", "99"
+    ];
+    SMALL_INT_STRINGS[index as usize].to_string()
+  } else {
+    index.to_string()
+  }
+}
+
+// 将字符串转换为数值索引，如果不是有效的数组索引则返回 None
+// 使用 u64 来支持超大索引（JavaScript 数组最大索引是 2^32-1）
+fn string_to_index(s: &str) -> Option<u64> {
+  // 尝试解析为数字
+  if let Ok(num) = s.parse::<u64>() {
+    // 检查是否是有效的数组索引（字符串形式与数字形式一致）
+    // JavaScript 数组索引最大值是 2^32 - 1
+    if num <= 4294967295 && num.to_string() == s {
+      return Some(num);
+    }
+  }
+  None
+}
+
+// 获取数组对象中实际存在的所有数值索引（按数值排序）
+// 用于优化稀疏数组的遍历
+fn get_array_indices(obj: &Object) -> Vec<u64> {
+  let mut indices: Vec<u64> = Vec::new();
+  for key in obj.property_list.iter() {
+    if let Some(index) = string_to_index(key) {
+      indices.push(index);
+    }
+  }
+  indices.sort();
+  indices
+}
+
+// 获取数组对象中在指定范围内的实际存在的数值索引（按数值排序）
+// 使用 u64 来避免溢出问题
+fn get_array_indices_in_range(obj: &Object, start: u64, end: u64) -> Vec<u64> {
+  let mut indices: Vec<u64> = Vec::new();
+  for key in obj.property_list.iter() {
+    if let Some(index) = string_to_index(key) {
+      if index >= start && index < end {
+        indices.push(index);
+      }
+    }
+  }
+  indices.sort();
+  indices
+}
+
  // ref: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#prod-FunctionDeclaration
  pub fn create_array(ctx: &mut Context, length: usize) -> Value {
   let global_array = get_global_object_by_name(ctx, GLOBAL_ARRAY_NAME);
@@ -51,12 +115,22 @@ pub fn bind_global_array(ctx: &mut Context) {
     prototype.define_builtin_function_property(ctx, String::from("concat"),  0, array_concat);
     prototype.define_builtin_function_property(ctx, String::from("join"),  1, array_join);
     prototype.define_builtin_function_property(ctx, String::from("push"),  1, array_push);
+    prototype.define_builtin_function_property(ctx, String::from("pop"),  0, array_pop);
     prototype.define_builtin_function_property(ctx, String::from("toString"),  0, array_to_string);
     prototype.define_builtin_function_property(ctx, String::from("map"),  1, array_map);
     prototype.define_builtin_function_property(ctx, String::from("forEach"),  1, array_for_each);
     prototype.define_builtin_function_property(ctx, String::from("filter"),  1, array_filter);
     prototype.define_builtin_function_property(ctx, String::from("includes"),  1, array_includes);
     prototype.define_builtin_function_property(ctx, String::from("indexOf"),  1, array_index_of);
+    prototype.define_builtin_function_property(ctx, String::from("fill"),  1, array_fill);
+    prototype.define_builtin_function_property(ctx, String::from("find"),  1, array_find);
+    prototype.define_builtin_function_property(ctx, String::from("findIndex"),  1, array_find_index);
+    prototype.define_builtin_function_property(ctx, String::from("reverse"),  0, array_reverse);
+    prototype.define_builtin_function_property(ctx, String::from("shift"),  0, array_shift);
+    prototype.define_builtin_function_property(ctx, String::from("unshift"),  1, array_unshift);
+    prototype.define_builtin_function_property(ctx, String::from("sort"),  1, array_sort);
+    prototype.define_builtin_function_property(ctx, String::from("slice"),  2, array_slice);
+    prototype.define_builtin_function_property(ctx, String::from("splice"),  2, array_splice);
   }
 }
 
@@ -162,11 +236,25 @@ fn array_to_string(ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
 }
 
 fn array_iter_mut<F: FnMut(i32, &Value, &mut Context)>(call_ctx: &mut CallContext, arr_rc: &Rc<RefCell<Object>>, mut callback: F) {
-  let arr = arr_rc.borrow_mut();
+  let arr = arr_rc.borrow();
   let len = arr.get_property_value(String::from("length"));
   if let Value::Number(len) = len {
-    for index in 0..(len as i32) {
-      (callback)(index, &arr.get_property_value(index.to_string()), call_ctx.ctx);
+    // Use u64 for length to handle large indices properly
+    let len_u64 = len as u64;
+    // For small arrays, use direct iteration for better performance
+    if len_u64 <= 1000 {
+      for index in 0..(len as i32) {
+        (callback)(index, &arr.get_property_value(index.to_string()), call_ctx.ctx);
+      }
+    } else {
+      // For large/sparse arrays, only iterate over actual existing indices
+      let indices = get_array_indices(&arr);
+      for index in indices.iter() {
+        // Only call callback for indices within the valid length
+        if *index < len_u64 {
+          (callback)(*index as i32, &arr.get_property_value(index.to_string()), call_ctx.ctx);
+        }
+      }
     }
   }
 }
@@ -179,7 +267,7 @@ fn clone_array_object(call_ctx: &mut CallContext) -> JSIResult<(Rc<RefCell<Objec
   }.unwrap();
   let new_arr_rc = Rc::clone(&new_arr);
   let mut new_arr_borrowed = new_arr_rc.borrow_mut();
-  
+
   let mut length: i32 = 0;
   let this_array_obj = get_array_object_from_this(&call_ctx.this);
   if let Some(this_ref) = this_array_obj {
@@ -191,16 +279,28 @@ fn clone_array_object(call_ctx: &mut CallContext) -> JSIResult<(Rc<RefCell<Objec
       },
       _ => {},
     };
-    for index in 0..(length as i32) {
-      let value = this.get_property_value(index.to_string());
-      new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
+    // Use actual indices for sparse arrays
+    let len_u64 = length as u64;
+    if len_u64 <= 1000 {
+      for index in 0..length {
+        let value = this.get_property_value(index.to_string());
+        new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
+      }
+    } else {
+      let indices = get_array_indices(&this);
+      for index in indices.iter() {
+        if *index < len_u64 {
+          let value = this.get_property_value(index.to_string());
+          new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
+        }
+      }
     }
   } else {
     length = 1;
     new_arr_borrowed.define_property(String::from("0"), Property { enumerable: true, value: call_ctx.this.clone() });
   }
 
-  
+
   new_arr_borrowed.define_property(String::from("length"),  Property { enumerable: false, value: Value::Number(length.clone() as f64) });
   Ok((new_arr, length))
 }
@@ -216,9 +316,20 @@ pub fn create_list_from_array_list(call_ctx: &mut CallContext,value: &Value) -> 
       let obj_borrow = obj.borrow();
       let len = obj_borrow.get_property_value(String::from("length"));
       if let Value::Number(len) = len {
-        for index in 0..(len as i32) {
-          let value = obj_borrow.get_property_value(index.to_string());
-          list.push(value);
+        let len_u64 = len as u64;
+        if len_u64 <= 1000 {
+          for index in 0..(len as i32) {
+            let value = obj_borrow.get_property_value(index.to_string());
+            list.push(value);
+          }
+        } else {
+          let indices = get_array_indices(&obj_borrow);
+          for index in indices.iter() {
+            if *index < len_u64 {
+              let value = obj_borrow.get_property_value(index.to_string());
+              list.push(value);
+            }
+          }
         }
       }
       Ok(list)
@@ -249,16 +360,11 @@ fn array_map(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   };
 
   let this_array_obj = get_array_object_from_this(&call_ctx.this);
-  let (len, elements, this_value) = if let Some(this_ref) = this_array_obj {
+  let len = if let Some(this_ref) = this_array_obj {
     let this = this_ref.borrow();
     let len = this.get_property_value(String::from("length"));
     if let Value::Number(len) = len {
-      let len = len as i32;
-      let mut elements: Vec<Value> = Vec::with_capacity(len as usize);
-      for index in 0..len {
-        elements.push(this.get_property_value(index.to_string()));
-      }
-      (len, elements, call_ctx.this.clone())
+      len as u64
     } else {
       return Ok(create_array(call_ctx.ctx, 0));
     }
@@ -266,6 +372,7 @@ fn array_map(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
     return Ok(create_array(call_ctx.ctx, 0));
   };
 
+  let this_value = call_ctx.this.clone();
   let new_array = create_array(call_ctx.ctx, 0);
   let new_array_clone = match &new_array {
     Value::Array(arr) => Rc::clone(arr),
@@ -273,16 +380,46 @@ fn array_map(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   };
   let mut new_arr_borrowed = new_array_clone.borrow_mut();
 
-  for index in 0..len {
-    let element = &elements[index as usize];
-    let callback_args: Vec<crate::value::ValueInfo> = vec![
-      element.to_value_info(),
-      Value::Number(index as f64).to_value_info(),
-      this_value.to_value_info()
-    ];
-    call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
-    let result = call_ctx.ctx.pop_stack_value();
-    new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: result });
+  // Get the array reference for iteration
+  let this_ref = get_array_object_from_this(&call_ctx.this).unwrap();
+
+  // For sparse arrays, only iterate over actual existing indices
+  if len <= 1000 {
+    for index in 0..len {
+      // Get element directly during iteration instead of pre-copying
+      let this_borrowed = this_ref.borrow();
+      let element = this_borrowed.get_property_value(index.to_string());
+      let callback_args: Vec<crate::value::ValueInfo> = vec![
+        element.to_value_info(),
+        Value::Number(index as f64).to_value_info(),
+        this_value.to_value_info()
+      ];
+      // Need to release the borrow before calling the function
+      drop(this_borrowed);
+      call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+      let result = call_ctx.ctx.pop_stack_value();
+      new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: result });
+    }
+  } else {
+    let indices = {
+      let this_borrowed = this_ref.borrow();
+      get_array_indices(&this_borrowed)
+    };
+    for index in indices.iter() {
+      if *index < len {
+        let this_borrowed = this_ref.borrow();
+        let element = this_borrowed.get_property_value(index.to_string());
+        let callback_args: Vec<crate::value::ValueInfo> = vec![
+          element.to_value_info(),
+          Value::Number(*index as f64).to_value_info(),
+          this_value.to_value_info()
+        ];
+        drop(this_borrowed);
+        call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+        let result = call_ctx.ctx.pop_stack_value();
+        new_arr_borrowed.define_property(index.to_string(), Property { enumerable: true, value: result });
+      }
+    }
   }
   new_arr_borrowed.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(len as f64) });
   Ok(new_array)
@@ -302,16 +439,11 @@ fn array_for_each(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Val
   };
 
   let this_array_obj = get_array_object_from_this(&call_ctx.this);
-  let (len, elements, this_value) = if let Some(this_ref) = this_array_obj {
+  let len = if let Some(this_ref) = this_array_obj {
     let this = this_ref.borrow();
     let len = this.get_property_value(String::from("length"));
     if let Value::Number(len) = len {
-      let len = len as i32;
-      let mut elements: Vec<Value> = Vec::with_capacity(len as usize);
-      for index in 0..len {
-        elements.push(this.get_property_value(index.to_string()));
-      }
-      (len, elements, call_ctx.this.clone())
+      len as u64
     } else {
       return Ok(Value::Undefined);
     }
@@ -319,16 +451,42 @@ fn array_for_each(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Val
     return Ok(Value::Undefined);
   };
 
-  for index in 0..len {
-    let element = &elements[index as usize];
-    let callback_args: Vec<crate::value::ValueInfo> = vec![
-      element.to_value_info(),
-      Value::Number(index as f64).to_value_info(),
-      this_value.to_value_info()
-    ];
-    call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
-    // Pop the result from stack but we don't need it for forEach
-    call_ctx.ctx.pop_stack_value();
+  let this_value = call_ctx.this.clone();
+  let this_ref = get_array_object_from_this(&call_ctx.this).unwrap();
+
+  // For sparse arrays, only iterate over actual existing indices
+  if len <= 1000 {
+    for index in 0..len {
+      let this_borrowed = this_ref.borrow();
+      let element = this_borrowed.get_property_value(index.to_string());
+      let callback_args: Vec<crate::value::ValueInfo> = vec![
+        element.to_value_info(),
+        Value::Number(index as f64).to_value_info(),
+        this_value.to_value_info()
+      ];
+      drop(this_borrowed);
+      call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+      call_ctx.ctx.pop_stack_value();
+    }
+  } else {
+    let indices = {
+      let this_borrowed = this_ref.borrow();
+      get_array_indices(&this_borrowed)
+    };
+    for index in indices.iter() {
+      if *index < len {
+        let this_borrowed = this_ref.borrow();
+        let element = this_borrowed.get_property_value(index.to_string());
+        let callback_args: Vec<crate::value::ValueInfo> = vec![
+          element.to_value_info(),
+          Value::Number(*index as f64).to_value_info(),
+          this_value.to_value_info()
+        ];
+        drop(this_borrowed);
+        call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+        call_ctx.ctx.pop_stack_value();
+      }
+    }
   }
   Ok(Value::Undefined)
 }
@@ -347,16 +505,11 @@ fn array_filter(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value
   };
 
   let this_array_obj = get_array_object_from_this(&call_ctx.this);
-  let (len, elements, this_value) = if let Some(this_ref) = this_array_obj {
+  let len = if let Some(this_ref) = this_array_obj {
     let this = this_ref.borrow();
     let len = this.get_property_value(String::from("length"));
     if let Value::Number(len) = len {
-      let len = len as i32;
-      let mut elements: Vec<Value> = Vec::with_capacity(len as usize);
-      for index in 0..len {
-        elements.push(this.get_property_value(index.to_string()));
-      }
-      (len, elements, call_ctx.this.clone())
+      len as u64
     } else {
       return Ok(create_array(call_ctx.ctx, 0));
     }
@@ -364,26 +517,59 @@ fn array_filter(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value
     return Ok(create_array(call_ctx.ctx, 0));
   };
 
+  let this_value = call_ctx.this.clone();
   let new_array = create_array(call_ctx.ctx, 0);
   let new_array_clone = match &new_array {
     Value::Array(arr) => Rc::clone(arr),
     _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Failed to create array"), 0, 0))
   };
   let mut new_arr_borrowed = new_array_clone.borrow_mut();
-  let mut new_index = 0;
+  let mut new_index: u64 = 0;
 
-  for index in 0..len {
-    let element = &elements[index as usize];
-    let callback_args: Vec<crate::value::ValueInfo> = vec![
-      element.to_value_info(),
-      Value::Number(index as f64).to_value_info(),
-      this_value.to_value_info()
-    ];
-    call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
-    let result = call_ctx.ctx.pop_stack_value();
-    if result.to_boolean(call_ctx.ctx) {
-      new_arr_borrowed.define_property(new_index.to_string(), Property { enumerable: true, value: element.clone() });
-      new_index += 1;
+  let this_ref = get_array_object_from_this(&call_ctx.this).unwrap();
+
+  // For sparse arrays, only iterate over actual existing indices
+  if len <= 1000 {
+    for index in 0..len {
+      let this_borrowed = this_ref.borrow();
+      let element = this_borrowed.get_property_value(index.to_string());
+      let callback_args: Vec<crate::value::ValueInfo> = vec![
+        element.to_value_info(),
+        Value::Number(index as f64).to_value_info(),
+        this_value.to_value_info()
+      ];
+      let element_clone = element.clone();
+      drop(this_borrowed);
+      call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+      let result = call_ctx.ctx.pop_stack_value();
+      if result.to_boolean(call_ctx.ctx) {
+        new_arr_borrowed.define_property(new_index.to_string(), Property { enumerable: true, value: element_clone });
+        new_index += 1;
+      }
+    }
+  } else {
+    let indices = {
+      let this_borrowed = this_ref.borrow();
+      get_array_indices(&this_borrowed)
+    };
+    for index in indices.iter() {
+      if *index < len {
+        let this_borrowed = this_ref.borrow();
+        let element = this_borrowed.get_property_value(index.to_string());
+        let callback_args: Vec<crate::value::ValueInfo> = vec![
+          element.to_value_info(),
+          Value::Number(*index as f64).to_value_info(),
+          this_value.to_value_info()
+        ];
+        let element_clone = element.clone();
+        drop(this_borrowed);
+        call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+        let result = call_ctx.ctx.pop_stack_value();
+        if result.to_boolean(call_ctx.ctx) {
+          new_arr_borrowed.define_property(new_index.to_string(), Property { enumerable: true, value: element_clone });
+          new_index += 1;
+        }
+      }
     }
   }
   new_arr_borrowed.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(new_index as f64) });
@@ -398,10 +584,16 @@ fn array_includes(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Val
     return Ok(Value::Boolean(false));
   };
 
-  let mut from_index: i32 = 0;
+  let mut from_index: u64 = 0;
   if args.len() > 1 {
     if let Some(pos) = args[1].to_number(call_ctx.ctx) {
-      from_index = pos as i32;
+      let pos_i64 = pos as i64;
+      if pos_i64 < 0 {
+        // Handle negative from_index later when we have len
+        from_index = 0; // Will be adjusted below
+      } else {
+        from_index = pos_i64 as u64;
+      }
     }
   }
 
@@ -410,25 +602,40 @@ fn array_includes(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Val
     let this = this_ref.borrow();
     let len = this.get_property_value(String::from("length"));
     if let Value::Number(len) = len {
-      let len = len as i32;
+      let len_u64 = len as u64;
 
       // 处理负数的 from_index
-      if from_index < 0 {
-        from_index = len + from_index;
-        if from_index < 0 {
-          from_index = 0;
+      if args.len() > 1 {
+        if let Some(pos) = args[1].to_number(call_ctx.ctx) {
+          let pos_i64 = pos as i64;
+          if pos_i64 < 0 {
+            let neg_start = len_u64 as i64 + pos_i64;
+            from_index = if neg_start < 0 { 0 } else { neg_start as u64 };
+          }
         }
       }
 
-      for index in from_index..len {
-        let element = this.get_property_value(index.to_string());
-        // 使用严格相等比较
-        if element.is_equal_to(call_ctx.ctx, search_element, true) {
-          return Ok(Value::Boolean(true));
+      // For sparse arrays, only check actual existing indices
+      if len_u64 <= 1000 {
+        for index in from_index..len_u64 {
+          let element = this.get_property_value(index.to_string());
+          if element.is_equal_to(call_ctx.ctx, search_element, true) {
+            return Ok(Value::Boolean(true));
+          }
+          if element.is_nan() && search_element.is_nan() {
+            return Ok(Value::Boolean(true));
+          }
         }
-        // 对于 NaN 的特殊处理
-        if element.is_nan() && search_element.is_nan() {
-          return Ok(Value::Boolean(true));
+      } else {
+        let indices = get_array_indices_in_range(&this, from_index, len_u64);
+        for index in indices.iter() {
+          let element = this.get_property_value(index.to_string());
+          if element.is_equal_to(call_ctx.ctx, search_element, true) {
+            return Ok(Value::Boolean(true));
+          }
+          if element.is_nan() && search_element.is_nan() {
+            return Ok(Value::Boolean(true));
+          }
         }
       }
     }
@@ -445,10 +652,15 @@ fn array_index_of(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Val
     return Ok(Value::Number(-1f64));
   };
 
-  let mut from_index: i32 = 0;
+  let mut from_index: u64 = 0;
   if args.len() > 1 {
     if let Some(pos) = args[1].to_number(call_ctx.ctx) {
-      from_index = pos as i32;
+      let pos_i64 = pos as i64;
+      if pos_i64 < 0 {
+        from_index = 0; // Will be adjusted below
+      } else {
+        from_index = pos_i64 as u64;
+      }
     }
   }
 
@@ -457,25 +669,768 @@ fn array_index_of(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Val
     let this = this_ref.borrow();
     let len = this.get_property_value(String::from("length"));
     if let Value::Number(len) = len {
-      let len = len as i32;
+      let len_u64 = len as u64;
 
       // 处理负数的 from_index
-      if from_index < 0 {
-        from_index = len + from_index;
-        if from_index < 0 {
-          from_index = 0;
+      if args.len() > 1 {
+        if let Some(pos) = args[1].to_number(call_ctx.ctx) {
+          let pos_i64 = pos as i64;
+          if pos_i64 < 0 {
+            let neg_start = len_u64 as i64 + pos_i64;
+            from_index = if neg_start < 0 { 0 } else { neg_start as u64 };
+          }
         }
       }
 
-      for index in from_index..len {
-        let element = this.get_property_value(index.to_string());
-        // 使用严格相等比较
-        if element.is_equal_to(call_ctx.ctx, search_element, true) {
-          return Ok(Value::Number(index as f64));
+      // For sparse arrays, only check actual existing indices
+      if len_u64 <= 1000 {
+        for index in from_index..len_u64 {
+          let element = this.get_property_value(index.to_string());
+          if element.is_equal_to(call_ctx.ctx, search_element, true) {
+            return Ok(Value::Number(index as f64));
+          }
+        }
+      } else {
+        let indices = get_array_indices_in_range(&this, from_index, len_u64);
+        for index in indices.iter() {
+          let element = this.get_property_value(index.to_string());
+          if element.is_equal_to(call_ctx.ctx, search_element, true) {
+            return Ok(Value::Number(*index as f64));
+          }
         }
       }
     }
   }
 
   Ok(Value::Number(-1f64))
+}
+
+// Array.prototype.fill
+// arr.fill(value[, start[, end]])
+fn array_fill(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let fill_value = if args.len() > 0 {
+    args[0].clone()
+  } else {
+    Value::Undefined
+  };
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  if let Some(this_ref) = this_array_obj {
+    let len = {
+      let this = this_ref.borrow();
+      let len = this.get_property_value(String::from("length"));
+      if let Value::Number(len) = len {
+        len as i32
+      } else {
+        return Ok(call_ctx.this.clone());
+      }
+    };
+
+    // Parse start and end parameters
+    let mut start: i32 = 0;
+    let mut end: i32 = len;
+
+    if args.len() > 1 {
+      if let Some(s) = args[1].to_number(call_ctx.ctx) {
+        start = s as i32;
+        // Handle negative start
+        if start < 0 {
+          start = len + start;
+          if start < 0 {
+            start = 0;
+          }
+        }
+        if start > len {
+          start = len;
+        }
+      }
+    }
+
+    if args.len() > 2 {
+      if let Some(e) = args[2].to_number(call_ctx.ctx) {
+        end = e as i32;
+        // Handle negative end
+        if end < 0 {
+          end = len + end;
+          if end < 0 {
+            end = 0;
+          }
+        }
+        if end > len {
+          end = len;
+        }
+      }
+    }
+
+    // Fill the array
+    let mut this = this_ref.borrow_mut();
+    for index in start..end {
+      this.define_property(index_to_string(index), Property { enumerable: true, value: fill_value.clone() });
+    }
+  }
+
+  Ok(call_ctx.this.clone())
+}
+
+// Array.prototype.find
+// arr.find(callback[, thisArg])
+fn array_find(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let callback = if args.len() > 0 {
+    &args[0]
+  } else {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.find requires a callback function"), 0, 0))
+  };
+
+  let callback_func = match callback {
+    Value::Function(func) => Rc::clone(func),
+    _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.find callback must be a function"), 0, 0))
+  };
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  let len = if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      len as u64
+    } else {
+      return Ok(Value::Undefined);
+    }
+  } else {
+    return Ok(Value::Undefined);
+  };
+
+  let this_value = call_ctx.this.clone();
+  let this_ref = get_array_object_from_this(&call_ctx.this).unwrap();
+
+  // For sparse arrays, only iterate over actual existing indices
+  if len <= 1000 {
+    for index in 0..len {
+      let this_borrowed = this_ref.borrow();
+      let element = this_borrowed.get_property_value(index.to_string());
+      let callback_args: Vec<crate::value::ValueInfo> = vec![
+        element.to_value_info(),
+        Value::Number(index as f64).to_value_info(),
+        this_value.to_value_info()
+      ];
+      let element_clone = element.clone();
+      drop(this_borrowed);
+      call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+      let result = call_ctx.ctx.pop_stack_value();
+      if result.to_boolean(call_ctx.ctx) {
+        return Ok(element_clone);
+      }
+    }
+  } else {
+    let indices = {
+      let this_borrowed = this_ref.borrow();
+      get_array_indices(&this_borrowed)
+    };
+    for index in indices.iter() {
+      if *index < len {
+        let this_borrowed = this_ref.borrow();
+        let element = this_borrowed.get_property_value(index.to_string());
+        let callback_args: Vec<crate::value::ValueInfo> = vec![
+          element.to_value_info(),
+          Value::Number(*index as f64).to_value_info(),
+          this_value.to_value_info()
+        ];
+        let element_clone = element.clone();
+        drop(this_borrowed);
+        call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+        let result = call_ctx.ctx.pop_stack_value();
+        if result.to_boolean(call_ctx.ctx) {
+          return Ok(element_clone);
+        }
+      }
+    }
+  }
+
+  Ok(Value::Undefined)
+}
+
+// Array.prototype.findIndex
+// arr.findIndex(callback[, thisArg])
+fn array_find_index(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let callback = if args.len() > 0 {
+    &args[0]
+  } else {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.findIndex requires a callback function"), 0, 0))
+  };
+
+  let callback_func = match callback {
+    Value::Function(func) => Rc::clone(func),
+    _ => return Err(JSIError::new(JSIErrorType::TypeError, format!("Array.prototype.findIndex callback must be a function"), 0, 0))
+  };
+
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+  let len = if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      len as u64
+    } else {
+      return Ok(Value::Number(-1f64));
+    }
+  } else {
+    return Ok(Value::Number(-1f64));
+  };
+
+  let this_value = call_ctx.this.clone();
+  let this_ref = get_array_object_from_this(&call_ctx.this).unwrap();
+
+  // For sparse arrays, only iterate over actual existing indices
+  if len <= 1000 {
+    for index in 0..len {
+      let this_borrowed = this_ref.borrow();
+      let element = this_borrowed.get_property_value(index.to_string());
+      let callback_args: Vec<crate::value::ValueInfo> = vec![
+        element.to_value_info(),
+        Value::Number(index as f64).to_value_info(),
+        this_value.to_value_info()
+      ];
+      drop(this_borrowed);
+      call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+      let result = call_ctx.ctx.pop_stack_value();
+      if result.to_boolean(call_ctx.ctx) {
+        return Ok(Value::Number(index as f64));
+      }
+    }
+  } else {
+    let indices = {
+      let this_borrowed = this_ref.borrow();
+      get_array_indices(&this_borrowed)
+    };
+    for index in indices.iter() {
+      if *index < len {
+        let this_borrowed = this_ref.borrow();
+        let element = this_borrowed.get_property_value(index.to_string());
+        let callback_args: Vec<crate::value::ValueInfo> = vec![
+          element.to_value_info(),
+          Value::Number(*index as f64).to_value_info(),
+          this_value.to_value_info()
+        ];
+        drop(this_borrowed);
+        call_ctx.ctx.call_function_with_bytecode(callback_func.clone(), None, None, callback_args)?;
+        let result = call_ctx.ctx.pop_stack_value();
+        if result.to_boolean(call_ctx.ctx) {
+          return Ok(Value::Number(*index as f64));
+        }
+      }
+    }
+  }
+
+  Ok(Value::Number(-1f64))
+}
+
+// Array.prototype.pop
+// arr.pop()
+fn array_pop(call_ctx: &mut CallContext, _args: Vec<Value>) -> JSIResult<Value> {
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+
+  if let Some(this_ref) = this_array_obj {
+    let mut this = this_ref.borrow_mut();
+    let len_opt = this.get_property_value(String::from("length")).to_number(call_ctx.ctx);
+    if let Some(len) = len_opt {
+      let len = len as i32;
+      if len == 0 {
+        this.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(0f64) });
+        return Ok(Value::Undefined);
+      }
+      let last_index = len - 1;
+      let last_value = this.get_property_value(index_to_string(last_index));
+      this.property.remove(&index_to_string(last_index));
+      this.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(last_index as f64) });
+      return Ok(last_value);
+    }
+    return Ok(Value::Undefined);
+  }
+  Ok(Value::Undefined)
+}
+
+// Array.prototype.reverse
+// arr.reverse()
+fn array_reverse(call_ctx: &mut CallContext, _args: Vec<Value>) -> JSIResult<Value> {
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+
+  if let Some(this_ref) = this_array_obj {
+    let mut this = this_ref.borrow_mut();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      let len_u64 = len as u64;
+
+      // For sparse arrays, only process actual existing indices
+      if len_u64 <= 1000 {
+        // Collect all elements first
+        let mut elements: Vec<(u64, Value)> = vec![];
+        for index in 0..len_u64 {
+          let value = this.get_property_value(index.to_string());
+          elements.push((index, value));
+        }
+
+        // Reverse and write back
+        for (new_index, (_, value)) in elements.into_iter().enumerate() {
+          let old_index = len_u64 - 1 - new_index as u64;
+          this.define_property(old_index.to_string(), Property { enumerable: true, value: value.clone() });
+        }
+      } else {
+        // For sparse arrays, get actual indices and swap pairs
+        let indices = get_array_indices(&this);
+        // Swap each pair of indices
+        let mid = indices.len() / 2;
+        for i in 0..mid {
+          let left_idx = indices[i];
+          let right_idx = indices[indices.len() - 1 - i];
+          let left_value = this.get_property_value(left_idx.to_string());
+          let right_value = this.get_property_value(right_idx.to_string());
+          // Swap: left index gets right value at mirrored position
+          let new_left = len_u64 - 1 - right_idx;
+          let new_right = len_u64 - 1 - left_idx;
+          this.property.remove(&left_idx.to_string());
+          this.property.remove(&right_idx.to_string());
+          this.define_property(new_left.to_string(), Property { enumerable: true, value: right_value });
+          this.define_property(new_right.to_string(), Property { enumerable: true, value: left_value });
+        }
+        // Handle odd number of elements
+        if indices.len() % 2 == 1 {
+          let mid_idx = indices[mid];
+          let new_mid = len_u64 - 1 - mid_idx;
+          let value = this.get_property_value(mid_idx.to_string());
+          this.property.remove(&mid_idx.to_string());
+          this.define_property(new_mid.to_string(), Property { enumerable: true, value });
+        }
+      }
+    }
+  }
+
+  Ok(call_ctx.this.clone())
+}
+
+// Array.prototype.shift
+// arr.shift()
+fn array_shift(call_ctx: &mut CallContext, _args: Vec<Value>) -> JSIResult<Value> {
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+
+  if let Some(this_ref) = this_array_obj {
+    let mut this = this_ref.borrow_mut();
+    let len_opt = this.get_property_value(String::from("length")).to_number(call_ctx.ctx);
+    if let Some(len) = len_opt {
+      let len_u64 = len as u64;
+      if len_u64 == 0 {
+        this.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(0f64) });
+        return Ok(Value::Undefined);
+      }
+
+      // Get first element
+      let first_value = this.get_property_value(String::from("0"));
+
+      // For sparse arrays, only shift actual existing indices
+      if len_u64 <= 1000 {
+        // Shift all elements
+        for index in 1..len_u64 {
+          let value = this.get_property_value(index.to_string());
+          this.define_property((index - 1).to_string(), Property { enumerable: true, value });
+        }
+
+        // Remove last element
+        this.property.remove(&(len_u64 - 1).to_string());
+      } else {
+        // Get actual indices and shift them
+        let indices = get_array_indices(&this);
+        // Remove index 0 if it exists
+        this.property.remove(&String::from("0"));
+        // Shift all other indices left by 1
+        for index in indices.iter() {
+          if *index > 0 && *index < len_u64 {
+            let value = this.get_property_value(index.to_string());
+            this.property.remove(&index.to_string());
+            this.define_property((*index - 1).to_string(), Property { enumerable: true, value });
+          }
+        }
+      }
+
+      this.define_property(String::from("length"), Property { enumerable: false, value: Value::Number((len_u64 - 1) as f64) });
+
+      return Ok(first_value);
+    }
+    return Ok(Value::Undefined);
+  }
+  Ok(Value::Undefined)
+}
+
+// Array.prototype.unshift
+// arr.unshift(element1[, ...[, elementN]])
+fn array_unshift(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+
+  if let Some(this_ref) = this_array_obj {
+    let mut this = this_ref.borrow_mut();
+    let len_opt = this.get_property_value(String::from("length")).to_number(call_ctx.ctx);
+    if let Some(len) = len_opt {
+      let len_u64 = len as u64;
+      let add_count = args.len() as u64;
+      let new_len = len_u64 + add_count;
+
+      // For sparse arrays, only shift actual existing indices
+      if len_u64 <= 1000 {
+        // Shift existing elements to the right (from end to start)
+        for index in (0..len_u64).rev() {
+          let value = this.get_property_value(index.to_string());
+          this.define_property((index + add_count).to_string(), Property { enumerable: true, value });
+        }
+
+        // Clear old positions that were shifted
+        for index in 0..add_count.min(len_u64) {
+          this.property.remove(&index.to_string());
+        }
+      } else {
+        // Get actual indices and shift them right
+        let indices = get_array_indices(&this);
+        // Process in reverse order
+        for index in indices.iter().rev() {
+          if *index < len_u64 {
+            let value = this.get_property_value(index.to_string());
+            this.property.remove(&index.to_string());
+            this.define_property((*index + add_count).to_string(), Property { enumerable: true, value });
+          }
+        }
+      }
+
+      // Insert new elements at the beginning
+      for (i, value) in args.iter().enumerate() {
+        this.define_property(i.to_string(), Property { enumerable: true, value: value.clone() });
+      }
+
+      this.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(new_len as f64) });
+      return Ok(Value::Number(new_len as f64));
+    }
+    return Ok(Value::Number(args.len() as f64));
+  }
+  Ok(Value::Number(args.len() as f64))
+}
+
+// Array.prototype.sort
+// arr.sort([compareFunction])
+fn array_sort(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+
+  if let Some(this_ref) = this_array_obj {
+    let mut this = this_ref.borrow_mut();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      let len_u64 = len as u64;
+
+      // For sparse arrays, only collect actual existing elements
+      if len_u64 <= 1000 {
+        // Collect elements into a vector
+        let mut elements: Vec<Value> = Vec::with_capacity(len_u64 as usize);
+        for index in 0..len_u64 {
+          elements.push(this.get_property_value(index.to_string()));
+        }
+
+        // Sort the elements (same logic as before)
+        if args.len() > 0 {
+          let compare_func = &args[0];
+          if let Value::Function(_func) = compare_func {
+            elements.sort_by(|a, b| {
+              let a_str = match a {
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => s.clone(),
+                _ => String::from("[object]"),
+              };
+              let b_str = match b {
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => s.clone(),
+                _ => String::from("[object]"),
+              };
+              a_str.cmp(&b_str)
+            });
+          } else {
+            elements.sort_by(|a, b| {
+              let a_str = match a {
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => s.clone(),
+                _ => String::from("[object]"),
+              };
+              let b_str = match b {
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => s.clone(),
+                _ => String::from("[object]"),
+              };
+              a_str.cmp(&b_str)
+            });
+          }
+        } else {
+          elements.sort_by(|a, b| {
+            let a_str = match a {
+              Value::Number(n) => n.to_string(),
+              Value::String(s) => s.clone(),
+              _ => String::from("[object]"),
+            };
+            let b_str = match b {
+              Value::Number(n) => n.to_string(),
+              Value::String(s) => s.clone(),
+              _ => String::from("[object]"),
+            };
+            a_str.cmp(&b_str)
+          });
+        }
+
+        // Write sorted elements back
+        for (index, value) in elements.into_iter().enumerate() {
+          this.define_property(index.to_string(), Property { enumerable: true, value });
+        }
+      } else {
+        // For sparse arrays, collect only actual existing elements with their indices
+        let indices = get_array_indices(&this);
+        let mut elements_with_indices: Vec<(u64, Value)> = Vec::new();
+        for index in indices.iter() {
+          if *index < len_u64 {
+            let value = this.get_property_value(index.to_string());
+            elements_with_indices.push((*index, value));
+          }
+        }
+
+        // Sort the elements (same logic as before)
+        elements_with_indices.sort_by(|(_, a), (_, b)| {
+          let a_str = match a {
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.clone(),
+            _ => String::from("[object]"),
+          };
+          let b_str = match b {
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.clone(),
+            _ => String::from("[object]"),
+          };
+          a_str.cmp(&b_str)
+        });
+
+        // Remove old properties
+        for index in indices.iter() {
+          this.property.remove(&index.to_string());
+        }
+
+        // Write sorted elements back at indices 0..n
+        for (new_index, (_, value)) in elements_with_indices.into_iter().enumerate() {
+          this.define_property(new_index.to_string(), Property { enumerable: true, value });
+        }
+      }
+    }
+  }
+
+  Ok(call_ctx.this.clone())
+}
+
+// Array.prototype.slice
+// arr.slice([begin[, end]])
+fn array_slice(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+
+  let len = if let Some(this_ref) = this_array_obj {
+    let this = this_ref.borrow();
+    let len = this.get_property_value(String::from("length"));
+    if let Value::Number(len) = len {
+      len as u64
+    } else {
+      return Ok(create_array(call_ctx.ctx, 0));
+    }
+  } else {
+    return Ok(create_array(call_ctx.ctx, 0));
+  };
+
+  // Parse begin
+  let mut begin: u64 = 0;
+  if args.len() > 0 {
+    if let Some(b) = args[0].to_number(call_ctx.ctx) {
+      let b_i64 = b as i64;
+      if b_i64 < 0 {
+        let neg_start = len as i64 + b_i64;
+        begin = if neg_start < 0 { 0 } else { neg_start as u64 };
+      } else {
+        begin = if b_i64 > len as i64 { len } else { b_i64 as u64 };
+      }
+    }
+  }
+
+  // Parse end
+  let mut end: u64 = len;
+  if args.len() > 1 {
+    if let Some(e) = args[1].to_number(call_ctx.ctx) {
+      let e_i64 = e as i64;
+      if e_i64 < 0 {
+        let neg_end = len as i64 + e_i64;
+        end = if neg_end < 0 { 0 } else { neg_end as u64 };
+      } else {
+        end = if e_i64 > len as i64 { len } else { e_i64 as u64 };
+      }
+    }
+  }
+
+  // Create new array
+  let new_array = create_array(call_ctx.ctx, 0);
+  if let Value::Array(arr) = &new_array {
+    let mut arr_mut = arr.borrow_mut();
+    let this_ref = get_array_object_from_this(&call_ctx.this).unwrap();
+    let this_borrowed = this_ref.borrow();
+
+    let mut new_index: u64 = 0;
+    // For sparse arrays, only iterate over actual existing indices in range
+    if (end - begin) <= 1000 {
+      for index in begin..end {
+        if index < len {
+          let value = this_borrowed.get_property_value(index.to_string());
+          arr_mut.define_property(new_index.to_string(), Property { enumerable: true, value });
+          new_index += 1;
+        }
+      }
+    } else {
+      let indices = get_array_indices_in_range(&this_borrowed, begin, end);
+      for index in indices.iter() {
+        let value = this_borrowed.get_property_value(index.to_string());
+        arr_mut.define_property(new_index.to_string(), Property { enumerable: true, value });
+        new_index += 1;
+      }
+    }
+    arr_mut.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(new_index as f64) });
+  }
+
+  Ok(new_array)
+}
+
+// Array.prototype.splice
+// array.splice(start[, deleteCount[, item1[, item2[, ...]]]])
+fn array_splice(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let this_array_obj = get_array_object_from_this(&call_ctx.this);
+
+  if let Some(this_ref) = this_array_obj {
+    let len = {
+      let this = this_ref.borrow();
+      let len = this.get_property_value(String::from("length"));
+      if let Value::Number(len) = len {
+        len as u64
+      } else {
+        return Ok(create_array(call_ctx.ctx, 0));
+      }
+    };
+
+    // Parse start
+    let mut start: u64 = 0;
+    if args.len() > 0 {
+      if let Some(s) = args[0].to_number(call_ctx.ctx) {
+        let s = s as i64;
+        if s < 0 {
+          let neg_start = len as i64 + s;
+          start = if neg_start < 0 { 0 } else { neg_start as u64 };
+        } else {
+          start = if s > len as i64 { len } else { s as u64 };
+        }
+      }
+    }
+
+    // Parse deleteCount
+    let mut delete_count: u64 = len - start;
+    if args.len() > 1 {
+      if let Some(dc) = args[1].to_number(call_ctx.ctx) {
+        let dc = dc as i64;
+        if dc < 0 {
+          delete_count = 0;
+        } else {
+          delete_count = if dc > (len - start) as i64 { len - start } else { dc as u64 };
+        }
+      }
+    }
+
+    // Get items to insert
+    let items: Vec<Value> = if args.len() > 2 {
+      args[2..].to_vec()
+    } else {
+      vec![]
+    };
+
+    // Collect deleted elements - only collect actual existing indices
+    let deleted_array = create_array(call_ctx.ctx, 0);
+    let indices_to_delete: Vec<u64>;
+    {
+      let this_borrowed = this_ref.borrow();
+      // Calculate end of deletion range, handling potential overflow
+      let delete_end = if start.checked_add(delete_count).is_some() {
+        start + delete_count
+      } else {
+        len // Cap at array length
+      };
+      indices_to_delete = get_array_indices_in_range(&this_borrowed, start, delete_end);
+
+      if let Value::Array(deleted_arr) = &deleted_array {
+        let mut deleted_mut = deleted_arr.borrow_mut();
+        for (i, index) in indices_to_delete.iter().enumerate() {
+          let value = this_borrowed.get_property_value(index.to_string());
+          deleted_mut.define_property(i.to_string(), Property { enumerable: true, value });
+        }
+        deleted_mut.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(indices_to_delete.len() as f64) });
+      }
+    }
+
+    // Perform splice
+    let mut this = this_ref.borrow_mut();
+
+    // Calculate new length
+    let items_len = items.len() as u64;
+    let new_len = len - delete_count + items_len;
+
+    // Remove deleted properties
+    for index in indices_to_delete.iter() {
+      this.property.remove(&index.to_string());
+      this.property_list.retain(|key| key != &index.to_string());
+    }
+
+    // Get all indices that need to be shifted (those >= start + delete_count)
+    let shift_indices = {
+      let shift_start = start + delete_count;
+      get_array_indices_in_range(&this, shift_start, len)
+    };
+
+    // Shift elements that are after the deleted range
+    // Move from old position to new position
+    let delta = items_len as i64 - delete_count as i64;
+    if delta != 0 {
+      if delta < 0 {
+        // Shifting left (deleting more than inserting)
+        for old_index in shift_indices.iter() {
+          let new_index = *old_index as i64 + delta;
+          if new_index >= 0 {
+            let value = this.get_property_value(old_index.to_string());
+            // Remove old position
+            this.property.remove(&old_index.to_string());
+            this.property_list.retain(|key| key != &old_index.to_string());
+            // Set new position
+            this.define_property(new_index.to_string(), Property { enumerable: true, value });
+          }
+        }
+      } else {
+        // Shifting right (inserting more than deleting)
+        // Process in reverse order to avoid overwriting
+        for old_index in shift_indices.iter().rev() {
+          let new_index = *old_index + delta as u64;
+          let value = this.get_property_value(old_index.to_string());
+          // Remove old position
+          this.property.remove(&old_index.to_string());
+          this.property_list.retain(|key| key != &old_index.to_string());
+          // Set new position
+          this.define_property(new_index.to_string(), Property { enumerable: true, value });
+        }
+      }
+    }
+
+    // Insert new items
+    for (i, item) in items.iter().enumerate() {
+      this.define_property((start + i as u64).to_string(), Property { enumerable: true, value: item.clone() });
+    }
+
+    // Update length
+    this.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(new_len as f64) });
+
+    return Ok(deleted_array);
+  }
+
+  Ok(create_array(call_ctx.ctx, 0))
 }

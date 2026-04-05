@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}, env, fs::{self, File}, io::{Write, Read}, panic};
+use std::{path::{Path, PathBuf}, env, fs::{self, File}, io::{Write, Read}, panic, thread};
 use std::fs::metadata;
 use std::collections::HashMap;
 use jsi::JSI;
@@ -224,6 +224,19 @@ fn make_dir(dir: &String) -> PathBuf {
 
 #[test]
 fn test_all_262() {
+    // Spawn a thread with larger stack size to avoid stack overflow
+    // when recursively traversing deep directory structures in test262
+    thread::Builder::new()
+        .stack_size(8 * 1024 * 1024) // 8MB stack
+        .spawn(|| {
+            test_all_262_inner();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn test_all_262_inner() {
     let preload_list = vec![
         load_harness("harness/assert.js"),
         load_harness("harness/sta.js"),

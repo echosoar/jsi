@@ -169,8 +169,6 @@ impl Context {
        let program = self.parse(code)?;
         let bytecode = program.bytecode;
 
-        println!("AST bytecode: {:?}", bytecode);
-
         self.run_with_bytecode_list(0, &bytecode)?;
 
         if self.stack.is_empty() {
@@ -386,8 +384,30 @@ impl Context {
             if !bool_value {
               // 如果是 false，那么跳转到下一个 bytecode_index
               if let Some(label) = bytecode_item.args.get(0) {
-                // 将 label 和当前 bytecode_index 绑定
-                return self.run_goto(cur_index, label.to_owned(), &bytecode);
+                // Jump to label iteratively instead of recursively
+                let label_start_index: usize = match self.label_index_map.get(label) {
+                  Some(index) => *index,
+                  None => {
+                    let mut tmp_index = cur_index + 1;
+                    let mut found = false;
+                    while tmp_index < bytecode.len() {
+                      let tmp_bytecode = &bytecode[tmp_index];
+                      if tmp_bytecode.op == EByteCodeop::OpLabel && tmp_bytecode.args.get(0).map_or(false, |arg| arg == label) {
+                        found = true;
+                        break;
+                      }
+                      tmp_index += 1;
+                    }
+                    if found {
+                      self.label_index_map.insert(label.clone(), tmp_index);
+                      tmp_index
+                    } else {
+                      return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("label not found"), 0, 0));
+                    }
+                  }
+                };
+                bytecode_index = label_start_index;
+                continue;
               } else {
                 return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("if false label arg is required"), 0, 0));
               }
@@ -403,8 +423,30 @@ impl Context {
           },
           EByteCodeop::OpGoto => {
             if let Some(label) = bytecode_item.args.get(0) {
-              // 将 label 和当前 bytecode_index 绑定
-              return self.run_goto(cur_index, label.to_owned(), &bytecode)
+              // Jump to label iteratively instead of recursively
+              let label_start_index: usize = match self.label_index_map.get(label) {
+                Some(index) => *index,
+                None => {
+                  let mut tmp_index = cur_index + 1;
+                  let mut found = false;
+                  while tmp_index < bytecode.len() {
+                    let tmp_bytecode = &bytecode[tmp_index];
+                    if tmp_bytecode.op == EByteCodeop::OpLabel && tmp_bytecode.args.get(0).map_or(false, |arg| arg == label) {
+                      found = true;
+                      break;
+                    }
+                    tmp_index += 1;
+                  }
+                  if found {
+                    self.label_index_map.insert(label.clone(), tmp_index);
+                    tmp_index
+                  } else {
+                    return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("label not found"), 0, 0));
+                  }
+                }
+              };
+              bytecode_index = label_start_index;
+              continue;
             }
             return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("goto label arg is required"), 0, 0));
           },
@@ -465,7 +507,7 @@ impl Context {
             }
           },
           _ => {
-            println!("Unsupported bytecode operation: {:?}", bytecode_item.op);
+            return Err(JSIError::new(JSIErrorType::SyntaxError, format!("Unsupported bytecode operation: {:?}", bytecode_item.op), 0, 0));
           }
         }
       }
@@ -542,33 +584,6 @@ impl Context {
       return bytecode_index
     }
 
-
-    fn run_goto(&mut self, cur_index: usize, label: String, bytecode: &Vec<ByteCode>) -> JSIResult<Value> {
-      println!("goto label: {}", label);
-      // hashMap 中寻找不到
-      let label_start_index: usize = match self.label_index_map.get(&label) {
-        Some(index) => *index,
-        None => {
-          let mut tmp_index = cur_index + 1;
-          let mut found = false;
-          while tmp_index < bytecode.len() {
-            let tmp_bytecode = &bytecode[tmp_index];
-            if tmp_bytecode.op == EByteCodeop::OpLabel && tmp_bytecode.args.get(0).map_or(false, |arg| arg == &label) {
-              found = true;
-              break;
-            }
-            tmp_index += 1;
-          }
-          if found {
-            self.label_index_map.insert(label.clone(), tmp_index);
-            tmp_index
-          } else {
-            return Err(JSIError::new(JSIErrorType::SyntaxError, String::from("label not found"), 0, 0));
-          }
-        }
-      };
-      self.run_with_bytecode_list(label_start_index, bytecode)
-    }
 
     fn call(&mut self, program: Program) -> JSIResult<Value> {
       let block_result = self.call_block(&program.declarations, &program.body)?;
