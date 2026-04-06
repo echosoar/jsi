@@ -1488,10 +1488,22 @@ impl AST{
           self.read(); // 跳过 b，现在指向二进制数字
           let binary_start = self.cur_char_index;
           self.read_number(2);
-          
+
           if self.cur_char_index == binary_start {
             // 没有读取到任何二进制数字
             self.error_common("Illegal binary characters");
+          }
+          return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index));
+        },
+        'o' | 'O' => {
+          // 八进制
+          self.read(); // 跳过 o，现在指向八进制数字
+          let octal_start = self.cur_char_index;
+          self.read_number(8);
+
+          if self.cur_char_index == octal_start {
+            // 没有读取到任何八进制数字
+            self.error_common("Illegal octal characters");
           }
           return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index));
         },
@@ -2332,6 +2344,12 @@ impl AST{
       match i64::from_str_radix(&literal[2..], 2) {
         Ok(val) => Ok(val as f64),
         Err(_) => Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid binary number"), 0, 0))
+      }
+    } else if literal.to_lowercase().starts_with("0o") {
+      // 八进制: 0oOO
+      match i64::from_str_radix(&literal[2..], 8) {
+        Ok(val) => Ok(val as f64),
+        Err(_) => Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid octal number"), 0, 0))
       }
     } else {
       // 十进制

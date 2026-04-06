@@ -265,9 +265,23 @@ impl Value {
     }
     match self_value {
       Value::String(str) => {
-        match str.parse::<f64>() {
-            Ok(num) => Some(num),
-            _ => None,
+        // 处理特殊进制字面量
+        let lower_str = str.to_lowercase();
+        if lower_str.starts_with("0x") {
+          // 十六进制
+          i64::from_str_radix(&str[2..], 16).ok().map(|v| v as f64)
+        } else if lower_str.starts_with("0b") {
+          // 二进制
+          i64::from_str_radix(&str[2..], 2).ok().map(|v| v as f64)
+        } else if lower_str.starts_with("0o") {
+          // 八进制
+          i64::from_str_radix(&str[2..], 8).ok().map(|v| v as f64)
+        } else {
+          // 普通十进制
+          match str.parse::<f64>() {
+              Ok(num) => Some(num),
+              _ => None,
+          }
         }
       },
       Value::Number(number) => Some(*number),

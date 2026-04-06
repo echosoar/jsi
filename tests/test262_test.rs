@@ -249,6 +249,7 @@ fn test_all_262_inner() {
     ];
     let only_list: Vec<PathBuf> =vec![
         // make_dir(&String::from("test262/test/built-ins/String/prototype/charAt/pos-coerce-err.js")),
+        // make_dir(&String::from("test262/test/language/function-code/10.4.3-1-15-s.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);

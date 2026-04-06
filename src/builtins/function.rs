@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell};
 use crate::{ast_node::{BlockStatement, IdentifierLiteral, Parameter}, bytecode::ByteCode, constants::{GLOBAL_FUNCTION_NAME, PROTO_PROPERTY_NAME}, context::Context, error::{JSIError, JSIErrorType}};
-use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value}, scope::Scope, error::JSIResult};
+use crate::{ast_node::{Statement, FunctionDeclaration, BuiltinFunction, ClassType, CallContext}, value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, scope::Scope, error::JSIResult};
 
 use super::{object::{create_object, Property, Object}, global::{get_global_object_prototype_by_name, get_global_object_by_name}, array::create_list_from_array_list};
 
@@ -91,11 +91,15 @@ pub fn builtin_function(ctx: &mut Context, name: String, length: f64, fun: Built
 
 pub fn bind_global_function(ctx: &mut Context) {
 
+  // 绑定实例化方法
+  let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, function_create);
+
   let apply_fun = builtin_function(ctx, String::from("apply"), 1f64, function_apply);
   let bind_fun = builtin_function(ctx, String::from("bind"), 1f64, function_bind);
   let call_fun = builtin_function(ctx,  String::from("call"), 1f64, function_call);
   let fun_rc = get_global_object_by_name(ctx, GLOBAL_FUNCTION_NAME);
-  let fun = (*fun_rc).borrow_mut();
+  let mut fun = (*fun_rc).borrow_mut();
+  fun.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
   if let Some(prop)= &fun.prototype {
     let prototype_rc = Rc::clone(prop);
     let mut prototype = prototype_rc.borrow_mut();
@@ -108,6 +112,53 @@ pub fn bind_global_function(ctx: &mut Context) {
     let name = String::from("bind");
     prototype.define_property(name.clone(), Property { enumerable: true, value: bind_fun});
   }
+}
+
+// Function constructor: new Function(arg1, arg2, ..., argN, functionBody)
+fn function_create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  // Last argument is the function body, rest are parameter names
+  if args.is_empty() {
+    // Create an empty function
+    let function_declaration = FunctionDeclaration {
+      is_anonymous: true,
+      is_arrow: false,
+      is_async: false,
+      name: IdentifierLiteral {
+        literal: String::from("anonymous"),
+      },
+      parameters: vec![],
+      body: BlockStatement {
+        statements: vec![],
+      },
+      declarations: vec![],
+      bytecode: vec![]
+    };
+    return Ok(create_function(call_ctx.ctx, &function_declaration, Rc::clone(&call_ctx.ctx.cur_scope)));
+  }
+
+  // Extract parameter names and body
+  let body = args[args.len() - 1].to_string(call_ctx.ctx);
+  let param_names: Vec<String> = if args.len() > 1 {
+    args[0..args.len() - 1].iter().map(|arg| arg.to_string(call_ctx.ctx)).collect()
+  } else {
+    vec![]
+  };
+
+  // Construct function string
+  let params_str = param_names.join(", ");
+  let function_str = format!("function anonymous({}) {{ {} }}", params_str, body);
+
+  // Parse and compile the function
+  let program = call_ctx.ctx.parse(function_str)?;
+
+  // Find the function declaration in the program
+  for statement in &program.body {
+    if let Statement::Function(func_decl) = statement {
+      return Ok(create_function(call_ctx.ctx, &func_decl, Rc::clone(&call_ctx.ctx.cur_scope)));
+    }
+  }
+
+  Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Failed to create function"), 0, 0))
 }
 
 // Function.prototype.apply
