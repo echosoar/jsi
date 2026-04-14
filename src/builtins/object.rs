@@ -241,15 +241,18 @@ pub struct Property {
 // 实例化对象
 pub fn create_object(ctx: &mut Context, obj_type: ClassType, value: Option<Box<Statement>>) -> Rc<RefCell<Object>> {
   let object = Rc::new(RefCell::new(Object::new(obj_type, value)));
+
+  // 先获取全局对象和 prototype（不借用新对象）
+  let global_object = get_global_object_by_name(ctx, GLOBAL_OBJECT_NAME);
+  let global_prototype = get_global_object_prototype_by_name(ctx, GLOBAL_OBJECT_NAME);
+
+  // 然后借用新对象设置属性
   let object_clone = Rc::clone(&object);
   let mut object_mut = (*object_clone).borrow_mut();
   // 绑定 obj.constructor = global.Object
-  let global_object = get_global_object_by_name(ctx, GLOBAL_OBJECT_NAME);
-  let global_prototype = get_global_object_prototype_by_name(ctx, GLOBAL_OBJECT_NAME);
   object_mut.set_inner_property_value(PROTO_PROPERTY_NAME.to_string(), Value::RefObject(Rc::downgrade(&global_prototype)));
-  let weak_rc = Rc::downgrade(&global_object);
-  object_mut.constructor = Some(weak_rc);
-  
+  object_mut.constructor = Some(Rc::downgrade(&global_object));
+
   object
 }
 

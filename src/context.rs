@@ -631,7 +631,14 @@ impl Context {
               let mut value = self.execute_expression(&let_var.initializer)?;
               value.bind_name(name.clone());
               (*last_statement_value) = value.clone();
-              (*self.cur_scope).borrow_mut().set_value(name, value, var_statement.flag == VariableFlag::Const);
+              // var 声明应该添加到全局作用域（函数外）或函数作用域（函数内）
+              // let/const 声明应该添加到当前块作用域
+              if var_statement.flag == VariableFlag::Var {
+                let global_scope = crate::scope::get_global_scope(Rc::clone(&self.cur_scope));
+                global_scope.borrow_mut().set_value(name, value, false);
+              } else {
+                (*self.cur_scope).borrow_mut().set_value(name, value, var_statement.flag == VariableFlag::Const);
+              }
             }
           }
           Ok(true)
@@ -998,6 +1005,93 @@ impl Context {
             },
             _ => Err(JSIError::new(JSIErrorType::TypeError, format!("Cannot use 'in' operator to search for '{}' in non-object", key), 0, 0)),
           }
+        },
+        Token::Instanceof => {
+          // instanceof 运算符：检查左值的原型链是否包含右值的 prototype
+          // 左值必须是对象，右值必须是函数（构造函数）
+          let left_obj = match &left {
+            Value::Object(obj_rc) => Some(Rc::clone(obj_rc)),
+            Value::Array(obj_rc) => Some(Rc::clone(obj_rc)),
+            Value::Function(obj_rc) => Some(Rc::clone(obj_rc)),
+            Value::Promise(obj_rc) => Some(Rc::clone(obj_rc)),
+            Value::StringObj(obj_rc) => Some(Rc::clone(obj_rc)),
+            Value::NumberObj(obj_rc) => Some(Rc::clone(obj_rc)),
+            Value::BooleanObj(obj_rc) => Some(Rc::clone(obj_rc)),
+            Value::RefObject(weak) => {
+              if let Some(obj_rc) = weak.upgrade() {
+                Some(obj_rc)
+              } else {
+                None
+              }
+            },
+            _ => None,
+          };
+
+          if left_obj.is_none() {
+            return Ok(Value::Boolean(false));
+          }
+
+          let left_obj = left_obj.unwrap();
+
+          // 获取右值（构造函数）的 prototype
+          let right_prototype = match &right {
+            Value::Object(obj_rc) => obj_rc.borrow().prototype.clone(),
+            Value::Function(obj_rc) => obj_rc.borrow().prototype.clone(),
+            Value::RefObject(weak) => {
+              if let Some(obj_rc) = weak.upgrade() {
+                obj_rc.borrow().prototype.clone()
+              } else {
+                None
+              }
+            },
+            _ => None,
+          };
+
+          if right_prototype.is_none() {
+            return Err(JSIError::new(JSIErrorType::TypeError, "Right-hand side of 'instanceof' is not an object".to_string(), 0, 0));
+          }
+
+          let right_prototype = right_prototype.unwrap();
+
+          // 检查左值的原型链
+          // 获取左值的 __proto__（原型链起点）
+          let left_proto = left_obj.borrow().get_inner_property_value(crate::constants::PROTO_PROPERTY_NAME.to_string());
+
+          let mut current_proto: Option<Rc<RefCell<Object>>> = match left_proto {
+            Some(Value::RefObject(weak)) => {
+              if let Some(obj_rc) = weak.upgrade() {
+                Some(obj_rc)
+              } else {
+                None
+              }
+            },
+            Some(Value::Object(obj_rc)) => Some(obj_rc),
+            _ => None,
+          };
+
+          while let Some(proto) = current_proto {
+            // 检查当前原型是否等于右值的 prototype
+            let proto_rc = Rc::clone(&proto);
+            let right_proto_rc = Rc::clone(&right_prototype);
+            if proto_rc.borrow().get_id() == right_proto_rc.borrow().get_id() {
+              return Ok(Value::Boolean(true));
+            }
+            // 继续向上查找原型链
+            let next_proto = proto_rc.borrow().get_inner_property_value(crate::constants::PROTO_PROPERTY_NAME.to_string());
+            current_proto = match next_proto {
+              Some(Value::RefObject(weak)) => {
+                if let Some(obj_rc) = weak.upgrade() {
+                  Some(obj_rc)
+                } else {
+                  None
+                }
+              },
+              Some(Value::Object(obj_rc)) => Some(obj_rc),
+              _ => None,
+            };
+          }
+
+          Ok(Value::Boolean(false))
         },
         Token::NullishCoalescing => {
           match &left {
@@ -2028,6 +2122,30 @@ impl Context {
       let console = create_console(self);
       let mut global_scope = self.scope.borrow_mut();
       global_scope.set_value(String::from("console"), Value::Object(console), true);
+
+      // 注册全局函数 parseInt 和 parseFloat
+      {
+        let global_this = Rc::clone(&self.global);
+        let global_mut = global_this.borrow();
+        if let Some(parse_int) = global_mut.property.get("parseInt") {
+          global_scope.set_value(String::from("parseInt"), parse_int.value.clone(), true);
+        }
+        if let Some(parse_float) = global_mut.property.get("parseFloat") {
+          global_scope.set_value(String::from("parseFloat"), parse_float.value.clone(), true);
+        }
+        if let Some(is_nan) = global_mut.property.get("isNaN") {
+          global_scope.set_value(String::from("isNaN"), is_nan.value.clone(), true);
+        }
+        if let Some(is_finite) = global_mut.property.get("isFinite") {
+          global_scope.set_value(String::from("isFinite"), is_finite.value.clone(), true);
+        }
+        if let Some(nan_val) = global_mut.property.get("NaN") {
+          global_scope.set_value(String::from("NaN"), nan_val.value.clone(), true);
+        }
+        if let Some(infinity_val) = global_mut.property.get("Infinity") {
+          global_scope.set_value(String::from("Infinity"), infinity_val.value.clone(), true);
+        }
+      }
     }
     // 获取当前调用栈
     // fn get_current_stack() {

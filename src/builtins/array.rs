@@ -2,7 +2,7 @@ use std::cell::{RefCell};
 use std::{rc::Rc};
 use crate::constants::{PROTO_PROPERTY_NAME, GLOBAL_ARRAY_NAME};
 use crate::context::{Context};
-use crate::{value::Value, ast_node::{CallContext, ClassType}, error::{JSIResult, JSIError, JSIErrorType}};
+use crate::{value::{Value, INSTANTIATE_OBJECT_METHOD_NAME}, ast_node::{CallContext, ClassType}, error::{JSIResult, JSIError, JSIErrorType}};
 
 use super::function::builtin_function;
 use super::global::{get_global_object_prototype_by_name, get_global_object_by_name};
@@ -106,6 +106,9 @@ pub fn create_array_from_values(ctx: &mut Context, values: Vec<Value>) -> Value 
 pub fn bind_global_array(ctx: &mut Context) {
   let arr_rc = get_global_object_by_name(ctx, GLOBAL_ARRAY_NAME);
   let mut arr = (*arr_rc).borrow_mut();
+  // 添加构造函数方法，支持 new Array()
+  let create_function = builtin_function(ctx, INSTANTIATE_OBJECT_METHOD_NAME.to_string(), 1f64, array_create);
+  arr.set_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string(), create_function);
   let name = String::from("isArray");
   arr.property.insert(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, array_static_is_array) });
 
@@ -147,6 +150,51 @@ fn array_static_is_array(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult
     },
     _ =>  Ok(Value::Boolean(false)),
   }
+}
+
+// Array constructor: new Array(item1, item2, ...) or new Array(length)
+// 当只有一个数字参数时，创建指定长度的空数组
+// 当有多个参数或单个非数字参数时，创建包含这些元素的数组
+fn array_create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  if args.len() == 0 {
+    // new Array() -> 空数组
+    return Ok(create_array(call_ctx.ctx, 0));
+  }
+
+  if args.len() == 1 {
+    // 检查是否是数字参数（用于设置长度）
+    let first_arg = &args[0];
+    if let Value::Number(num) = first_arg {
+      let num = *num;
+      // 检查是否是有效的数组长度（正整数或0）
+      let len = num as i32;
+      if len >= 0 && num == (len as f64) {
+        // new Array(5) -> 创建长度为5的空数组
+        return Ok(create_array(call_ctx.ctx, len as usize));
+      }
+      // 如果不是整数或负数，抛出 RangeError
+      if num < 0f64 || num.is_nan() {
+        return Err(JSIError::new(JSIErrorType::RangeError, String::from("Invalid array length"), 0, 0));
+      }
+    }
+    // 单个非数字参数 -> 创建包含该元素的数组
+    let new_array = create_array(call_ctx.ctx, 1);
+    if let Value::Array(arr) = &new_array {
+      let mut arr_mut = arr.borrow_mut();
+      arr_mut.define_property(String::from("0"), Property { enumerable: true, value: first_arg.clone() });
+    }
+    return Ok(new_array);
+  }
+
+  // 多个参数 -> 创建包含所有元素的数组
+  let new_array = create_array(call_ctx.ctx, args.len());
+  if let Value::Array(arr) = &new_array {
+    let mut arr_mut = arr.borrow_mut();
+    for (index, value) in args.iter().enumerate() {
+      arr_mut.define_property(index.to_string(), Property { enumerable: true, value: value.clone() });
+    }
+  }
+  Ok(new_array)
 }
 
 // Array.prototype.concat

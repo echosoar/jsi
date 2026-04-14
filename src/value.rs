@@ -292,6 +292,9 @@ impl Value {
           Some(0f64)
         }
       },
+      Value::NAN => Some(f64::NAN),
+      Value::Null => Some(0f64),
+      Value::Undefined => Some(f64::NAN),
       _ => {
         // TODO: throw error
         None
@@ -557,6 +560,8 @@ impl Value {
         (Value::Number(a), Value::Number(b)) => *a == *b,
         (Value::Boolean(a), Value::Boolean(b)) => *a == *b,
         (Value::Null, Value::Null) | (Value::Undefined, Value::Undefined) => true,
+        // null == undefined 返回 true（非严格相等）
+        (Value::Null, Value::Undefined) | (Value::Undefined, Value::Null) => true,
         _ => {
           if self_value.is_primitive_value() && other_value.is_primitive_value() {
             return self_value.to_number(ctx) == other_value.to_number(ctx);
