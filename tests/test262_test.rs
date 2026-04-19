@@ -226,8 +226,9 @@ fn make_dir(dir: &String) -> PathBuf {
 fn test_all_262() {
     // Spawn a thread with larger stack size to avoid stack overflow
     // when recursively traversing deep directory structures in test262
+    // and when executing JS code with deep recursion
     thread::Builder::new()
-        .stack_size(8 * 1024 * 1024) // 8MB stack
+        .stack_size(16 * 1024 * 1024) // 16MB stack
         .spawn(|| {
             test_all_262_inner();
         })
@@ -249,7 +250,7 @@ fn test_all_262_inner() {
     ];
     let only_list: Vec<PathBuf> =vec![
         // make_dir(&String::from("test262/test/built-ins/String/prototype/charAt/pos-coerce-err.js")),
-        // make_dir(&String::from("test262/test/language/function-code/10.4.3-1-15-s.js")),
+        // make_dir(&String::from("test262/test/language/statements/continue/S12.7_A9_T2.js")),
     ];
     let mut test262 = Test262Dir::new(String::from("base"), String::from("test262/test"));
     test262.run(prelaod.as_str(), &ignore_list, &only_list);

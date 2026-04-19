@@ -270,6 +270,7 @@ pub fn bind_global_object(ctx: &mut Context) {
   let object_get_prototype_of_fun = builtin_function(ctx, String::from("getPrototypeOf"), 1f64, object_get_prototype_of);
   let has_own_property_fun = builtin_function(ctx, String::from("hasOwnProperty"), 0f64, has_own_property);
   let object_to_string_fun = builtin_function(ctx, String::from("toString"), 0f64, to_string);
+  let object_value_of_fun = builtin_function(ctx, String::from("valueOf"), 0f64, value_of);
 
 
   let mut obj = (*obj_rc).borrow_mut();
@@ -312,6 +313,10 @@ pub fn bind_global_object(ctx: &mut Context) {
     // Object.prototype.toString
     let name = String::from("toString");
     prototype.define_property(name.clone(), Property { enumerable: true, value: object_to_string_fun });
+
+    // Object.prototype.valueOf
+    let name = String::from("valueOf");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: object_value_of_fun });
   }
  
 }
@@ -455,6 +460,12 @@ fn to_string(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
   obj_type.push_str(this.class_type.to_string().as_str());
   obj_type.push(']');
  Ok( Value::String(obj_type))
+}
+
+// Object.prototype.valueOf
+fn value_of(call_ctx: &mut CallContext, _: Vec<Value>) -> JSIResult<Value> {
+  // 返回 this 的对象值
+  Ok(call_ctx.this.clone())
 }
 
 // 实例化方法 new Object()

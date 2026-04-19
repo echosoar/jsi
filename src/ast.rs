@@ -5,7 +5,7 @@ use std::{io};
 
 use crate::ast_token::{get_token_keyword, Token, get_token_literal};
 use crate::ast_node::{ Expression, NumberLiteral, StringLiteral, Statement, IdentifierLiteral, ExpressionStatement, PropertyAccessExpression, BinaryExpression, ConditionalExpression, CallExpression, Keywords, Parameter, BlockStatement, ReturnStatement, Declaration, PropertyAssignment, ObjectLiteral, ElementAccessExpression, FunctionDeclaration, PostfixUnaryExpression, PrefixUnaryExpression, AssignExpression, GroupExpression, VariableDeclaration, VariableDeclarationStatement, VariableFlag, ClassDeclaration, ClassMethodDeclaration, ArrayLiteral, ComputedPropertyName, IfStatement, ForStatement, ForInStatement, ForOfStatement, BreakStatement, ContinueStatement, LabeledStatement, SwitchStatement, CaseClause, NewExpression, TryCatchStatement, CatchClause, ThrowStatement, TemplateLiteralExpression, SequenceExpression};
-use crate::ast_utils::{get_hex_number_value, chars_to_string};
+use crate::ast_utils::{get_hex_number_value, chars_to_string, process_string_escapes};
 use crate::bytecode::{ByteCode, EByteCodeop};
 use crate::error::{JSIResult, JSIError, JSIErrorType};
 pub struct AST {
@@ -169,11 +169,17 @@ impl AST{
           self.parse_block_statement()
         },
         _ => {
+          // 记录当前 bytecode 长度，用于标签处理时清理
+          let bytecode_len_before = self.bytecode.len();
           let expression = self.parse_expression()?;
           // println!("statement expression {:?}", expression);
           // label:
           if self.token == Token::Colon {
             if let Expression::Identifier(identifier) = expression {
+              // 清理标识符解析时生成的 bytecode（如 OpScopeGetVar）
+              if self.bytecode.len() > bytecode_len_before {
+                self.bytecode.truncate(bytecode_len_before);
+              }
               // TODO: 检测当前的作用域是否已经存在这个 lable，如果存在，则报错
               //  let label = identifier.literal;
               self.next();
@@ -184,9 +190,9 @@ impl AST{
                }));
             }
           }
-          
+
           match  expression {
-              Expression::Unknown => {      
+              Expression::Unknown => {
                 Ok(Statement::Unknown)
               },
               _ => {
@@ -398,14 +404,26 @@ impl AST{
       let mut initializer = Statement::Unknown;
       if self.token != Token::Semicolon {
         initializer = Statement::Expression(ExpressionStatement { expression: self.parse_expression()? });
-        self.check_token_and_next(Token::Semicolon)?;
       }
-
-      self.not_declare_function_to_scope = true;
-      let condition = self.parse_expression()?;
-      self.not_declare_function_to_scope = false;
       self.check_token_and_next(Token::Semicolon)?;
-      let incrementor = self.parse_expression()?;
+
+      // Parse condition (can be empty)
+      let condition = if self.token != Token::Semicolon {
+        self.not_declare_function_to_scope = true;
+        let cond = self.parse_expression()?;
+        self.not_declare_function_to_scope = false;
+        cond
+      } else {
+        Expression::Unknown  // Empty condition means true
+      };
+      self.check_token_and_next(Token::Semicolon)?;
+
+      // Parse incrementor (can be empty)
+      let incrementor = if self.token != Token::RightParenthesis {
+        self.parse_expression()?
+      } else {
+        Expression::Unknown
+      };
       self.check_token_and_next(Token::RightParenthesis)?;
 
       let block = self.parse_block_statement()?;
@@ -579,8 +597,10 @@ impl AST{
     }
 
     self.check_token(Token::Identifier)?;
+    let label = self.literal.clone();
+    self.next();  // 跳过标签标识符
     return  Ok(Statement::Break(BreakStatement {
-      label: Some(IdentifierLiteral { literal: self.literal.clone() })
+      label: Some(IdentifierLiteral { literal: label })
     }));
   }
 
@@ -601,8 +621,10 @@ impl AST{
     }
 
     self.check_token(Token::Identifier)?;
+    let label = self.literal.clone();
+    self.next();  // 跳过标签标识符
     return  Ok(Statement::Continue(ContinueStatement {
-      label: Some(IdentifierLiteral { literal: self.literal.clone() })
+      label: Some(IdentifierLiteral { literal: label })
     }));
   }
 
@@ -1512,7 +1534,13 @@ impl AST{
           // 会在后面的浮点处理中继续处理
         },
         _ => {
-          // 可能是八进制，但由于是 0 开头，会继续作为十进制处理
+          // ES1 八进制：以 0 开头后面跟着数字的，视为八进制
+          if self.char >= '0' && self.char <= '7' {
+            // 传统八进制 0777
+            self.read_number(8);
+            return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index));
+          }
+          // 否则继续作为十进制处理（只有 0）
         }
       }
     }
@@ -1521,6 +1549,15 @@ impl AST{
     // 浮点数
     if self.char == '.' {
       self.read();
+      self.read_number(10);
+    }
+    // 科学计数法 (e 或 E)
+    if self.char == 'e' || self.char == 'E' {
+      self.read();
+      // 处理可选的符号
+      if self.char == '+' || self.char == '-' {
+        self.read();
+      }
       self.read_number(10);
     }
     return (Token::Number, chars_to_string(&self.code, start_index, self.cur_char_index))
@@ -1544,9 +1581,16 @@ impl AST{
     let str_start = self.char.clone();
     self.read();
     while self.char != str_start {
-      // TODO: '\'aa\''
-      if !self.read() {
-        break;
+      // 处理转义字符：遇到反斜杠时跳过下一个字符
+      if self.char == '\\' {
+        self.read(); // 跳过反斜杠
+        if !self.read() { // 跳过转义的字符
+          break;
+        }
+      } else {
+        if !self.read() {
+          break;
+        }
       }
     }
     let literal = chars_to_string(&self.code, start_index, self.next_char_index);
@@ -1805,7 +1849,8 @@ impl AST{
       Token::Not | Token::BitwiseNot | Token::Plus | Token::Subtract => {
         let operator = self.token.clone();
         self.next();
-        let operand = self.parse_postfix_unary_expression()?;
+        // 递归调用 parse_prefix_unary_expression 以支持 !!x 等嵌套
+        let operand = self.parse_prefix_unary_expression()?;
         self.bytecode.push(ByteCode {
           op: EByteCodeop::OpPrefixUnary,
           args: vec![operator.to_string()],
@@ -1819,7 +1864,8 @@ impl AST{
       Token::Typeof | Token::Void | Token::Delete | Token::Await => {
         let operator = self.token.clone();
         self.next();
-        let operand = self.parse_postfix_unary_expression()?;
+        // 递归调用 parse_prefix_unary_expression 以支持 typeof void 0 等嵌套
+        let operand = self.parse_prefix_unary_expression()?;
         self.bytecode.push(ByteCode {
           op: EByteCodeop::OpPrefixUnary,
           args: vec![operator.to_string()],
@@ -2035,7 +2081,14 @@ impl AST{
       },
       Token::String => {
         let str_len = literal.len();
-        let slice = String::from(&self.literal[1..str_len-1]);
+        // 安全地提取字符串内容（去掉首尾引号）
+        let raw_slice = if str_len >= 2 {
+          String::from(&self.literal[1..str_len-1])
+        } else {
+          String::from("")
+        };
+        // 处理字符串转义序列
+        let slice = process_string_escapes(&raw_slice);
         self.next();
         self.bytecode.push(ByteCode{
           op: EByteCodeop::OpString,
@@ -2332,7 +2385,7 @@ impl AST{
   fn parse_number_literal_expression(&mut self) -> JSIResult<f64> {
     // 处理十六进制 (0x) 和二进制 (0b) 字面量
     let literal = &self.literal;
-    
+
     if literal.to_lowercase().starts_with("0x") {
       // 十六进制: 0xHH
       match i64::from_str_radix(&literal[2..], 16) {
@@ -2350,6 +2403,21 @@ impl AST{
       match i64::from_str_radix(&literal[2..], 8) {
         Ok(val) => Ok(val as f64),
         Err(_) => Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid octal number"), 0, 0))
+      }
+    } else if literal.starts_with("0") && literal.len() > 1 {
+      // 传统八进制: 077 (ES1 格式)
+      // 检查是否包含非八进制数字（8 或 9），如果有则作为十进制处理
+      let has_non_octal = literal.chars().any(|c| c == '8' || c == '9');
+      if has_non_octal {
+        // 包含 8 或 9，作为十进制处理
+        literal.parse::<f64>()
+          .map_err(|_| JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid number"), 0, 0))
+      } else {
+        // 传统八进制
+        match i64::from_str_radix(literal, 8) {
+          Ok(val) => Ok(val as f64),
+          Err(_) => Err(JSIError::new(JSIErrorType::SyntaxError, String::from("Invalid octal number"), 0, 0))
+        }
       }
     } else {
       // 十进制

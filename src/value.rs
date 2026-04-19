@@ -5,7 +5,7 @@ use crate::ast_token::Token;
 use crate::builtins::boolean::create_boolean;
 use crate::builtins::function::get_builtin_function_name;
 use crate::builtins::number::create_number;
-use crate::builtins::object::{Object, Property};
+use crate::builtins::object::{create_object, Object, Property};
 use crate::builtins::string::create_string;
 use crate::bytecode::ByteCode;
 use crate::context::{Context};
@@ -152,6 +152,7 @@ impl Clone for Value {
       Value::Boolean(bool) => Value::Boolean(*bool),
       Value::Null => Value::Null,
       Value::Undefined => Value::Undefined,
+      Value::NAN => Value::NAN,
       Value::RefObject(obj) => {
         return Value::RefObject(obj.clone());
       },
@@ -164,7 +165,6 @@ impl Clone for Value {
       Value::ByteCode(bytecode) => {
         return Value::ByteCode(bytecode.clone());
       },
-      _ => Value::Undefined,
     }
   }
 }
@@ -205,7 +205,7 @@ impl Value {
   }
 
   pub fn to_string(&self, ctx: &mut Context) -> String {
-    
+
     let mut self_value = self;
     let primitive_value = self.to_primitive_value(ctx);
     if let Some(value) = &primitive_value {
@@ -222,6 +222,8 @@ impl Value {
         }
       },
       Value::NAN => String::from("NaN"),
+      Value::Undefined => String::from("undefined"),
+      Value::Null => String::from("null"),
       _ => {
         let call_this = match self {
           Value::Object(_) | Value::Array(_) | Value::Function(_) | Value::Promise(_) => Some(self.clone()),
@@ -245,11 +247,18 @@ impl Value {
           };
           let value = Object::call(call_ctx, String::from("toString"), vec![]);
           if let Ok(value) = value {
-            return value.to_string(ctx)
+            // Only recurse if the value is a primitive (string, number, boolean, null, undefined, NAN)
+            // If valueOf returns an object, it would cause infinite recursion
+            if value.is_primitive_value() && !matches!(value, Value::Object(_) | Value::Array(_) | Value::Function(_) | Value::Promise(_) | Value::StringObj(_) | Value::NumberObj(_) | Value::BooleanObj(_)) {
+              return value.to_string(ctx)
+            }
           }
           let value = Object::call(call_ctx, String::from("valueOf"), vec![]);
           if let Ok(value) = value {
-            return value.to_string(ctx)
+            // Same check - only recurse for primitive values
+            if value.is_primitive_value() && !matches!(value, Value::Object(_) | Value::Array(_) | Value::Function(_) | Value::Promise(_) | Value::StringObj(_) | Value::NumberObj(_) | Value::BooleanObj(_)) {
+              return value.to_string(ctx)
+            }
           }
         }
         return String::from("");
@@ -325,12 +334,15 @@ impl Value {
   }
 
   // 实例化对象
-  pub fn instantiate_object(&self, ctx: &mut Context, args: Vec<Value>) -> JSIResult<Value> {
+  // is_new: true 表示使用 new 调用（返回包装对象），false 表示普通函数调用（返回原始值）
+  pub fn instantiate_object(&self, ctx: &mut Context, args: Vec<Value>, is_new: bool) -> JSIResult<Value> {
     let rc_obj = self.to_weak_rc_object();
     if let Some(wrc) = rc_obj {
       let rc = wrc.upgrade();
       if let Some(obj)= &rc {
         let obj = Rc::clone(obj);
+        // 获取构造函数名称以确定要创建的对象类型
+        let constructor_name = obj.borrow().get_inner_property_value(String::from("name"));
         let create_method = obj.borrow().get_inner_property_value(INSTANTIATE_OBJECT_METHOD_NAME.to_string());
         if let Some(create_method) = &create_method {
           if let Value::Function(function_define) = create_method {
@@ -341,9 +353,35 @@ impl Value {
             let function_define_value = fun_obj.get_initializer().unwrap();
             // 内置方法
             if let Statement::BuiltinFunction(builtin_function) = function_define_value.as_ref() {
+              // 根据 is_new 和构造函数名称创建相应类型的对象作为 this
+              // 只有 new 调用时才创建包装对象，普通函数调用时 this 设置为函数本身
+              let this_value = if is_new {
+                if let Some(Value::String(name)) = constructor_name {
+                  match name.as_str() {
+                    "Boolean" => {
+                      let bool_obj = create_object(ctx, ClassType::Boolean, None);
+                      Value::BooleanObj(bool_obj)
+                    },
+                    "Number" => {
+                      let num_obj = create_object(ctx, ClassType::Number, None);
+                      Value::NumberObj(num_obj)
+                    },
+                    "String" => {
+                      let str_obj = create_object(ctx, ClassType::String, None);
+                      Value::StringObj(str_obj)
+                    },
+                    _ => Value::Function(Rc::clone(function_define))
+                  }
+                } else {
+                  Value::Function(Rc::clone(function_define))
+                }
+              } else {
+                // 普通函数调用，this 设置为函数本身，这样 create 函数会检测到非构造函数调用
+                Value::Function(Rc::clone(function_define))
+              };
               let mut call_ctx = CallContext{
                 ctx,
-                this: Value::Function(Rc::clone(function_define)),
+                this: this_value,
                 reference: None,
                 func_name,
               };

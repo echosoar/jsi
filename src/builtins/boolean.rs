@@ -73,5 +73,21 @@ fn create(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
   if args.len() > 0 {
     param = args[0].clone();
   }
-  Ok(create_boolean(call_ctx.ctx, param))
+
+  // 判断是否是构造函数调用
+  let is_constructor_call = match &call_ctx.this {
+    Value::BooleanObj(_) => true,
+    Value::Object(obj) => {
+      obj.borrow().class_type == ClassType::Boolean
+    },
+    _ => false
+  };
+
+  if is_constructor_call {
+    // 构造函数调用，返回 Boolean 对象
+    Ok(create_boolean(call_ctx.ctx, param))
+  } else {
+    // 普通函数调用，返回原始布尔值
+    Ok(Value::Boolean(param.to_boolean(call_ctx.ctx)))
+  }
 }

@@ -45,6 +45,8 @@ pub fn bind_global_string(ctx: &mut Context) {
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, string_includes) });
     let name = String::from("indexOf");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, string_index_of) });
+    let name = String::from("lastIndexOf");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, string_last_index_of) });
     let name = String::from("trim");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, string_trim) });
     let name = String::from("startsWith");
@@ -53,12 +55,18 @@ pub fn bind_global_string(ctx: &mut Context) {
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, string_ends_with) });
     let name = String::from("slice");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 2f64, string_slice) });
+    let name = String::from("substring");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 2f64, string_substring) });
     let name = String::from("toLowerCase");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, string_to_lower_case) });
     let name = String::from("toUpperCase");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 0f64, string_to_upper_case) });
     let name = String::from("split");
     prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, string_split) });
+    let name = String::from("concat");
+    prototype.define_property(name.clone(), Property { enumerable: true, value: builtin_function(ctx, name, 1f64, string_concat) });
+    // length 属性
+    prototype.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(0f64) });
   }
 }
 
@@ -396,4 +404,100 @@ fn string_split(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value
     arr_mut.define_property(String::from("length"), Property { enumerable: false, value: Value::Number(parts.len() as f64) });
   }
   Ok(arr)
+}
+
+// String.prototype.lastIndexOf
+fn string_last_index_of(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let string = get_string(call_ctx);
+  if let Err(_) = string {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("String.prototype.lastIndexOf called on incompatible receiver"), 0, 0))
+  }
+  let str = string.unwrap();
+
+  let search_str = if args.len() > 0 {
+    args[0].to_string(call_ctx.ctx)
+  } else {
+    String::from("undefined")
+  };
+
+  let mut position: usize = str.len();
+  if args.len() > 1 {
+    if let Some(pos) = args[1].to_number(call_ctx.ctx) {
+      position = if pos < 0f64 { 0 } else { pos as usize };
+      if position > str.len() {
+        position = str.len();
+      }
+    }
+  }
+
+  // 从 position 开始反向搜索
+  let search_from = &str[..position];
+  let result = search_from.rfind(&search_str);
+  match result {
+    Some(index) => Ok(Value::Number(index as f64)),
+    None => Ok(Value::Number(-1f64)),
+  }
+}
+
+// String.prototype.substring
+fn string_substring(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let string = get_string(call_ctx);
+  if let Err(_) = string {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("String.prototype.substring called on incompatible receiver"), 0, 0))
+  }
+  let str = string.unwrap();
+  let len = str.len();
+
+  let mut start: usize = 0;
+  if args.len() > 0 {
+    if let Some(pos) = args[0].to_number(call_ctx.ctx) {
+      let pos_int = pos as i32;
+      if pos_int < 0 {
+        start = 0;
+      } else if pos_int as usize > len {
+        start = len;
+      } else {
+        start = pos_int as usize;
+      }
+    }
+  }
+
+  let mut end: usize = len;
+  if args.len() > 1 {
+    if let Some(pos) = args[1].to_number(call_ctx.ctx) {
+      let pos_int = pos as i32;
+      if pos_int < 0 {
+        end = 0;
+      } else if pos_int as usize > len {
+        end = len;
+      } else {
+        end = pos_int as usize;
+      }
+    }
+  }
+
+  // substring 自动调整 start 和 end 的顺序
+  let (final_start, final_end) = if start > end {
+    (end, start)
+  } else {
+    (start, end)
+  };
+
+  Ok(Value::String(str[final_start..final_end].to_string()))
+}
+
+// String.prototype.concat
+fn string_concat(call_ctx: &mut CallContext, args: Vec<Value>) -> JSIResult<Value> {
+  let string = get_string(call_ctx);
+  if let Err(_) = string {
+    return Err(JSIError::new(JSIErrorType::TypeError, format!("String.prototype.concat called on incompatible receiver"), 0, 0))
+  }
+  let str = string.unwrap();
+
+  let mut result = str;
+  for arg in args.iter() {
+    result.push_str(&arg.to_string(call_ctx.ctx));
+  }
+
+  Ok(Value::String(result))
 }

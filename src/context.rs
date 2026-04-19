@@ -816,9 +816,26 @@ impl Context {
           if left.is_equal_to(self, &Value::Undefined, true) {
             return Err(JSIError::new( JSIErrorType::TypeError, format!("Cannot read properties of undefined (reading '{}')", property_access.name.literal), 0, 0))
           }
+          let right = &property_access.name.literal;
+
+          // 特殊处理原始字符串的 length 属性
+          if right == "length" {
+            match &left {
+              Value::String(str) => {
+                return Ok(ValueInfo { is_const: false, value: Value::Number(str.len() as f64), name: Some(right.clone()), access_path: format!("{}.{}", left_info.access_path, property_access.name.literal), reference: Some(left) });
+              },
+              Value::StringObj(str_obj) => {
+                let inner_value = str_obj.borrow().get_inner_property_value(String::from("value"));
+                if let Some(Value::String(str)) = inner_value {
+                  return Ok(ValueInfo { is_const: false, value: Value::Number(str.len() as f64), name: Some(right.clone()), access_path: format!("{}.{}", left_info.access_path, property_access.name.literal), reference: Some(left) });
+                }
+              },
+              _ => {}
+            }
+          }
+
           let left_clone = left.clone();
           let left_obj = left.to_object(self);
-          let right = &property_access.name.literal;
           let value = (*left_obj).borrow().get_value(right.clone());
           Ok(ValueInfo { is_const: false, value, name: Some(right.clone()), access_path: format!("{}.{}", left_info.access_path, property_access.name.literal), reference: Some(left_clone) })
         },
@@ -1187,13 +1204,14 @@ impl Context {
         Value::RefObject(obj_ref) => {
           let obj = obj_ref.upgrade();
           if let Some(obj_rc) = obj {
-            // 全局对象调用，可以认为是 new 
+            // 全局对象调用，对于 Number/Boolean/String 返回原始值
             let is_global_object = {
               let function_mut = obj_rc.borrow_mut();
               function_mut.get_inner_property_value(IS_GLOABL_OBJECT.to_string())
             };
             if let Some(_) = is_global_object {
-              return callee.value.instantiate_object(self, arguments);
+              // 普通函数调用（不是 new），传递 false
+              return callee.value.instantiate_object(self, arguments, false);
             }
           }
           Err(JSIError::new(JSIErrorType::TypeError, format!("{:?} is not a function", callee.access_path), 0, 0))
@@ -1224,6 +1242,24 @@ impl Context {
         },
         Token::RemainderAssign => {
           Some(Token::Remainder)
+        },
+        Token::AndAssign => {
+          Some(Token::And)
+        },
+        Token::OrAssign => {
+          Some(Token::Or)
+        },
+        Token::ExclusiveOrAssign => {
+          Some(Token::ExclusiveOr)
+        },
+        Token::ShiftLeftAssign => {
+          Some(Token::ShiftLeft)
+        },
+        Token::ShiftRightAssign => {
+          Some(Token::ShiftRight)
+        },
+        Token::UnsignedShiftRightAssign => {
+          Some(Token::UnsignedShiftRight)
         },
         _ => {
           None
@@ -1325,6 +1361,17 @@ impl Context {
             _ => {
               value_info
             }
+          }
+        },
+        "~" => {
+          // Bitwise NOT: ~x = -(x + 1)
+          let value_number = value.to_number(self);
+          if let Some(num) = value_number {
+            // JavaScript 位运算将数值转换为 32 位整数
+            let int_value = num as i32;
+            Value::Number((!int_value) as f64).to_value_info()
+          } else {
+            Value::NAN.to_value_info()
           }
         },
         "delete" => {
@@ -1451,6 +1498,11 @@ impl Context {
               Token::Plus => {
                 new_value = new_value;
               },
+              Token::BitwiseNot => {
+                // JavaScript 位运算将数值转换为 32 位整数
+                let int_value = new_value as i32;
+                new_value = (!int_value) as f64;
+              },
               _ => {}
             }
             let value = Value::Number(new_value);
@@ -1543,8 +1595,9 @@ impl Context {
       let mut for_result = Value::Undefined;
       let mut for_last_statement_value = Value::Undefined;
       let mut for_interrupt = Value::Undefined;
+      // 使用传入的标签
       let for_call_options = CallStatementOptions {
-        label: None,
+        label: call_options.label.clone(),
       };
       if let Statement::Var(var) = &initializer  {
         if var.flag == VariableFlag::Var {
@@ -1583,7 +1636,7 @@ impl Context {
           let result = self.call_block(&vec![], &block.statements)?;
 
           let for_interrupt = result.2.clone();
-          let action = Self::handle_loop_interrupt(&for_interrupt, &call_options.label, false, interrupt);
+          let action = Self::handle_loop_interrupt(&for_interrupt, &call_options.label, true, interrupt);
           if action == LoopInterruptAction::Break || action == LoopInterruptAction::BreakAndPropagate {
             break;
           }
@@ -1790,7 +1843,7 @@ impl Context {
         }
       }
 
-      let obj = constructor.value.instantiate_object(self, arguments);
+      let obj = constructor.value.instantiate_object(self, arguments, true);
       if let Ok(obj) = obj {
         return Ok(obj)
       }
@@ -2139,12 +2192,9 @@ impl Context {
         if let Some(is_finite) = global_mut.property.get("isFinite") {
           global_scope.set_value(String::from("isFinite"), is_finite.value.clone(), true);
         }
-        if let Some(nan_val) = global_mut.property.get("NaN") {
-          global_scope.set_value(String::from("NaN"), nan_val.value.clone(), true);
-        }
-        if let Some(infinity_val) = global_mut.property.get("Infinity") {
-          global_scope.set_value(String::from("Infinity"), infinity_val.value.clone(), true);
-        }
+        // 直接设置 NaN 和 Infinity，因为 Value::NAN 是特殊类型
+        global_scope.set_value(String::from("NaN"), Value::NAN, true);
+        global_scope.set_value(String::from("Infinity"), Value::Number(f64::INFINITY), true);
       }
     }
     // 获取当前调用栈

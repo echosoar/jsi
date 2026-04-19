@@ -12,7 +12,7 @@ use jsi::{JSI, value::Value};
 // - 内置对象: Object, Array, String, Boolean, Number, Math, Date, Function
 // - 内置函数: parseInt, parseFloat, isNaN, isFinite
 // ============================================================================
-// 当前测试结果：160 passed, 52 failed (需要实现的功能标记为 #[ignore])
+// 当前测试结果：212 passed, 0 failed, 0 ignored
 // ============================================================================
 
 // ==================== 类型系统测试 ====================
@@ -367,9 +367,7 @@ fn es1_bitwise_xor() {
     assert_eq!(result, Value::Number(6f64));
 }
 
-// TODO: 位运算 NOT (~) 实现有问题
 #[test]
-#[ignore]
 fn es1_bitwise_not() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("~5")).unwrap();
@@ -441,9 +439,7 @@ fn es1_modulo_assignment() {
     assert_eq!(result, Value::Number(1f64));
 }
 
-// TODO: &=, |=, ^= 位运算赋值尚未支持
 #[test]
-#[ignore]
 fn es1_bitwise_and_assignment() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("var x = 15; x &= 7; x")).unwrap();
@@ -451,7 +447,6 @@ fn es1_bitwise_and_assignment() {
 }
 
 #[test]
-#[ignore]
 fn es1_bitwise_or_assignment() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("var x = 5; x |= 3; x")).unwrap();
@@ -459,16 +454,13 @@ fn es1_bitwise_or_assignment() {
 }
 
 #[test]
-#[ignore]
 fn es1_bitwise_xor_assignment() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("var x = 5; x ^= 3; x")).unwrap();
     assert_eq!(result, Value::Number(6f64));
 }
 
-// TODO: <<= 和 >>= 赋值运算符尚未支持
 #[test]
-#[ignore]
 fn es1_left_shift_assignment() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("var x = 1; x <<= 3; x")).unwrap();
@@ -476,7 +468,6 @@ fn es1_left_shift_assignment() {
 }
 
 #[test]
-#[ignore]
 fn es1_right_shift_assignment() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("var x = 8; x >>= 2; x")).unwrap();
@@ -617,9 +608,7 @@ fn es1_while_continue() {
     assert_eq!(result, Value::Number(12f64));
 }
 
-// TODO: while(false) 后的语句解析有问题
 #[test]
-#[ignore]
 fn es1_while_false_condition() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from(
@@ -688,9 +677,7 @@ fn es1_for_continue() {
     assert_eq!(result, Value::Number(8f64));
 }
 
-// TODO: for 循环空语句体语法尚未支持
 #[test]
-#[ignore]
 fn es1_for_no_body() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from(
@@ -699,9 +686,7 @@ fn es1_for_no_body() {
     assert_eq!(result, Value::Number(5f64));
 }
 
-// TODO: for(;;) 无限循环语法解析有问题
 #[test]
-#[ignore]
 fn es1_for_infinite_break() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from(
@@ -740,10 +725,8 @@ fn es1_for_in_break() {
 }
 
 // ==================== break/continue 带标签测试 ====================
-// TODO: 带标签的 break/continue 尚未支持
 
 #[test]
-#[ignore]
 fn es1_labeled_break() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from(
@@ -753,7 +736,6 @@ fn es1_labeled_break() {
 }
 
 #[test]
-#[ignore]
 fn es1_labeled_continue() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from(
@@ -1052,9 +1034,7 @@ fn es1_delete_array_element() {
 
 // ==================== String 对象测试 ====================
 
-// TODO: String 原型的 length 属性访问尚未支持（原始字符串）
 #[test]
-#[ignore]
 fn es1_string_length() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'hello'.length")).unwrap();
@@ -1068,9 +1048,7 @@ fn es1_string_char_at() {
     assert_eq!(result, Value::String(String::from("e")));
 }
 
-// TODO: String concat 方法尚未支持
 #[test]
-#[ignore]
 fn es1_string_concat() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'hello'.concat(' world')")).unwrap();
@@ -1084,18 +1062,14 @@ fn es1_string_index_of() {
     assert_eq!(result, Value::Number(2f64));
 }
 
-// TODO: String lastIndexOf 方法尚未支持
 #[test]
-#[ignore]
 fn es1_string_last_index_of() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'hello'.lastIndexOf('l')")).unwrap();
     assert_eq!(result, Value::Number(3f64));
 }
 
-// TODO: String substring 方法尚未支持
 #[test]
-#[ignore]
 fn es1_string_substring() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'hello'.substring(1, 4)")).unwrap();
@@ -1139,9 +1113,7 @@ fn es1_number_to_string() {
     assert_eq!(result, Value::String(String::from("42")));
 }
 
-// TODO: Number toString(radix) 尚未支持
 #[test]
-#[ignore]
 fn es1_number_to_string_radix() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("(42).toString(16)")).unwrap();
@@ -1155,9 +1127,7 @@ fn es1_number_value_of() {
     assert_eq!(result, Value::Number(42f64));
 }
 
-// TODO: Number() 作为函数调用返回原始值而非对象
 #[test]
-#[ignore]
 fn es1_number_constructor() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("Number('42')")).unwrap();
@@ -1172,10 +1142,8 @@ fn es1_number_object() {
 }
 
 // ==================== Boolean 对象测试 ====================
-// TODO: Boolean() 作为函数调用应返回原始布尔值
 
 #[test]
-#[ignore]
 fn es1_boolean_constructor() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("Boolean(1)")).unwrap();
@@ -1205,9 +1173,7 @@ fn es1_object_constructor() {
     assert_eq!(result, Value::String(String::from("object")));
 }
 
-// TODO: Object valueOf 方法尚未支持
 #[test]
-#[ignore]
 fn es1_object_value_of() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from(
@@ -1620,10 +1586,8 @@ fn es1_operator_precedence_assignment() {
 }
 
 // ==================== 特殊数值测试 ====================
-// TODO: NaN, Infinity 特殊值尚未支持
 
 #[test]
-#[ignore]
 fn es1_special_value_nan() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("typeof NaN")).unwrap();
@@ -1631,7 +1595,6 @@ fn es1_special_value_nan() {
 }
 
 #[test]
-#[ignore]
 fn es1_special_value_infinity() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("typeof Infinity")).unwrap();
@@ -1639,7 +1602,6 @@ fn es1_special_value_infinity() {
 }
 
 #[test]
-#[ignore]
 fn es1_nan_not_equal_to_self() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("NaN === NaN")).unwrap();
@@ -1685,10 +1647,7 @@ fn es1_type_conversion_to_boolean_falsy() {
 }
 
 // ==================== 字符串转义测试 ====================
-// TODO: 字符串转义序列解析尚未完全支持
-
 #[test]
-#[ignore]
 fn es1_string_escape_newline() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'hello\\nworld'")).unwrap();
@@ -1696,7 +1655,6 @@ fn es1_string_escape_newline() {
 }
 
 #[test]
-#[ignore]
 fn es1_string_escape_tab() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'hello\\tworld'")).unwrap();
@@ -1704,7 +1662,6 @@ fn es1_string_escape_tab() {
 }
 
 #[test]
-#[ignore]
 fn es1_string_escape_backslash() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'\\\\'")).unwrap();
@@ -1712,7 +1669,6 @@ fn es1_string_escape_backslash() {
 }
 
 #[test]
-#[ignore]
 fn es1_string_escape_quote() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("'\\''")).unwrap();
@@ -1735,9 +1691,7 @@ fn es1_number_hexadecimal() {
     assert_eq!(result, Value::Number(255f64));
 }
 
-// TODO: 八进制解析尚未支持
 #[test]
-#[ignore]
 fn es1_number_octal() {
     let mut jsi = JSI::new();
     // ES1 支持八进制，以 0 开头
@@ -1752,9 +1706,7 @@ fn es1_number_floating() {
     assert_eq!(result, Value::Number(3.14f64));
 }
 
-// TODO: 科学计数法解析尚未支持
 #[test]
-#[ignore]
 fn es1_number_scientific() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("1e2")).unwrap();
@@ -1762,7 +1714,6 @@ fn es1_number_scientific() {
 }
 
 #[test]
-#[ignore]
 fn es1_number_negative_scientific() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("1e-2")).unwrap();
@@ -1786,10 +1737,8 @@ fn es1_comma_operator_in_expression() {
 }
 
 // ==================== void 运算符测试 ====================
-// TODO: void 运算符尚未支持
 
 #[test]
-#[ignore]
 fn es1_void_operator() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("void 42")).unwrap();
@@ -1797,7 +1746,6 @@ fn es1_void_operator() {
 }
 
 #[test]
-#[ignore]
 fn es1_void_typeof() {
     let mut jsi = JSI::new();
     let result = jsi.run(String::from("typeof void 0")).unwrap();
